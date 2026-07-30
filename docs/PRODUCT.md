@@ -20,9 +20,10 @@ ask one small follow-up only when a missing detail materially changes the plan.
 
 ### 2. Explainable AI scheduling
 
-The AI SDK route should return structured output, not prose. Every suggestion
-contains urgency, estimated effort, a proposed start, study steps, and a short
-reason.
+The AI SDK route goes through Vercel AI Gateway and should return structured
+output, not prose. Every suggestion contains urgency, estimated effort, a
+proposed start, study steps, and a short reason. The gateway model ID stays
+configurable so the app can change providers without changing application code.
 
 Urgency should consider:
 

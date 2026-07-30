@@ -1,5 +1,4 @@
-import { openai } from "@ai-sdk/openai";
-import { generateText, Output } from "ai";
+import { gateway, generateText, Output } from "ai";
 import { z } from "zod";
 
 export const runtime = "edge";
@@ -29,9 +28,9 @@ const planSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  if (!process.env.OPENAI_API_KEY) {
+  if (!process.env.AI_GATEWAY_API_KEY && !process.env.VERCEL_OIDC_TOKEN) {
     return Response.json(
-      { error: "OPENAI_API_KEY is not configured" },
+      { error: "Vercel AI Gateway authentication is not configured" },
       { status: 503 },
     );
   }
@@ -43,7 +42,9 @@ export async function POST(request: Request) {
 
   const { subject, title, timezone, existingEvents = [] } = parsed.data;
   const { output } = await generateText({
-    model: openai(process.env.OPENAI_MODEL ?? "gpt-5-mini"),
+    model: gateway(
+      process.env.AI_GATEWAY_MODEL ?? "openai/gpt-5-mini",
+    ),
     output: Output.object({
       schema: planSchema,
       name: "homework_plan",

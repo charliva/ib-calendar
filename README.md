@@ -4,7 +4,8 @@ A mobile-first homework calendar that turns quick captures into realistic study
 blocks. The initialized prototype includes:
 
 - a one-line homework capture flow;
-- AI planning through the AI SDK with typed, validated output;
+- AI planning through Vercel AI Gateway and the AI SDK with typed,
+  validated output;
 - a responsive week and task view;
 - a local fallback planner when no AI key is available;
 - an IndexedDB outbox and service worker for offline capture;
@@ -28,9 +29,13 @@ The public browser key should be a publishable key, never a secret or
 ```dotenv
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
-OPENAI_API_KEY=...
-OPENAI_MODEL=gpt-5-mini
+AI_GATEWAY_API_KEY=...
+AI_GATEWAY_MODEL=openai/gpt-5-mini
 ```
+
+The model uses AI Gateway’s `creator/model-name` format, so it can be changed
+without installing another provider package—for example,
+`anthropic/claude-sonnet-4.5` or `google/gemini-2.5-flash`.
 
 ## Database
 
