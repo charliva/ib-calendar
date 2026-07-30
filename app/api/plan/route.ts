@@ -1,0 +1,64 @@
+import { openai } from "@ai-sdk/openai";
+import { generateText, Output } from "ai";
+import { z } from "zod";
+
+export const runtime = "edge";
+
+const requestSchema = z.object({
+  subject: z.string().trim().min(1).max(80),
+  title: z.string().trim().min(1).max(300),
+  timezone: z.string().trim().min(1).max(80),
+  existingEvents: z
+    .array(
+      z.object({
+        start: z.string(),
+        end: z.string(),
+        title: z.string(),
+      }),
+    )
+    .max(100)
+    .optional(),
+});
+
+const planSchema = z.object({
+  urgency: z.enum(["low", "medium", "high"]),
+  estimatedMinutes: z.number().int().min(10).max(240),
+  reason: z.string().min(1).max(240),
+  suggestedStart: z.string().describe("An ISO 8601 local date-time string"),
+  studySteps: z.array(z.string().min(1).max(80)).min(2).max(5),
+});
+
+export async function POST(request: Request) {
+  if (!process.env.OPENAI_API_KEY) {
+    return Response.json(
+      { error: "OPENAI_API_KEY is not configured" },
+      { status: 503 },
+    );
+  }
+
+  const parsed = requestSchema.safeParse(await request.json());
+  if (!parsed.success) {
+    return Response.json({ error: "Invalid homework details" }, { status: 400 });
+  }
+
+  const { subject, title, timezone, existingEvents = [] } = parsed.data;
+  const { output } = await generateText({
+    model: openai(process.env.OPENAI_MODEL ?? "gpt-5-mini"),
+    output: Output.object({
+      schema: planSchema,
+      name: "homework_plan",
+      description: "A safe, realistic study plan for a secondary-school student.",
+    }),
+    instructions:
+      "You schedule homework for a student. Prefer realistic, short focus blocks. Never invent a due date. Explain the urgency plainly. Avoid conflicts in the supplied calendar. Return only the requested structured output.",
+    prompt: JSON.stringify({
+      now: new Date().toISOString(),
+      timezone,
+      subject,
+      title,
+      existingEvents,
+    }),
+  });
+
+  return Response.json(output);
+}
