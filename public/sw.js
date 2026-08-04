@@ -1,4 +1,4 @@
-const CACHE = "syllabi-shell-v3";
+const CACHE = "syllabi-flex-shell-v4";
 const SHELL = ["/", "/manifest.webmanifest", "/favicon.svg"];
 
 self.addEventListener("install", (event) => {

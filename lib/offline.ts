@@ -1,48 +1,25 @@
 import { openDB } from "idb";
+import type { CalendarItem, HistoryEntry } from "@/lib/calendar-engine";
+import type { SchoolState } from "@/lib/school";
 
-export type Subject = {
-  id: string;
-  name: string;
-  color: "violet" | "blue" | "orange" | "green";
-};
-
-export type Assignment = {
-  id: string;
-  subjectId: string | null;
-  subjectName: string;
-  color: Subject["color"];
-  title: string;
-  dueAt: string | null;
-  startsAt: string | null;
-  studyBlockId: string | null;
-  estimatedMinutes: number;
-  urgency: "low" | "medium" | "high";
-  status: "planned" | "completed";
-  reason: string;
-  studySteps: string[];
-  createdAt: string;
-  syncStatus: "pending" | "synced";
-};
-
-export type Reminder = {
-  id: string;
-  assignmentId: string;
-  assignmentTitle: string;
-  remindAt: string;
-  status: "scheduled" | "queued" | "sent" | "failed" | "cancelled";
-  syncStatus: "pending" | "synced";
-};
-
-export type OfflineState = {
-  subjects: Subject[];
-  assignments: Assignment[];
-  reminders: Reminder[];
+export type OfflineState = SchoolState & {
+  items: CalendarItem[];
+  history: HistoryEntry[];
 };
 
 export type PendingMutation = {
   id?: number;
-  table: "subjects" | "assignments" | "study_blocks" | "reminders";
-  action: "upsert" | "update" | "delete";
+  table:
+    | "calendar_items"
+    | "calendar_history"
+    | "subjects"
+    | "classes"
+    | "class_exceptions"
+    | "assignments"
+    | "assessments"
+    | "homework_captures"
+    | "profiles";
+  action: "upsert" | "update" | "delete" | "insert";
   recordId: string;
   payload?: Record<string, unknown>;
 };
@@ -50,13 +27,13 @@ export type PendingMutation = {
 const dbPromise =
   typeof window === "undefined"
     ? null
-    : openDB("syllabi-offline", 2, {
+    : openDB("syllabi-offline", 5, {
         upgrade(database) {
-          if (!database.objectStoreNames.contains("state")) {
-            database.createObjectStore("state");
+          if (!database.objectStoreNames.contains("calendar-state")) {
+            database.createObjectStore("calendar-state");
           }
-          if (!database.objectStoreNames.contains("mutations")) {
-            database.createObjectStore("mutations", {
+          if (!database.objectStoreNames.contains("calendar-mutations")) {
+            database.createObjectStore("calendar-mutations", {
               keyPath: "id",
               autoIncrement: true,
             });
@@ -67,29 +44,29 @@ const dbPromise =
 export async function saveOfflineState(state: OfflineState) {
   const database = await dbPromise;
   if (!database) return;
-  await database.put("state", state, "current");
+  await database.put("calendar-state", state, "current");
 }
 
 export async function getOfflineState(): Promise<OfflineState | null> {
   const database = await dbPromise;
   if (!database) return null;
-  return (await database.get("state", "current")) ?? null;
+  return (await database.get("calendar-state", "current")) ?? null;
 }
 
 export async function queueMutation(mutation: PendingMutation) {
   const database = await dbPromise;
   if (!database) return;
-  await database.add("mutations", mutation);
+  await database.add("calendar-mutations", mutation);
 }
 
 export async function getPendingMutations(): Promise<PendingMutation[]> {
   const database = await dbPromise;
   if (!database) return [];
-  return database.getAll("mutations");
+  return database.getAll("calendar-mutations");
 }
 
 export async function removePendingMutation(id: number) {
   const database = await dbPromise;
   if (!database) return;
-  await database.delete("mutations", id);
+  await database.delete("calendar-mutations", id);
 }

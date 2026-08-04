@@ -22,11 +22,11 @@ export async function generateMetadata(): Promise<Metadata> {
     (host?.startsWith("localhost") ? "http" : "https");
   const origin = host ? `${protocol}://${host}` : "http://localhost:3000";
   const description =
-    "Capture homework in seconds, get an AI study plan, and keep everything synced and available offline.";
+    "A tactile, constraint-based calendar for fixed events, flexible tasks, and intentions.";
   const socialImage = `${origin}/og.png`;
 
   return {
-    title: "Syllabi — homework that plans itself",
+    title: "Syllabi — time, without the rigidity",
     description,
     applicationName: "Syllabi",
     icons: {
@@ -36,7 +36,7 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     openGraph: {
       title: "Syllabi",
-      description: "Homework that plans itself.",
+      description,
       type: "website",
       url: origin,
       images: [{ url: socialImage, width: 1731, height: 909, alt: "Syllabi calendar preview" }],
@@ -44,14 +44,14 @@ export async function generateMetadata(): Promise<Metadata> {
     twitter: {
       card: "summary_large_image",
       title: "Syllabi",
-      description: "Homework that plans itself.",
+      description,
       images: [socialImage],
     },
   };
 }
 
 export const viewport: Viewport = {
-  themeColor: "#6c5ce7",
+  themeColor: "#19181d",
   colorScheme: "light",
 };
 

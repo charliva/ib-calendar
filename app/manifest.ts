@@ -2,21 +2,19 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Syllabi — homework that plans itself",
+    name: "Syllabi — Flexible Calendar",
     short_name: "Syllabi",
     description:
-      "Capture homework, generate a study plan, and keep working offline.",
+      "A tactile, constraint-based calendar for fixed events, flexible tasks, and intentions.",
     start_url: "/",
     display: "standalone",
-    background_color: "#f7f7fa",
-    theme_color: "#6c5ce7",
-    orientation: "portrait-primary",
+    background_color: "#fffefa",
+    theme_color: "#19181d",
     icons: [
       {
         src: "/favicon.svg",
         sizes: "any",
         type: "image/svg+xml",
-        purpose: "any",
       },
     ],
   };

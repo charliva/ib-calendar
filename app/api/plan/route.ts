@@ -41,10 +41,18 @@ export async function POST(request: Request) {
   }
 
   const { subject, title, timezone, existingEvents = [] } = parsed.data;
+  const model = process.env.AI_GATEWAY_MODEL ?? "openai/gpt-5.4-nano";
   const { output } = await generateText({
-    model: gateway(
-      process.env.AI_GATEWAY_MODEL ?? "openai/gpt-5-mini",
-    ),
+    model: gateway(model),
+    maxRetries: 0,
+    maxOutputTokens: 600,
+    timeout: { totalMs: 6_000 },
+    providerOptions: {
+      gateway: { sort: "ttft" },
+      ...(model.startsWith("openai/")
+        ? { openai: { reasoningEffort: "none" } }
+        : {}),
+    },
     output: Output.object({
       schema: planSchema,
       name: "homework_plan",
