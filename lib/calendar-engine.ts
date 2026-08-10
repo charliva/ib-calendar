@@ -19,11 +19,24 @@ export type SchoolWorkType =
   | "creative_project";
 export type EnergyRequirement = "low" | "medium" | "high";
 
+export const TIMETABLE_IMPORT_MARKER = "Weekly timetable screenshot";
+
+export function flexibilityForNewItem(
+  input: Pick<CalendarItem, "kind"> &
+    Partial<Pick<CalendarItem, "flexibility" | "constraints">>,
+): Flexibility {
+  if (input.kind !== "event") return input.flexibility ?? "flexible";
+  return input.constraints?.includes(TIMETABLE_IMPORT_MARKER)
+    ? "fixed"
+    : "flexible";
+}
+
 export type CalendarItem = {
   id: string;
   kind: ItemKind;
   title: string;
   description: string;
+  room: string;
   startsAt: string | null;
   endsAt: string | null;
   durationMin: number;
@@ -38,6 +51,8 @@ export type CalendarItem = {
   constraints: string[];
   assignmentId: string | null;
   assessmentId: string | null;
+  intentionId: string | null;
+  subjectId: string | null;
   revisionStage: string | null;
   reviewOffsetDays: number | null;
   learnedAt: string | null;
@@ -131,6 +146,77 @@ export function durationMinutes(item: CalendarItem) {
     : item.durationMin;
 }
 
+/** Manual edge resizing makes the chosen duration an allowed duration. */
+export function withResizedDuration(
+  item: CalendarItem,
+  minutes: number,
+): CalendarItem {
+  const safeMinutes = Math.max(5, Math.round(minutes));
+  return {
+    ...item,
+    durationMin:
+      item.flexibility === "fixed"
+        ? safeMinutes
+        : Math.min(item.durationMin, safeMinutes),
+    durationMax:
+      item.flexibility === "fixed"
+        ? safeMinutes
+        : Math.max(item.durationMax, safeMinutes),
+  };
+}
+
+/** Calendar spans use an exclusive end, matching normal calendar APIs. */
+export function itemOverlapsDay(item: CalendarItem, day: string) {
+  if (!item.startsAt || !item.endsAt) return false;
+  const dayStart = dateFromKey(day);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = addDays(dayStart, 1);
+  return new Date(item.startsAt) < dayEnd && new Date(item.endsAt) > dayStart;
+}
+
+export function isMultiDayItem(item: CalendarItem) {
+  if (!item.startsAt || !item.endsAt) return false;
+  const start = new Date(item.startsAt);
+  const end = new Date(item.endsAt);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) {
+    return false;
+  }
+  const lastMoment = new Date(end.getTime() - 1);
+  return dateKey(start) !== dateKey(lastMoment);
+}
+
+export function isLongSpanItem(item: CalendarItem) {
+  return durationMinutes(item) >= 24 * 60;
+}
+
+/** Midnight-to-midnight items are date-level events, not zero-length sessions. */
+export function isAllDayItem(item: CalendarItem) {
+  if (!item.startsAt || !item.endsAt) return false;
+  const start = new Date(item.startsAt);
+  const end = new Date(item.endsAt);
+  if (
+    !Number.isFinite(start.getTime()) ||
+    !Number.isFinite(end.getTime()) ||
+    end <= start
+  ) {
+    return false;
+  }
+  return (
+    start.getHours() === 0 &&
+    start.getMinutes() === 0 &&
+    start.getSeconds() === 0 &&
+    end.getHours() === 0 &&
+    end.getMinutes() === 0 &&
+    end.getSeconds() === 0 &&
+    durationMinutes(item) % (24 * 60) === 0
+  );
+}
+
+/** Items that should live in the calendar's span lane instead of the hour grid. */
+export function isCalendarSpanItem(item: CalendarItem) {
+  return isMultiDayItem(item) || isLongSpanItem(item);
+}
+
 export function validatePlacement(
   item: CalendarItem,
   nextStart: string,
@@ -186,6 +272,8 @@ export function validatePlacement(
 
   const collisions = items.filter((other) => {
     if (
+      isLongSpanItem(item) ||
+      isLongSpanItem(other) ||
       other.id === item.id ||
       other.status !== "scheduled" ||
       !other.startsAt ||
@@ -219,7 +307,11 @@ export function validateProposal(
   const results = proposal.changes.map((change) => {
     if (change.type === "delete") {
       const existing = change.itemId ? projected.get(change.itemId) : undefined;
-      if (existing?.flexibility === "fixed") {
+      const isApprovedTimetableReplacement =
+        proposal.source === "document" &&
+        existing?.source === "document" &&
+        existing.constraints.includes(TIMETABLE_IMPORT_MARKER);
+      if (existing?.flexibility === "fixed" && !isApprovedTimetableReplacement) {
         return {
           changeId: change.id,
           valid: false,
@@ -290,6 +382,7 @@ export function capacityForDay(items: CalendarItem[], day: string) {
       item.status === "scheduled" &&
       item.startsAt &&
       item.endsAt &&
+      !isLongSpanItem(item) &&
       new Date(item.startsAt) < dayEnd &&
       new Date(item.endsAt) > dayStart,
   );
@@ -330,6 +423,7 @@ export function scheduleInsights(items: CalendarItem[], day: string) {
         item.status === "scheduled" &&
         item.startsAt &&
         item.endsAt &&
+        !isLongSpanItem(item) &&
         new Date(item.startsAt) < dayEnd &&
         new Date(item.endsAt) > dayStart,
     )
@@ -404,6 +498,7 @@ export function makeItem(
     kind: input.kind,
     title: input.title,
     description: input.description ?? "",
+    room: input.room?.trim() ?? "",
     startsAt: input.startsAt ?? null,
     endsAt: input.endsAt ?? null,
     durationMin,
@@ -414,11 +509,12 @@ export function makeItem(
     energyType: input.energyType ?? "light_work",
     priority: input.priority ?? "medium",
     splittable: input.splittable ?? false,
-    flexibility:
-      input.flexibility ?? (input.kind === "event" ? "fixed" : "flexible"),
+    flexibility: input.flexibility ?? "flexible",
     constraints: input.constraints ?? [],
     assignmentId: input.assignmentId ?? null,
     assessmentId: input.assessmentId ?? null,
+    intentionId: input.intentionId ?? null,
+    subjectId: input.subjectId ?? null,
     revisionStage: input.revisionStage ?? null,
     reviewOffsetDays: input.reviewOffsetDays ?? null,
     learnedAt: input.learnedAt ?? null,
@@ -440,6 +536,7 @@ export function itemToRow(item: CalendarItem) {
     kind: item.kind,
     title: item.title,
     description: item.description || null,
+    room: item.room || null,
     starts_at: item.startsAt,
     ends_at: item.endsAt,
     duration_min: item.durationMin,
@@ -454,6 +551,8 @@ export function itemToRow(item: CalendarItem) {
     constraints: item.constraints,
     assignment_id: item.assignmentId,
     assessment_id: item.assessmentId,
+    intention_id: item.intentionId,
+    subject_id: item.subjectId,
     revision_stage: item.revisionStage,
     review_offset_days: item.reviewOffsetDays,
     learned_at: item.learnedAt,

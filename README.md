@@ -29,6 +29,8 @@ The public browser key should be a publishable key, never a secret or
 ```dotenv
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+# Server-only key used by the protected invitation routes.
+SUPABASE_SECRET_KEY=sb_secret_...
 AI_GATEWAY_API_KEY=...
 AI_GATEWAY_MODEL=openai/gpt-5-mini
 ```
@@ -36,6 +38,42 @@ AI_GATEWAY_MODEL=openai/gpt-5-mini
 The model uses AI Gateway’s `creator/model-name` format, so it can be changed
 without installing another provider package—for example,
 `anthropic/claude-sonnet-4.5` or `google/gemini-2.5-flash`.
+
+## Invitations and email codes
+
+Signed-in users can copy a single-use, seven-day invitation URL or enter a
+friend's address to create an unconfirmed account and send a verification code.
+Normal email sign-in does not create accounts, so new accounts must come through
+an invitation. Invitation creation is limited to 10 per user in 24 hours.
+
+In the hosted Supabase dashboard, turn off **Allow new users to sign up** under
+Authentication settings after confirming your owner account already exists. The
+server-only invitation route creates the unconfirmed account before requesting
+its OTP, so invited users can still finish signup while public signup stays off.
+
+Apply `supabase/migrations/20260810190834_add_invitations.sql`, add the
+server-only `SUPABASE_SECRET_KEY` to the deployment, and configure a production
+SMTP provider in Supabase Authentication settings. Set the Magic Link email
+template to the contents of `supabase/templates/magic-link.html`; it uses
+`{{ .Token }}` rather than `{{ .ConfirmationURL }}`, which makes Supabase send
+a typed one-time code instead of an authentication link.
+
+The recommended free provider is Resend. Add `auth.charlieva.dev` as a sending
+domain in Resend, then add the exact SPF/MX and DKIM records shown there to
+Cloudflare DNS. Using a dedicated auth subdomain isolates its reputation and
+avoids the Vercel CNAME already used by `cal.charlieva.dev`.
+
+Configure Supabase Authentication > SMTP with:
+
+- host: `smtp.resend.com`
+- port: `465` with implicit TLS, or `587` with STARTTLS
+- username: `resend`
+- password: the Resend API key
+- sender: `Syllabi <login@auth.charlieva.dev>`
+
+Resend's free tier is suitable for a small class/friends rollout. Cloudflare
+Email Routing can remain enabled independently for inbound aliases, but it is
+not an outbound SMTP server and cannot deliver Supabase authentication codes.
 
 ## Database
 

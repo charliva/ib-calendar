@@ -9,6 +9,7 @@ import {
   Plus,
   Sparkles,
   Trash2,
+  SlidersHorizontal,
   X,
 } from "lucide-react";
 import {
@@ -21,6 +22,7 @@ import {
 } from "react";
 import { parseHomework } from "@/lib/homework-parser";
 import type { HomeworkCapture, Subject } from "@/lib/school";
+import { TemporalField } from "@/app/ui/temporal-field";
 
 type Props = {
   open: boolean;
@@ -28,7 +30,14 @@ type Props = {
   subjects: Subject[];
   recentSubjects: Subject[];
   onClose: () => void;
-  onCapture: (text: string, subjectOverride?: string | null) => void;
+  onCapture: (
+    text: string,
+    overrides?: {
+      subjectId?: string | null;
+      deadline?: string | null;
+      estimatedMinutes?: number | null;
+    },
+  ) => void;
   onConvert: (capture: HomeworkCapture) => void;
   onDelete: (capture: HomeworkCapture) => void;
   onDragState: (id: string | null) => void;
@@ -60,6 +69,9 @@ export function HomeworkInbox({
 }: Props) {
   const [text, setText] = useState("");
   const [subjectOverride, setSubjectOverride] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [deadlineOverride, setDeadlineOverride] = useState("");
+  const [estimateOverride, setEstimateOverride] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const preview = useMemo(
     () => parseHomework(text, subjects, new Date(), subjectOverride),
@@ -75,9 +87,18 @@ export function HomeworkInbox({
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!text.trim()) return;
-    onCapture(text, subjectOverride);
+    onCapture(text, {
+      subjectId: subjectOverride,
+      deadline: deadlineOverride
+        ? new Date(deadlineOverride).toISOString()
+        : null,
+      estimatedMinutes: estimateOverride,
+    });
     setText("");
     setSubjectOverride(null);
+    setDeadlineOverride("");
+    setEstimateOverride(null);
+    setDetailsOpen(false);
     window.requestAnimationFrame(() => inputRef.current?.focus());
   }
 
@@ -128,6 +149,79 @@ export function HomeworkInbox({
             <span>{preview.taskType}</span>
             <strong>{preview.estimatedMinutes} min</strong>
           </div>
+        )}
+        <button
+          className={`homework-details-toggle ${detailsOpen ? "active" : ""}`}
+          type="button"
+          onClick={() => setDetailsOpen((current) => !current)}
+        >
+          <SlidersHorizontal size={12} />
+          {detailsOpen ? "Hide details" : "Fill details"}
+        </button>
+        {detailsOpen && (
+          <section className="homework-detail-fields">
+            <label>
+              <span>Subject</span>
+              <select
+                value={subjectOverride ?? ""}
+                onChange={(event) =>
+                  setSubjectOverride(event.target.value || null)
+                }
+              >
+                <option value="">Detect automatically</option>
+                {subjects.map((subject) => (
+                  <option value={subject.id} key={subject.id}>
+                    {subject.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Deadline</span>
+              <TemporalField
+                mode="datetime"
+                value={deadlineOverride}
+                onChange={setDeadlineOverride}
+                placeholder={
+                  preview.deadline
+                    ? formatDeadline(preview.deadline)
+                    : "No deadline"
+                }
+                ariaLabel="Choose homework deadline"
+              />
+            </label>
+            <label>
+              <span>Estimate</span>
+              <div className="homework-estimate-control">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEstimateOverride((current) =>
+                      Math.max(5, (current ?? preview.estimatedMinutes) - 5),
+                    )
+                  }
+                >
+                  −
+                </button>
+                <strong>
+                  {estimateOverride ?? preview.estimatedMinutes} min
+                </strong>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEstimateOverride(
+                      (current) => (current ?? preview.estimatedMinutes) + 5,
+                    )
+                  }
+                >
+                  +
+                </button>
+              </div>
+            </label>
+            <button className="homework-add-button" type="submit">
+              Add to inbox <ArrowRight size={13} />
+            </button>
+          </section>
         )}
       </form>
 

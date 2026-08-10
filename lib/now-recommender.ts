@@ -5,6 +5,9 @@ import {
 import {
   dateKey,
   durationMinutes,
+  isCalendarSpanItem,
+  startOfWeek,
+  TIMETABLE_IMPORT_MARKER,
   type CalendarItem,
   type EnergyRequirement,
   type EnergyType,
@@ -28,6 +31,7 @@ import {
   type SchoolDaySettings,
   type Subject,
 } from "./school.ts";
+import { subjectChallengeSummary, type LearningSignal } from "./study-intelligence.ts";
 
 const MINUTE = 60_000;
 const DAY = 86_400_000;
@@ -40,7 +44,7 @@ export type CurrentStudyLocation =
 
 export type NowRecommendation = {
   id: string;
-  source: "assignment" | "assessment" | "calendar_item";
+  source: "assignment" | "assessment" | "calendar_item" | "exploration";
   sourceId: string;
   title: string;
   durationMinutes: number;
@@ -57,6 +61,7 @@ export type NowRecommendation = {
   computerRequired: boolean;
   revisionStage: string | null;
   deadline: string | null;
+  subjectId: string | null;
 };
 
 export type FixedCommitment = {
@@ -71,6 +76,8 @@ export type NowRecommendationResult = {
   nextFixed: FixedCommitment | null;
   recommendations: NowRecommendation[];
   blockedReason: string | null;
+  freeTimeIsValid: boolean;
+  freeTimeReason: string | null;
 };
 
 export type NowRecommendationInput = {
@@ -85,6 +92,7 @@ export type NowRecommendationInput = {
   currentLocation: CurrentStudyLocation;
   currentEnergy: EnergyRequirement;
   computerAvailable: boolean;
+  learningSignals?: LearningSignal[];
 };
 
 function priorityScore(priority: Priority) {
@@ -147,12 +155,27 @@ function fixedCommitments(input: NowRecommendationInput) {
   const classById = new Map(
     input.classes.map((schoolClass) => [schoolClass.id, schoolClass]),
   );
+  const importedWeeks = new Set(
+    input.items
+      .filter(
+        (item) =>
+          item.status === "scheduled" &&
+          item.startsAt &&
+          item.constraints.includes(TIMETABLE_IMPORT_MARKER),
+      )
+      .map((item) => dateKey(startOfWeek(new Date(item.startsAt!)))),
+  );
   const lessons = lessonOccurrences(
     input.classes,
     input.classExceptions,
     input.now,
     horizon,
-  ).map((lesson) => {
+  )
+    .filter(
+      (lesson) =>
+        !importedWeeks.has(dateKey(startOfWeek(lesson.start))),
+    )
+    .map((lesson) => {
     const schoolClass = classById.get(lesson.classId);
     const subject = schoolClass
       ? subjectById.get(schoolClass.subjectId)
@@ -162,7 +185,7 @@ function fixedCommitments(input: NowRecommendationInput) {
       start: lesson.start,
       end: lesson.end,
     };
-  });
+    });
   const calendar = input.items
     .filter(
       (item) =>
@@ -170,6 +193,7 @@ function fixedCommitments(input: NowRecommendationInput) {
         item.flexibility === "fixed" &&
         item.startsAt &&
         item.endsAt &&
+        !isCalendarSpanItem(item) &&
         new Date(item.endsAt) > input.now,
     )
     .map((item) => ({
@@ -242,6 +266,7 @@ function protectedReason(
     start,
     end,
     { energyType },
+    input.items,
   );
   const lesson = ranges.find(
     (range) => range.kind === "lesson" && overlaps(start, end, range),
@@ -359,6 +384,8 @@ export function recommendNow(
       nextFixed,
       recommendations: [],
       blockedReason: `${currentFixed.title} is in progress.`,
+      freeTimeIsValid: false,
+      freeTimeReason: null,
     };
   }
 
@@ -379,10 +406,29 @@ export function recommendNow(
         input.now >= cutoff
           ? `Schoolwork ends at ${input.settings.schoolworkCutoff}.`
           : "There is not enough time before the next fixed event.",
+      freeTimeIsValid: availableMinutes > 0,
+      freeTimeReason: availableMinutes > 0 ? "This gap is too short to use deliberately." : null,
     };
   }
 
   const recommendations: NowRecommendation[] = [];
+  const signals = input.learningSignals ?? [];
+  const recentSubjectIds = new Set(
+    input.items
+      .filter((item) => {
+        if (item.status !== "completed" || !item.subjectId || !item.endsAt) return false;
+        const ended = new Date(item.endsAt).getTime();
+        return ended <= input.now.getTime() && ended >= input.now.getTime() - 6 * 60 * MINUTE;
+      })
+      .map((item) => item.subjectId!),
+  );
+  const challengeAdjustment = (subjectId: string | null) => {
+    if (!subjectId) return 0;
+    const { counts } = subjectChallengeSummary(subjectId, signals, input.now);
+    return Math.min(18, counts.not_understood * 6 + counts.difficult * 2) -
+      Math.min(8, counts.too_easy * 2) -
+      (recentSubjectIds.has(subjectId) ? 7 : 0);
+  };
   for (const assignment of input.assignments) {
     if (
       ["completed", "submitted", "archived"].includes(assignment.status) ||
@@ -437,7 +483,7 @@ export function recommendNow(
       reasons: [
         dueReason(assignment.dueAt, input.now),
         explanationForEnergy(requiredEnergy, input.currentEnergy),
-        `${duration} minutes fits before your next commitment`,
+        `${duration} minutes fits before your next fixed event`,
       ],
       score: recommendationScore(
         assignment.priority,
@@ -447,7 +493,7 @@ export function recommendNow(
         input.currentEnergy,
         duration,
         availableMinutes,
-        progressPercent >= 50 ? 5 : 0,
+        (progressPercent >= 50 ? 5 : 0) + challengeAdjustment(assignment.subjectId),
       ),
       assignmentId: assignment.id,
       assessmentId: null,
@@ -459,6 +505,7 @@ export function recommendNow(
       computerRequired: assignment.computerRequired,
       revisionStage: null,
       deadline: assignment.dueAt,
+      subjectId: assignment.subjectId,
     });
   }
 
@@ -515,7 +562,7 @@ export function recommendNow(
         input.currentEnergy,
         duration,
         availableMinutes,
-        days <= 3 ? 10 : 0,
+        (days <= 3 ? 10 : 0) + challengeAdjustment(assessment.subjectId),
       ),
       assignmentId: null,
       assessmentId: assessment.id,
@@ -527,10 +574,18 @@ export function recommendNow(
       computerRequired: false,
       revisionStage: profile.stage,
       deadline: assessment.scheduledAt,
+      subjectId: assessment.subjectId,
     });
   }
 
   for (const item of input.items) {
+    const linkedAssignment = item.assignmentId
+      ? input.assignments.find((entry) => entry.id === item.assignmentId)
+      : null;
+    const linkedAssessment = item.assessmentId
+      ? input.assessments.find((entry) => entry.id === item.assessmentId)
+      : null;
+    const subjectId = item.subjectId ?? linkedAssignment?.subjectId ?? linkedAssessment?.subjectId ?? null;
     const startsSoon = Boolean(
       item.startsAt &&
       new Date(item.startsAt).getTime() >= input.now.getTime() - 5 * MINUTE &&
@@ -610,7 +665,7 @@ export function recommendNow(
         input.currentEnergy,
         duration,
         availableMinutes,
-        startsSoon ? 18 : movableScheduled ? 10 : 0,
+        (startsSoon ? 18 : movableScheduled ? 10 : 0) + challengeAdjustment(subjectId),
       ),
       assignmentId: item.assignmentId,
       assessmentId: item.assessmentId,
@@ -622,11 +677,44 @@ export function recommendNow(
       computerRequired: item.computerRequired,
       revisionStage: item.revisionStage,
       deadline: item.deadline,
+      subjectId,
     });
   }
 
+  if (input.currentEnergy !== "low" && availableMinutes >= 15) {
+    for (const subject of input.subjects) {
+      const { counts } = subjectChallengeSummary(subject.id, signals, input.now);
+      if (counts.too_easy < 2) continue;
+      recommendations.push({
+        id: `exploration:${subject.id}`,
+        source: "exploration",
+        sourceId: subject.id,
+        title: `Go deeper in ${subject.name}`,
+        durationMinutes: 15,
+        detail: "A curiosity block, not extra homework",
+        reasons: [
+          `You marked ${subject.name} too easy ${counts.too_easy} times recently`,
+          "Use spare capacity for a harder question or connection",
+          "Leaving this time free is also valid",
+        ],
+        score: 48 + Math.min(12, counts.too_easy * 3),
+        assignmentId: null,
+        assessmentId: null,
+        calendarItemId: null,
+        workType: "problem_solving",
+        requiredEnergy: "high",
+        energyType: "deep_focus",
+        taskContext: "anywhere",
+        computerRequired: false,
+        revisionStage: null,
+        deadline: null,
+        subjectId: subject.id,
+      });
+    }
+  }
+
   const seenSources = new Set<string>();
-  const ranked = recommendations
+  const rankedCandidates = recommendations
     .sort((a, b) => b.score - a.score || a.durationMinutes - b.durationMinutes)
     .filter((recommendation) => {
       const sourceKey = recommendation.assignmentId
@@ -639,11 +727,17 @@ export function recommendNow(
       return true;
     })
     .slice(0, 3);
+  const ranked = rankedCandidates[0]?.score >= 48 ? rankedCandidates : [];
 
   return {
     availableMinutes,
     nextFixed,
     recommendations: ranked,
     blockedReason: null,
+    freeTimeIsValid: ranked.length === 0,
+    freeTimeReason:
+      ranked.length === 0
+        ? "Nothing is urgent or well-matched enough to deserve this gap."
+        : "A useful option fits, but this time does not have to be filled.",
   };
 }

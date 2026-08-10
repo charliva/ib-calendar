@@ -9,6 +9,7 @@ import {
   ClipboardList,
   Clock3,
   GraduationCap,
+  ImageUp,
   Laptop,
   MapPin,
   Pencil,
@@ -22,6 +23,7 @@ import {
   type FormEvent,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -48,6 +50,13 @@ import {
   type FreePeriod,
 } from "@/lib/school-day-engine";
 import { WORK_TYPE_LABELS } from "@/lib/school";
+import {
+  isImportedTimetableItem,
+  isItemInWeek,
+} from "@/lib/timetable-import";
+import { TemporalField } from "@/app/ui/temporal-field";
+import { LearningControls } from "@/app/learning-controls";
+import { latestSignalFor, type ChallengeLevel, type LearningSignal, type LearningSource } from "@/lib/study-intelligence";
 import type {
   Assessment,
   AssessmentStatus,
@@ -59,7 +68,6 @@ import type {
   SchoolDaySettings,
   Subject,
   TaskContext,
-  WeekPattern,
 } from "@/lib/school";
 
 type SchoolTab = "timetable" | "subjects" | "assignments" | "assessments";
@@ -101,6 +109,12 @@ type Props = {
     assessment: Assessment,
   ) => void;
   onOpenRevisionSession: (session: CalendarItem) => void;
+  onOpenCalendarItem: (item: CalendarItem) => void;
+  onImportTimetable: (file: File, weekStart: string) => void;
+  timetableImportBusy: boolean;
+  learningSignals: LearningSignal[];
+  onChallenge: (source: LearningSource, level: ChallengeLevel) => void;
+  onGoDeeper: (source: LearningSource) => void;
 };
 
 const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
@@ -259,7 +273,6 @@ export function SchoolWorkspace(props: Props) {
   const [tab, setTab] = useState<SchoolTab>("timetable");
   const [editor, setEditor] = useState<Editor | null>(null);
   const [weekAnchor, setWeekAnchor] = useState("");
-  const [activeWeek, setActiveWeek] = useState<"a" | "b">("a");
   const [subjectDraft, setSubjectDraft] = useState<Subject | null>(null);
   const [classDraft, setClassDraft] = useState<SchoolClass | null>(null);
   const [exceptionDraft, setExceptionDraft] =
@@ -270,25 +283,13 @@ export function SchoolWorkspace(props: Props) {
     useState<Assessment | null>(null);
   const [schoolDayDraft, setSchoolDayDraft] =
     useState<SchoolDaySettings | null>(null);
+  const timetableInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (weekAnchor) return;
     const frame = window.requestAnimationFrame(() => {
       const monday = startOfWeek(new Date());
       setWeekAnchor(dateKey(monday));
-      setActiveWeek(
-        Math.ceil(
-          ((monday.getTime() -
-            new Date(monday.getFullYear(), 0, 1).getTime()) /
-            86_400_000 +
-            1) /
-            7,
-        ) %
-          2 ===
-          0
-          ? "b"
-          : "a",
-      );
     });
     return () => window.cancelAnimationFrame(frame);
   }, [weekAnchor]);
@@ -306,8 +307,27 @@ export function SchoolWorkspace(props: Props) {
       props.schoolDaySettings,
       weekDays[0],
       weekDays.at(-1)!,
+      props.assignmentSessions,
     );
-  }, [classExceptions, classes, props.schoolDaySettings, weekDays]);
+  }, [
+    classExceptions,
+    classes,
+    props.assignmentSessions,
+    props.schoolDaySettings,
+    weekDays,
+  ]);
+  const importedWeekLessons = useMemo(
+    () =>
+      weekAnchor
+        ? props.assignmentSessions.filter(
+            (item) =>
+              item.status === "scheduled" &&
+              isImportedTimetableItem(item) &&
+              isItemInWeek(item, weekAnchor),
+          )
+        : [],
+    [props.assignmentSessions, weekAnchor],
+  );
 
   function subjectFor(id: string | null) {
     return subjects.find((subject) => subject.id === id);
@@ -369,7 +389,7 @@ export function SchoolWorkspace(props: Props) {
     if (!classDraft?.subjectId || classDraft.endTime <= classDraft.startTime) {
       return;
     }
-    props.onSaveClass(classDraft);
+    props.onSaveClass({ ...classDraft, weekPattern: "every" });
     closeEditor();
   }
 
@@ -555,24 +575,34 @@ export function SchoolWorkspace(props: Props) {
                     <ChevronRight size={15} />
                   </button>
                 </div>
-                <div className="week-pattern-switch" aria-label="A or B week">
-                  {(["a", "b"] as const).map((pattern) => (
-                    <button
-                      className={activeWeek === pattern ? "active" : ""}
-                      type="button"
-                      key={pattern}
-                      onClick={() => setActiveWeek(pattern)}
-                    >
-                      {pattern.toUpperCase()} week
-                    </button>
-                  ))}
-                </div>
                 <button
                   type="button"
                   onClick={() => openEditor("school_day")}
                 >
                   <Clock3 size={14} /> Rules
                 </button>
+                <button
+                  className="timetable-import-button"
+                  type="button"
+                  onClick={() => timetableInputRef.current?.click()}
+                  disabled={!weekAnchor || props.timetableImportBusy}
+                >
+                  <ImageUp size={14} />
+                  {props.timetableImportBusy ? "Reading…" : "Import week"}
+                </button>
+                <input
+                  ref={timetableInputRef}
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file && weekAnchor) {
+                      props.onImportTimetable(file, weekAnchor);
+                    }
+                    event.currentTarget.value = "";
+                  }}
+                />
                 <button
                   className="school-primary"
                   type="button"
@@ -583,7 +613,19 @@ export function SchoolWorkspace(props: Props) {
                 </button>
               </div>
 
-              {subjects.length === 0 ? (
+              <div className="timetable-import-note">
+                <ImageUp size={15} />
+                <span>
+                  <strong>Each week can be different.</strong> Open the week you
+                  want, import its screenshot, then review every detected lesson
+                  before applying it.
+                </span>
+                {importedWeekLessons.length > 0 && (
+                  <small>{importedWeekLessons.length} imported this week</small>
+                )}
+              </div>
+
+              {subjects.length === 0 && importedWeekLessons.length === 0 ? (
                 <SchoolEmpty
                   icon={BookOpen}
                   title="Add a subject first"
@@ -594,11 +636,11 @@ export function SchoolWorkspace(props: Props) {
                     openEditor("subject");
                   }}
                 />
-              ) : classes.length === 0 ? (
+              ) : classes.length === 0 && importedWeekLessons.length === 0 ? (
                 <SchoolEmpty
                   icon={CalendarDays}
                   title="Your timetable is clear"
-                  copy="Add recurring lessons, then mark the weeks that alternate."
+                  copy="Import this week's screenshot, or add a recurring fallback lesson."
                   action="Add lesson"
                   onAction={() => openEditor("class")}
                 />
@@ -606,12 +648,10 @@ export function SchoolWorkspace(props: Props) {
                 <div className="school-timetable">
                   {weekDays.map((day, dayIndex) => {
                     const key = dateKey(day);
-                    const regular = classes
+                    const regular = (importedWeekLessons.length ? [] : classes)
                       .filter(
                         (entry) =>
                           entry.weekday === dayIndex + 1 &&
-                          (entry.weekPattern === "every" ||
-                            entry.weekPattern === activeWeek) &&
                           key >= entry.validFrom &&
                           (!entry.validUntil || key <= entry.validUntil),
                       )
@@ -622,6 +662,17 @@ export function SchoolWorkspace(props: Props) {
                         entry.replacementDate === key &&
                         !regular.some((lesson) => lesson.id === entry.classId),
                     );
+                    const importedHere = importedWeekLessons
+                      .filter(
+                        (item) =>
+                          item.startsAt &&
+                          dateKey(new Date(item.startsAt)) === key,
+                      )
+                      .sort(
+                        (a, b) =>
+                          new Date(a.startsAt!).getTime() -
+                          new Date(b.startsAt!).getTime(),
+                      );
                     return (
                       <section className="timetable-day" key={key}>
                         <header>
@@ -673,7 +724,17 @@ export function SchoolWorkspace(props: Props) {
                               />
                             );
                           })}
-                          {regular.length === 0 && movedHere.length === 0 && (
+                          {importedHere.map((item) => (
+                            <ImportedLessonCard
+                              key={item.id}
+                              item={item}
+                              subjects={subjects}
+                              onOpen={() => props.onOpenCalendarItem(item)}
+                            />
+                          ))}
+                          {regular.length === 0 &&
+                            movedHere.length === 0 &&
+                            importedHere.length === 0 && (
                             <span className="timetable-empty">Open time</span>
                           )}
                         </div>
@@ -704,10 +765,7 @@ export function SchoolWorkspace(props: Props) {
                           <strong>{subject?.name ?? "Unknown subject"}</strong>
                           <small>
                             {weekdays[lesson.weekday - 1]} · {lesson.startTime}–
-                            {lesson.endTime} ·{" "}
-                            {lesson.weekPattern === "every"
-                              ? "every week"
-                              : `${lesson.weekPattern.toUpperCase()} weeks`}
+                            {lesson.endTime} · recurring fallback
                           </small>
                         </div>
                         <div className="record-actions">
@@ -835,7 +893,9 @@ export function SchoolWorkspace(props: Props) {
                 />
               ) : (
                 <div className="subject-grid">
-                  {subjects.map((subject) => (
+                  {subjects.map((subject) => {
+                    const source: LearningSource = { type: "subject", id: subject.id, title: subject.name, subjectId: subject.id, subjectName: subject.name, context: [subject.teacher, subject.room].filter(Boolean).join(" · ") };
+                    return (
                     <article
                       className="subject-card"
                       key={subject.id}
@@ -870,6 +930,7 @@ export function SchoolWorkspace(props: Props) {
                       </header>
                       <strong>{subject.name}</strong>
                       <small>{subject.shortName}</small>
+                      <LearningControls compact source={source} value={latestSignalFor(source, props.learningSignals)?.challengeLevel ?? null} onChallenge={props.onChallenge} onGoDeeper={props.onGoDeeper} />
                       <footer>
                         <span>
                           <GraduationCap size={12} />
@@ -881,7 +942,8 @@ export function SchoolWorkspace(props: Props) {
                         </span>
                       </footer>
                     </article>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </>
@@ -921,6 +983,7 @@ export function SchoolWorkspace(props: Props) {
                 <div className="school-record-list">
                   {sortedAssignments.map((assignment) => {
                     const subject = subjectFor(assignment.subjectId);
+                    const source: LearningSource = { type: "assignment", id: assignment.id, title: assignment.title, subjectId: assignment.subjectId, subjectName: subject?.name ?? null, context: [assignment.notes, assignment.workType, assignment.submissionMethod].filter(Boolean).join(" · ") };
                     const progress = assignmentProgress(
                       assignment,
                       props.assignmentSessions,
@@ -987,6 +1050,7 @@ export function SchoolWorkspace(props: Props) {
                               <span>{assignment.gradeWeight}% grade</span>
                             )}
                           </div>
+                          <LearningControls compact source={source} value={latestSignalFor(source, props.learningSignals)?.challengeLevel ?? null} onChallenge={props.onChallenge} onGoDeeper={props.onGoDeeper} />
                           {progress.sessions.length > 0 && (
                             <div className="assignment-sessions">
                               {progress.sessions.map((session) => (
@@ -1109,6 +1173,7 @@ export function SchoolWorkspace(props: Props) {
                 <div className="school-record-list">
                   {sortedAssessments.map((assessment) => {
                     const subject = subjectFor(assessment.subjectId);
+                    const source: LearningSource = { type: "assessment", id: assessment.id, title: assessment.title, subjectId: assessment.subjectId, subjectName: subject?.name ?? null, context: [assessment.assessmentType, assessment.notes].filter(Boolean).join(" · ") };
                     const countdown = examCountdown(assessment);
                     const progress = revisionProgress(
                       assessment,
@@ -1167,6 +1232,7 @@ export function SchoolWorkspace(props: Props) {
                               {formatWorkMinutes(progress.learnedMinutes)} learned
                             </small>
                           </div>
+                          <LearningControls compact source={source} value={latestSignalFor(source, props.learningSignals)?.challengeLevel ?? null} onChallenge={props.onChallenge} onGoDeeper={props.onGoDeeper} />
                           {progress.sessions.length > 0 && (
                             <div className="revision-session-list">
                               {progress.sessions.map((session) => (
@@ -1377,66 +1443,51 @@ export function SchoolWorkspace(props: Props) {
                     setClassDraft({ ...classDraft, subjectId })
                   }
                 />
-                <div className="form-pair">
-                  <FormField label="Day">
-                    <select
-                      value={classDraft.weekday}
-                      onChange={(event) =>
-                        setClassDraft({
-                          ...classDraft,
-                          weekday: Number(event.target.value),
-                        })
-                      }
-                    >
-                      {weekdays.map((day, index) => (
-                        <option value={index + 1} key={day}>
-                          {day}
-                        </option>
-                      ))}
-                    </select>
-                  </FormField>
-                  <FormField label="Weeks">
-                    <select
-                      value={classDraft.weekPattern}
-                      onChange={(event) =>
-                        setClassDraft({
-                          ...classDraft,
-                          weekPattern: event.target.value as WeekPattern,
-                        })
-                      }
-                    >
-                      <option value="every">Every week</option>
-                      <option value="a">A weeks</option>
-                      <option value="b">B weeks</option>
-                    </select>
-                  </FormField>
-                </div>
+                <FormField label="Day">
+                  <select
+                    value={classDraft.weekday}
+                    onChange={(event) =>
+                      setClassDraft({
+                        ...classDraft,
+                        weekday: Number(event.target.value),
+                        weekPattern: "every",
+                      })
+                    }
+                  >
+                    {weekdays.map((day, index) => (
+                      <option value={index + 1} key={day}>
+                        {day}
+                      </option>
+                    ))}
+                  </select>
+                </FormField>
                 <div className="form-pair">
                   <FormField label="Starts">
-                    <input
+                    <TemporalField
                       required
-                      type="time"
+                      mode="time"
                       value={classDraft.startTime}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setClassDraft({
                           ...classDraft,
-                          startTime: event.target.value,
+                          startTime: value,
                         })
                       }
+                      ariaLabel="Choose lesson start time"
                     />
                   </FormField>
                   <FormField label="Ends">
-                    <input
+                    <TemporalField
                       required
-                      type="time"
-                      min={classDraft.startTime}
+                      mode="time"
                       value={classDraft.endTime}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setClassDraft({
                           ...classDraft,
-                          endTime: event.target.value,
+                          endTime: value,
                         })
                       }
+                      ariaLabel="Choose lesson end time"
                     />
                   </FormField>
                 </div>
@@ -1473,29 +1524,31 @@ export function SchoolWorkspace(props: Props) {
                 </div>
                 <div className="form-pair">
                   <FormField label="From">
-                    <input
+                    <TemporalField
                       required
-                      type="date"
+                      mode="date"
                       value={classDraft.validFrom}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setClassDraft({
                           ...classDraft,
-                          validFrom: event.target.value,
+                          validFrom: value,
                         })
                       }
+                      ariaLabel="Choose first date"
                     />
                   </FormField>
                   <FormField label="Until">
-                    <input
-                      type="date"
-                      min={classDraft.validFrom}
+                    <TemporalField
+                      mode="date"
                       value={classDraft.validUntil ?? ""}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setClassDraft({
                           ...classDraft,
-                          validUntil: event.target.value || null,
+                          validUntil: value || null,
                         })
                       }
+                      placeholder="No end date"
+                      ariaLabel="Choose last date"
                     />
                   </FormField>
                 </div>
@@ -1526,16 +1579,17 @@ export function SchoolWorkspace(props: Props) {
                 </FormField>
                 <div className="form-pair">
                   <FormField label="Original date">
-                    <input
+                    <TemporalField
                       required
-                      type="date"
+                      mode="date"
                       value={exceptionDraft.occurrenceDate}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setExceptionDraft({
                           ...exceptionDraft,
-                          occurrenceDate: event.target.value,
+                          occurrenceDate: value,
                         })
                       }
+                      ariaLabel="Choose original lesson date"
                     />
                   </FormField>
                   <FormField label="Change">
@@ -1557,44 +1611,46 @@ export function SchoolWorkspace(props: Props) {
                 {exceptionDraft.status === "rescheduled" && (
                   <>
                     <FormField label="New date">
-                      <input
+                      <TemporalField
                         required
-                        type="date"
+                        mode="date"
                         value={exceptionDraft.replacementDate ?? ""}
-                        onChange={(event) =>
+                        onChange={(value) =>
                           setExceptionDraft({
                             ...exceptionDraft,
-                            replacementDate: event.target.value || null,
+                            replacementDate: value || null,
                           })
                         }
+                        ariaLabel="Choose replacement date"
                       />
                     </FormField>
                     <div className="form-pair">
                       <FormField label="New start">
-                        <input
+                        <TemporalField
                           required
-                          type="time"
+                          mode="time"
                           value={exceptionDraft.replacementStartTime ?? ""}
-                          onChange={(event) =>
+                          onChange={(value) =>
                             setExceptionDraft({
                               ...exceptionDraft,
-                              replacementStartTime:
-                                event.target.value || null,
+                              replacementStartTime: value || null,
                             })
                           }
+                          ariaLabel="Choose replacement start time"
                         />
                       </FormField>
                       <FormField label="New end">
-                        <input
+                        <TemporalField
                           required
-                          type="time"
+                          mode="time"
                           value={exceptionDraft.replacementEndTime ?? ""}
-                          onChange={(event) =>
+                          onChange={(value) =>
                             setExceptionDraft({
                               ...exceptionDraft,
-                              replacementEndTime: event.target.value || null,
+                              replacementEndTime: value || null,
                             })
                           }
+                          ariaLabel="Choose replacement end time"
                         />
                       </FormField>
                     </div>
@@ -1678,16 +1734,17 @@ export function SchoolWorkspace(props: Props) {
                   }
                 />
                 <FormField label="Due date and time">
-                  <input
+                  <TemporalField
                     required
-                    type="datetime-local"
+                    mode="datetime"
                     value={localInput(assignmentDraft.dueAt)}
-                    onChange={(event) =>
+                    onChange={(value) =>
                       setAssignmentDraft({
                         ...assignmentDraft,
-                        dueAt: isoInput(event.target.value),
+                        dueAt: isoInput(value),
                       })
                     }
+                    ariaLabel="Choose assignment deadline"
                   />
                 </FormField>
                 <div className="form-pair">
@@ -1857,27 +1914,29 @@ export function SchoolWorkspace(props: Props) {
                 </label>
                 <div className="form-pair">
                   <FormField label="Daily window starts">
-                    <input
-                      type="time"
+                    <TemporalField
+                      mode="time"
                       value={assignmentDraft.allowedWindowStart}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setAssignmentDraft({
                           ...assignmentDraft,
-                          allowedWindowStart: event.target.value,
+                          allowedWindowStart: value,
                         })
                       }
+                      ariaLabel="Choose daily study window start"
                     />
                   </FormField>
                   <FormField label="Daily window ends">
-                    <input
-                      type="time"
+                    <TemporalField
+                      mode="time"
                       value={assignmentDraft.allowedWindowEnd}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setAssignmentDraft({
                           ...assignmentDraft,
-                          allowedWindowEnd: event.target.value,
+                          allowedWindowEnd: value,
                         })
                       }
+                      ariaLabel="Choose daily study window end"
                     />
                   </FormField>
                 </div>
@@ -2090,27 +2149,29 @@ export function SchoolWorkspace(props: Props) {
                 </div>
                 <div className="form-pair">
                   <FormField label="Revision starts">
-                    <input
-                      type="time"
+                    <TemporalField
+                      mode="time"
                       value={assessmentDraft.revisionWindowStart}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setAssessmentDraft({
                           ...assessmentDraft,
-                          revisionWindowStart: event.target.value,
+                          revisionWindowStart: value,
                         })
                       }
+                      ariaLabel="Choose revision window start"
                     />
                   </FormField>
                   <FormField label="Revision ends">
-                    <input
-                      type="time"
+                    <TemporalField
+                      mode="time"
                       value={assessmentDraft.revisionWindowEnd}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setAssessmentDraft({
                           ...assessmentDraft,
-                          revisionWindowEnd: event.target.value,
+                          revisionWindowEnd: value,
                         })
                       }
+                      ariaLabel="Choose revision window end"
                     />
                   </FormField>
                 </div>
@@ -2183,30 +2244,32 @@ export function SchoolWorkspace(props: Props) {
                   </FormField>
                 )}
                 <FormField label="Date and time">
-                  <input
+                  <TemporalField
                     required
-                    type="datetime-local"
+                    mode="datetime"
                     value={localInput(assessmentDraft.scheduledAt)}
-                    onChange={(event) =>
+                    onChange={(value) =>
                       setAssessmentDraft({
                         ...assessmentDraft,
-                        scheduledAt: isoInput(event.target.value) ?? "",
+                        scheduledAt: isoInput(value) ?? "",
                       })
                     }
+                    ariaLabel="Choose assessment date and time"
                   />
                 </FormField>
                 <div className="form-pair">
                   <FormField label="Ends (optional)">
-                    <input
-                      type="datetime-local"
-                      min={localInput(assessmentDraft.scheduledAt)}
+                    <TemporalField
+                      mode="datetime"
                       value={localInput(assessmentDraft.endsAt)}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setAssessmentDraft({
                           ...assessmentDraft,
-                          endsAt: isoInput(event.target.value),
+                          endsAt: isoInput(value),
                         })
                       }
+                      placeholder="No end time"
+                      ariaLabel="Choose assessment end"
                     />
                   </FormField>
                   <FormField label="Weight %">
@@ -2277,27 +2340,29 @@ export function SchoolWorkspace(props: Props) {
                 </FormField>
                 <div className="form-pair">
                   <FormField label="School day starts">
-                    <input
-                      type="time"
+                    <TemporalField
+                      mode="time"
                       value={schoolDayDraft.schoolDayStart}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setSchoolDayDraft({
                           ...schoolDayDraft,
-                          schoolDayStart: event.target.value,
+                          schoolDayStart: value,
                         })
                       }
+                      ariaLabel="Choose school day start"
                     />
                   </FormField>
                   <FormField label="School day ends">
-                    <input
-                      type="time"
+                    <TemporalField
+                      mode="time"
                       value={schoolDayDraft.schoolDayEnd}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setSchoolDayDraft({
                           ...schoolDayDraft,
-                          schoolDayEnd: event.target.value,
+                          schoolDayEnd: value,
                         })
                       }
+                      ariaLabel="Choose school day end"
                     />
                   </FormField>
                 </div>
@@ -2352,67 +2417,72 @@ export function SchoolWorkspace(props: Props) {
                     />
                   </FormField>
                   <FormField label="Work cutoff">
-                    <input
-                      type="time"
+                    <TemporalField
+                      mode="time"
                       value={schoolDayDraft.schoolworkCutoff}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setSchoolDayDraft({
                           ...schoolDayDraft,
-                          schoolworkCutoff: event.target.value,
+                          schoolworkCutoff: value,
                         })
                       }
+                      ariaLabel="Choose schoolwork cutoff"
                     />
                   </FormField>
                 </div>
                 <div className="form-pair">
                   <FormField label="Preferred from">
-                    <input
-                      type="time"
+                    <TemporalField
+                      mode="time"
                       value={schoolDayDraft.preferredStudyStart}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setSchoolDayDraft({
                           ...schoolDayDraft,
-                          preferredStudyStart: event.target.value,
+                          preferredStudyStart: value,
                         })
                       }
+                      ariaLabel="Choose preferred study start"
                     />
                   </FormField>
                   <FormField label="Preferred until">
-                    <input
-                      type="time"
+                    <TemporalField
+                      mode="time"
                       value={schoolDayDraft.preferredStudyEnd}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setSchoolDayDraft({
                           ...schoolDayDraft,
-                          preferredStudyEnd: event.target.value,
+                          preferredStudyEnd: value,
                         })
                       }
+                      ariaLabel="Choose preferred study end"
                     />
                   </FormField>
                 </div>
                 <div className="form-pair">
                   <FormField label="Low energy from">
-                    <input
-                      type="time"
+                    <TemporalField
+                      mode="time"
                       value={schoolDayDraft.lowEnergyStart}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setSchoolDayDraft({
                           ...schoolDayDraft,
-                          lowEnergyStart: event.target.value,
+                          lowEnergyStart: value,
                         })
                       }
+                      ariaLabel="Choose low energy start"
                     />
                   </FormField>
                   <FormField label="Low energy until">
-                    <input
-                      type="time"
+                    <TemporalField
+                      mode="time"
                       value={schoolDayDraft.lowEnergyEnd}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setSchoolDayDraft({
                           ...schoolDayDraft,
-                          lowEnergyEnd: event.target.value,
+                          lowEnergyEnd: value,
                         })
                       }
+                      ariaLabel="Choose low energy end"
                     />
                   </FormField>
                 </div>
@@ -2593,6 +2663,49 @@ function LessonCard({
       >
         <RotateCcw size={11} />
       </button>
+    </article>
+  );
+}
+
+function ImportedLessonCard({
+  item,
+  subjects,
+  onOpen,
+}: {
+  item: CalendarItem;
+  subjects: Subject[];
+  onOpen: () => void;
+}) {
+  const normalizedTitle = item.title.toLowerCase();
+  const subject = subjects.find(
+    (candidate) =>
+      normalizedTitle.includes(candidate.name.toLowerCase()) ||
+      (candidate.shortName &&
+        normalizedTitle.includes(candidate.shortName.toLowerCase())),
+  );
+  const time = (value: string | null) =>
+    value
+      ? new Intl.DateTimeFormat("en-GB", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }).format(new Date(value))
+      : "";
+  return (
+    <article
+      className="lesson-card is-imported"
+      style={{ "--subject": subjectColor(subject) } as CSSProperties}
+    >
+      <button type="button" onClick={onOpen}>
+        <span>
+          {time(item.startsAt)}–{time(item.endsAt)}
+        </span>
+        <strong>
+          {subject?.icon && <i>{subject.icon}</i>}
+          {subject?.shortName || item.title}
+        </strong>
+        <small>{item.description || "Screenshot import"}</small>
+      </button>
+      <span className="lesson-imported-badge">Imported</span>
     </article>
   );
 }

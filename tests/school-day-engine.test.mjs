@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { planAssignment } from "../lib/assignment-planner.ts";
+import { normalizeTimetableLessons } from "../lib/timetable-import.ts";
 import {
   detectFreePeriods,
   energyForTime,
@@ -87,6 +88,87 @@ test("detects useful gaps between real lesson occurrences", () => {
   assert.equal(periods[0].durationMinutes, 45);
   assert.equal(periods[0].start.getHours(), 11);
   assert.equal(periods[0].start.getMinutes(), 25);
+});
+
+test("weekly screenshot lessons drive free-period detection", () => {
+  const imported = normalizeTimetableLessons(
+    [
+      {
+        kind: "event",
+        title: "English",
+        startsAt: "2026-07-31T10:00:00+02:00",
+        endsAt: "2026-07-31T11:25:00+02:00",
+        evidence: "Friday English block",
+      },
+      {
+        kind: "event",
+        title: "Biology",
+        startsAt: "2026-07-31T12:10:00+02:00",
+        endsAt: "2026-07-31T13:00:00+02:00",
+        evidence: "Friday Biology block",
+      },
+    ],
+    "2026-07-27",
+  ).map(({ item }) => item);
+  const periods = detectFreePeriods(
+    [],
+    [],
+    settings,
+    new Date("2026-07-31T08:00:00+02:00"),
+    new Date("2026-07-31T15:00:00+02:00"),
+    imported,
+  );
+
+  assert.equal(periods.length, 1);
+  assert.equal(periods[0].durationMinutes, 45);
+  const suitability = studySlotSuitability(
+    new Date("2026-07-31T11:30:00+02:00"),
+    new Date("2026-07-31T12:00:00+02:00"),
+    {
+      taskContext: "school",
+      computerRequired: false,
+      energyType: "light_work",
+    },
+    [],
+    [],
+    settings,
+    imported,
+  );
+  assert.equal(suitability.suitable, true);
+  assert.match(suitability.reason, /45-minute free period/);
+});
+
+test("a screenshot week replaces recurring lesson assumptions", () => {
+  const imported = normalizeTimetableLessons(
+    [
+      {
+        kind: "event",
+        title: "Early seminar",
+        startsAt: "2026-07-31T08:00:00+02:00",
+        endsAt: "2026-07-31T09:00:00+02:00",
+        evidence: "Friday early seminar",
+      },
+      {
+        kind: "event",
+        title: "Late lab",
+        startsAt: "2026-07-31T14:00:00+02:00",
+        endsAt: "2026-07-31T15:00:00+02:00",
+        evidence: "Friday late lab",
+      },
+    ],
+    "2026-07-27",
+  ).map(({ item }) => item);
+  const periods = detectFreePeriods(
+    classes,
+    [],
+    settings,
+    new Date("2026-07-31T07:00:00+02:00"),
+    new Date("2026-07-31T16:00:00+02:00"),
+    imported,
+  );
+
+  assert.equal(periods.length, 1);
+  assert.equal(periods[0].durationMinutes, 300);
 });
 
 test("free-period suggestions reject incompatible contexts and computers", () => {

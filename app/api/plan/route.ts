@@ -1,5 +1,6 @@
 import { gateway, generateText, Output } from "ai";
 import { z } from "zod";
+import { authenticatedUser } from "@/lib/supabase/api-auth";
 
 export const runtime = "edge";
 
@@ -28,6 +29,9 @@ const planSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  if (!(await authenticatedUser(request))) {
+    return Response.json({ error: "Authentication required" }, { status: 401 });
+  }
   if (!process.env.AI_GATEWAY_API_KEY && !process.env.VERCEL_OIDC_TOKEN) {
     return Response.json(
       { error: "Vercel AI Gateway authentication is not configured" },

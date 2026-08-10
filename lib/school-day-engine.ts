@@ -1,5 +1,8 @@
 import {
   dateKey,
+  startOfWeek,
+  TIMETABLE_IMPORT_MARKER,
+  type CalendarItem,
   type EnergyRequirement,
   type EnergyType,
   type SchoolWorkType,
@@ -37,6 +40,7 @@ export type SchoolSchedulingContext = {
   classes: SchoolClass[];
   classExceptions: ClassException[];
   settings: SchoolDaySettings;
+  calendarItems?: CalendarItem[];
 };
 
 export function energyForTime(
@@ -165,15 +169,65 @@ export function lessonOccurrences(
   return ranges.sort((a, b) => a.start.getTime() - b.start.getTime());
 }
 
+export function schoolLessonRanges(
+  classes: SchoolClass[],
+  exceptions: ClassException[],
+  from: Date,
+  to: Date,
+  calendarItems: CalendarItem[] = [],
+): TimeRange[] {
+  const firstDay = new Date(from);
+  firstDay.setHours(0, 0, 0, 0);
+  const lastDay = new Date(to);
+  lastDay.setHours(23, 59, 59, 999);
+  const recurring: TimeRange[] = lessonOccurrences(
+    classes,
+    exceptions,
+    from,
+    to,
+  );
+  const imported: TimeRange[] = calendarItems
+    .filter(
+      (item) =>
+        item.kind === "event" &&
+        item.status === "scheduled" &&
+        item.startsAt &&
+        item.endsAt &&
+        item.constraints.includes(TIMETABLE_IMPORT_MARKER),
+    )
+    .map((item) => ({
+      start: new Date(item.startsAt!),
+      end: new Date(item.endsAt!),
+      kind: "lesson" as const,
+    }))
+    .filter((lesson) => lesson.start <= lastDay && lesson.end >= firstDay);
+  const importedWeeks = new Set(
+    imported.map((lesson) => dateKey(startOfWeek(lesson.start))),
+  );
+  const applicableRecurring = recurring.filter(
+    (lesson) => !importedWeeks.has(dateKey(startOfWeek(lesson.start))),
+  );
+  return [...applicableRecurring, ...imported].sort(
+    (a, b) => a.start.getTime() - b.start.getTime(),
+  );
+}
+
 export function detectFreePeriods(
   classes: SchoolClass[],
   exceptions: ClassException[],
   settings: SchoolDaySettings,
   from: Date,
   to: Date,
+  calendarItems: CalendarItem[] = [],
 ): FreePeriod[] {
-  const lessons = lessonOccurrences(classes, exceptions, from, to);
-  const byDay = new Map<string, typeof lessons>();
+  const lessons = schoolLessonRanges(
+    classes,
+    exceptions,
+    from,
+    to,
+    calendarItems,
+  );
+  const byDay = new Map<string, TimeRange[]>();
   for (const lesson of lessons) {
     const key = dateKey(lesson.start);
     byDay.set(key, [...(byDay.get(key) ?? []), lesson]);
@@ -202,9 +256,16 @@ export function protectedSchoolRanges(
   from: Date,
   to: Date,
   task?: { energyType: EnergyType },
+  calendarItems: CalendarItem[] = [],
 ): TimeRange[] {
-  const lessons = lessonOccurrences(classes, exceptions, from, to);
-  const byDay = new Map<string, typeof lessons>();
+  const lessons = schoolLessonRanges(
+    classes,
+    exceptions,
+    from,
+    to,
+    calendarItems,
+  );
+  const byDay = new Map<string, TimeRange[]>();
   for (const lesson of lessons) {
     const key = dateKey(lesson.start);
     byDay.set(key, [...(byDay.get(key) ?? []), lesson]);
@@ -269,14 +330,22 @@ export function studySlotSuitability(
   classes: SchoolClass[],
   exceptions: ClassException[],
   settings: SchoolDaySettings,
+  calendarItems: CalendarItem[] = [],
 ): StudySlotSuitability {
-  const lessons = lessonOccurrences(classes, exceptions, start, end);
+  const lessons = schoolLessonRanges(
+    classes,
+    exceptions,
+    start,
+    end,
+    calendarItems,
+  );
   const freePeriods = detectFreePeriods(
     classes,
     exceptions,
     settings,
     start,
     end,
+    calendarItems,
   );
   const day = new Date(start);
   const cutoff = atTime(day, settings.schoolworkCutoff);
@@ -331,11 +400,12 @@ export function studySlotSuitability(
     };
   }
 
-  const dayLessons = lessonOccurrences(
+  const dayLessons = schoolLessonRanges(
     classes,
     exceptions,
     atTime(day, "00:00"),
     atTime(day, "23:59"),
+    calendarItems,
   );
   if (dayLessons.length) {
     const first = dayLessons[0];

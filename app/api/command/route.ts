@@ -1,5 +1,6 @@
 import { gateway, generateText, Output } from "ai";
 import { z } from "zod";
+import { authenticatedUser } from "@/lib/supabase/api-auth";
 
 export const runtime = "edge";
 
@@ -59,6 +60,9 @@ const proposalSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  if (!(await authenticatedUser(request))) {
+    return Response.json({ error: "Authentication required" }, { status: 401 });
+  }
   if (!process.env.AI_GATEWAY_API_KEY && !process.env.VERCEL_OIDC_TOKEN) {
     return Response.json(
       { error: "Vercel AI Gateway authentication is not configured" },
@@ -92,8 +96,10 @@ export async function POST(request: Request) {
     instructions: `You translate natural-language calendar commands into proposals.
 Never claim a proposal has already been applied.
 Events with fixed flexibility cannot be moved, resized, or deleted.
+For newly created events, always set flexibility to flexible. Normal calendar events are movable; only school classes imported through the timetable flow are fixed.
 Treat task placements as temporary solutions, not task identity.
 Use ISO 8601 date-times with an explicit offset.
+For multi-day ranges such as exam weeks, holidays, and intentions, keep one item spanning the full range rather than creating daily duplicates. Treat endsAt as exclusive when the range ends at midnight.
 For fuzzy requests, preserve a window and leave startsAt/endsAt null unless the user explicitly asks to schedule.
 For updates, return only the fields that change inside after. The application merges the patch with the existing item.
 For creates, use null for id; the application assigns identifiers.

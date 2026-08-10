@@ -119,6 +119,7 @@ function freeGaps(
         firstDay,
         lastDay,
         { energyType: "deep_focus" },
+        school.calendarItems,
       ).map((range) => ({ start: range.start, end: range.end })),
     );
   }
@@ -300,6 +301,7 @@ export function planRevisionRunway(
         school.classes,
         school.classExceptions,
         school.settings,
+        school.calendarItems,
       ).suitable;
     });
   if (school) {
@@ -319,6 +321,7 @@ export function planRevisionRunway(
         school.classes,
         school.classExceptions,
         school.settings,
+        school.calendarItems,
       );
       const bFit = studySlotSuitability(
         b.start,
@@ -331,6 +334,7 @@ export function planRevisionRunway(
         school.classes,
         school.classExceptions,
         school.settings,
+        school.calendarItems,
       );
       if (aFit.preferred !== bFit.preferred) return aFit.preferred ? -1 : 1;
       const aEnergy = energyFitScore(

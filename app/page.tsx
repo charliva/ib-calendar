@@ -47,6 +47,8 @@ import {
   type FormEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type TouchEvent as ReactTouchEvent,
+  type WheelEvent as ReactWheelEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -55,6 +57,44 @@ import {
 } from "react";
 import { HomeworkInbox } from "@/app/homework-inbox";
 import { SchoolWorkspace } from "@/app/school-workspace";
+import { AttentionHome } from "@/app/attention-home";
+import { IntentionsPanel } from "@/app/intentions-panel";
+import { GoDeeperPanel } from "@/app/go-deeper-panel";
+import { LearningControls } from "@/app/learning-controls";
+import { TemporalField } from "@/app/ui/temporal-field";
+import {
+  buildAttentionSnapshot,
+  type AttentionCard,
+} from "@/lib/attention-engine";
+import {
+  blockChoiceToRow,
+  buildBlockChoice,
+  rowToBlockChoice,
+  updateBlockChoice,
+  type BlockChoice,
+  type BlockChoiceStatus,
+  type BlockSuggestion,
+} from "@/lib/block-choices";
+import {
+  intentionToRow,
+  makeIntention,
+  rowToIntention,
+  type Intention,
+} from "@/lib/intentions";
+import {
+  explorationToRow,
+  latestSignalFor,
+  learningSignalToRow,
+  makeLearningSignal,
+  rowToExploration,
+  rowToLearningSignal,
+  subjectChallengeSummary,
+  type ChallengeLevel,
+  type Exploration,
+  type ExplorationDirection,
+  type LearningSignal,
+  type LearningSource,
+} from "@/lib/study-intelligence";
 import {
   addDays,
   applyProposal,
@@ -63,13 +103,18 @@ import {
   dateKey,
   durationMinutes,
   energyLabels,
+  flexibilityForNewItem,
   itemToRow,
+  itemOverlapsDay,
+  isAllDayItem,
+  isCalendarSpanItem,
   kindLabels,
   makeItem,
   scheduleInsights,
   startOfWeek,
   validatePlacement,
   validateProposal,
+  withResizedDuration,
   type CalendarItem,
   type CalendarProposal,
   type EnergyRequirement,
@@ -94,13 +139,23 @@ import {
   type NowRecommendationResult,
 } from "@/lib/now-recommender";
 import {
+  isImportedTimetableItem,
+  isItemInWeek,
+  reconcileTimetableImport,
+  timetableRoomForItem,
+  subjectsAreSimilar,
+  type TimetableExtractionCandidate,
+} from "@/lib/timetable-import";
+import {
   getOfflineState,
   getPendingMutations,
   queueMutation,
   removePendingMutation,
   saveOfflineState,
+  updatePendingMutation,
   type PendingMutation,
 } from "@/lib/offline";
+import { calendarSwipeDirection, type SwipePoint } from "@/lib/week-swipe";
 import {
   assessmentToRow,
   assignmentToRow,
@@ -134,11 +189,7 @@ import { createClient } from "@/lib/supabase/client";
 type Zoom = "school" | "upcoming" | "day" | "week" | "month" | "semester";
 type PaletteMode = "command" | "filter" | "upload";
 type CommandResponse = Parameters<typeof proposalFromCommandResponse>[0];
-type ExtractionCandidate = Partial<CalendarItem> & {
-  title: string;
-  kind: ItemKind;
-  evidence: string;
-};
+type ExtractionCandidate = TimetableExtractionCandidate;
 type ExtractionResponse = {
   title: string;
   summary: string;
@@ -148,6 +199,27 @@ type ExtractionResponse = {
 const ACTIVE_START = 6;
 const ACTIVE_END = 23;
 const DAY_HOURS = Array.from({ length: 24 }, (_, hour) => hour);
+
+function classColorStyle(
+  item: CalendarItem,
+  subjects: Subject[],
+): CSSProperties | undefined {
+  if (!isImportedTimetableItem(item)) return undefined;
+  const subject = subjects.find(
+    (candidate) =>
+      candidate.id === item.subjectId ||
+      subjectsAreSimilar(
+        item.title,
+        candidate.name,
+        item.title,
+        candidate.shortName,
+      ),
+  );
+  const color = subject?.color;
+  return color?.startsWith("#")
+    ? ({ "--energy": color } as CSSProperties)
+    : undefined;
+}
 const energyTypes = Object.keys(energyLabels) as EnergyType[];
 const priorities: Priority[] = ["low", "medium", "high"];
 const flexibilities: Flexibility[] = ["fixed", "flexible", "elastic"];
@@ -292,6 +364,80 @@ function formatRange(item: CalendarItem) {
   return `${formatTime(item.startsAt)}–${formatTime(item.endsAt)}`;
 }
 
+function formatSpan(item: CalendarItem) {
+  if (!item.startsAt || !item.endsAt) return "";
+  const start = new Date(item.startsAt);
+  const end = new Date(new Date(item.endsAt).getTime() - 1);
+  if (dateKey(start) === dateKey(end)) {
+    return formatDate(start, { month: "short", day: "numeric" });
+  }
+  const sameYear = start.getFullYear() === end.getFullYear();
+  return `${formatDate(start, { month: "short", day: "numeric" })} – ${formatDate(end, {
+    month: "short",
+    day: "numeric",
+    year: sameYear ? undefined : "numeric",
+  })}`;
+}
+
+function formatDurationLabel(item: CalendarItem) {
+  const minutes = durationMinutes(item);
+  if (minutes >= 24 * 60 && minutes % (24 * 60) === 0) {
+    const days = minutes / (24 * 60);
+    return `${days} day${days === 1 ? "" : "s"}`;
+  }
+  if (minutes >= 60 && minutes % 60 === 0) {
+    const hours = minutes / 60;
+    return `${hours} hour${hours === 1 ? "" : "s"}`;
+  }
+  return `${minutes} min`;
+}
+
+function itemWithDuration(item: CalendarItem, minutes: number) {
+  if (!item.startsAt) return item;
+  const safeMinutes = Math.max(5, minutes);
+  return {
+    ...item,
+    endsAt: new Date(
+      new Date(item.startsAt).getTime() + safeMinutes * 60_000,
+    ).toISOString(),
+    durationMin: safeMinutes,
+    durationMax: safeMinutes,
+  };
+}
+
+function toggleAllDayItem(item: CalendarItem) {
+  const start = item.startsAt ? new Date(item.startsAt) : new Date();
+  if (isAllDayItem(item)) {
+    start.setHours(9, 0, 0, 0);
+    return {
+      ...item,
+      startsAt: start.toISOString(),
+      endsAt: new Date(start.getTime() + 60 * 60_000).toISOString(),
+      durationMin: 60,
+      durationMax: 60,
+    };
+  }
+  const days = Math.max(1, Math.ceil(durationMinutes(item) / (24 * 60)));
+  start.setHours(0, 0, 0, 0);
+  return {
+    ...item,
+    startsAt: start.toISOString(),
+    endsAt: addDays(start, days).toISOString(),
+    durationMin: days * 24 * 60,
+    durationMax: days * 24 * 60,
+    status: "scheduled" as const,
+  };
+}
+
+function formatProposalTiming(item: CalendarItem) {
+  if (!item.startsAt) return formatRange(item);
+  return `${formatDate(new Date(item.startsAt), {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  })} · ${formatRange(item)}`;
+}
+
 function urgencyClass(item: CalendarItem) {
   if (!item.deadline || item.status === "completed") return "";
   const remaining = new Date(item.deadline).getTime() - Date.now();
@@ -387,6 +533,50 @@ function isExtractionResponse(value: unknown): value is ExtractionResponse {
   );
 }
 
+function isDeeperResponse(
+  value: unknown,
+): value is Pick<Exploration, "framing" | "directions"> {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.framing === "string" &&
+    Array.isArray(candidate.directions) &&
+    candidate.directions.length >= 4 &&
+    candidate.directions.every((direction) => {
+      if (!direction || typeof direction !== "object") return false;
+      const entry = direction as Record<string, unknown>;
+      return (
+        ["why", "connection", "harder_problem", "application", "edge_case", "teacher_question", "understanding_check", "further_reading"].includes(String(entry.kind)) &&
+        typeof entry.title === "string" &&
+        typeof entry.prompt === "string" &&
+        typeof entry.whyUseful === "string"
+      );
+    })
+  );
+}
+
+function isBlockPolishResponse(
+  value: unknown,
+): value is { suggestions: Array<Pick<BlockSuggestion, "id" | "category" | "title" | "description" | "reason">> } {
+  if (!value || typeof value !== "object") return false;
+  const suggestions = (value as Record<string, unknown>).suggestions;
+  return (
+    Array.isArray(suggestions) &&
+    suggestions.length === 3 &&
+    suggestions.every((suggestion) => {
+      if (!suggestion || typeof suggestion !== "object") return false;
+      const entry = suggestion as Record<string, unknown>;
+      return (
+        typeof entry.id === "string" &&
+        ["recovery", "responsibility", "meaningful"].includes(String(entry.category)) &&
+        typeof entry.title === "string" &&
+        typeof entry.description === "string" &&
+        (entry.reason === null || typeof entry.reason === "string")
+      );
+    })
+  );
+}
+
 function commandItem(item: CalendarItem) {
   return {
     id: item.id,
@@ -447,6 +637,61 @@ function normalizeItemTiming(item: CalendarItem): CalendarItem {
   };
 }
 
+function syncErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message) return error.message;
+  if (error && typeof error === "object") {
+    const candidate = error as Record<string, unknown>;
+    const message =
+      typeof candidate.message === "string" ? candidate.message : "";
+    const hint = typeof candidate.hint === "string" ? candidate.hint : "";
+    const details =
+      typeof candidate.details === "string" ? candidate.details : "";
+    return [message, hint || details].filter(Boolean).join(" ") || "Sync failed";
+  }
+  return "Sync failed";
+}
+
+function safeMutationPayload(mutation: PendingMutation) {
+  if (mutation.table !== "calendar_items" || !mutation.payload) {
+    return mutation.payload;
+  }
+  const payload = { ...mutation.payload };
+  const start =
+    typeof payload.starts_at === "string" ? new Date(payload.starts_at) : null;
+  const end =
+    typeof payload.ends_at === "string" ? new Date(payload.ends_at) : null;
+  const validStart = start && Number.isFinite(start.getTime());
+  const validEnd = end && Number.isFinite(end.getTime());
+
+  if (validStart && (!validEnd || end <= start)) {
+    const minutes = Math.max(5, Number(payload.duration_min ?? 30));
+    payload.ends_at = new Date(start.getTime() + minutes * 60_000).toISOString();
+  } else if (!validStart && validEnd) {
+    payload.starts_at = null;
+    payload.ends_at = null;
+    if (payload.status === "scheduled") payload.status = "inbox";
+  } else if (!validStart && !validEnd && payload.status === "scheduled") {
+    payload.status = "inbox";
+  }
+
+  const windowStart =
+    typeof payload.window_start === "string"
+      ? new Date(payload.window_start)
+      : null;
+  const windowEnd =
+    typeof payload.window_end === "string" ? new Date(payload.window_end) : null;
+  if (
+    (windowStart && !Number.isFinite(windowStart.getTime())) ||
+    (windowEnd && !Number.isFinite(windowEnd.getTime())) ||
+    Boolean(windowStart) !== Boolean(windowEnd) ||
+    (windowStart && windowEnd && windowEnd <= windowStart)
+  ) {
+    payload.window_start = null;
+    payload.window_end = null;
+  }
+  return payload;
+}
+
 function rowToItem(row: Record<string, unknown>): CalendarItem {
   return normalizeItemTiming(
     makeItem({
@@ -454,6 +699,7 @@ function rowToItem(row: Record<string, unknown>): CalendarItem {
       kind: row.kind as ItemKind,
       title: String(row.title),
       description: String(row.description ?? ""),
+      room: String(row.room ?? ""),
       startsAt: (row.starts_at as string | null) ?? null,
       endsAt: (row.ends_at as string | null) ?? null,
       durationMin: Number(row.duration_min ?? 30),
@@ -473,6 +719,8 @@ function rowToItem(row: Record<string, unknown>): CalendarItem {
         : [],
       assignmentId: (row.assignment_id as string | null) ?? null,
       assessmentId: (row.assessment_id as string | null) ?? null,
+      intentionId: (row.intention_id as string | null) ?? null,
+      subjectId: (row.subject_id as string | null) ?? null,
       revisionStage: (row.revision_stage as string | null) ?? null,
       reviewOffsetDays:
         row.review_offset_days === null || row.review_offset_days === undefined
@@ -507,7 +755,7 @@ function simpleFallbackProposal(command: string): CalendarProposal {
     title: command.replace(/^(add|create|new)\s+/i, "").trim(),
     durationMin: Math.max(5, duration),
     durationMax: lower.includes("~") ? Math.max(10, duration + 15) : duration,
-    flexibility: kind === "event" ? "fixed" : "flexible",
+    flexibility: flexibilityForNewItem({ kind }),
     energyType: /study|essay|revision|exam|test/i.test(command)
       ? "deep_focus"
       : "light_work",
@@ -528,6 +776,24 @@ function simpleFallbackProposal(command: string): CalendarProposal {
         after: item,
       },
     ],
+  };
+}
+
+function isAttentionQuestion(command: string) {
+  return /(?:what should i|what do i|give me something useful|work on tonight|do (?:right )?now)/i.test(command);
+}
+
+function intentionFromCommand(command: string): Partial<Intention> | null {
+  const repeated = /(?:every day|daily|every week|weekly|consistently|roughly .+ per day|(?:^|\bi\s+)(?:want to\s+)?(?:understand|get better|improve|read|work on|start studying|study consistently))/i.test(command);
+  if (!repeated) return null;
+  const duration = command.match(/(\d+)\s*(?:minutes?|mins?)/i);
+  const hour = command.match(/(?:an?|one|1)\s*hours?/i);
+  return {
+    title: command.replace(/^i want to\s+/i, "").replace(/[.]$/, ""),
+    cadence: /every day|daily|per day/i.test(command) ? "daily" : /every week|weekly/i.test(command) ? "weekly" : "flexible",
+    targetSessions: /every day|daily|per day/i.test(command) ? 5 : 1,
+    targetMinutes: duration ? Number(duration[1]) : hour ? 60 : 60,
+    preferredSessionMinutes: duration ? Number(duration[1]) : hour ? 60 : 30,
   };
 }
 
@@ -567,12 +833,20 @@ function proposalFromCommandResponse(
         before?.durationMin ??
         inferredDuration ??
         30;
+      const kind = change.after.kind ?? before?.kind ?? "task";
       after = normalizeItemTiming(
         makeItem({
           ...merged,
           id: before?.id ?? crypto.randomUUID(),
           title: change.after.title ?? before?.title ?? "Untitled",
-          kind: change.after.kind ?? before?.kind ?? "task",
+          kind,
+          flexibility: before
+            ? merged.flexibility
+            : flexibilityForNewItem({
+                kind,
+                flexibility: merged.flexibility,
+                constraints: merged.constraints,
+              }),
           durationMin,
           durationMax:
             change.after.durationMax ?? before?.durationMax ?? durationMin,
@@ -646,6 +920,10 @@ export default function Home() {
   const [classExceptions, setClassExceptions] = useState<ClassException[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [assessments, setAssessments] = useState<Assessment[]>([]);
+  const [intentions, setIntentions] = useState<Intention[]>([]);
+  const [learningSignals, setLearningSignals] = useState<LearningSignal[]>([]);
+  const [explorations, setExplorations] = useState<Exploration[]>([]);
+  const [blockChoices, setBlockChoices] = useState<BlockChoice[]>([]);
   const [homeworkCaptures, setHomeworkCaptures] = useState<HomeworkCapture[]>(
     [],
   );
@@ -664,15 +942,29 @@ export default function Home() {
   const [paletteMode, setPaletteMode] = useState<PaletteMode>("command");
   const [commandText, setCommandText] = useState("");
   const [commandBusy, setCommandBusy] = useState(false);
+  const [timetableImportBusy, setTimetableImportBusy] = useState(false);
   const [filterText, setFilterText] = useState("");
   const [proposal, setProposal] = useState<CalendarProposal | null>(null);
+  const [timetableSubjectProposal, setTimetableSubjectProposal] = useState<{
+    proposalId: string;
+    subjects: Subject[];
+    reviewed: boolean;
+  } | null>(null);
   const [selectedItem, setSelectedItem] = useState<CalendarItem | null>(null);
   const [draftItem, setDraftItem] = useState<CalendarItem | null>(null);
   const [isCreatingItem, setIsCreatingItem] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [homeworkOpen, setHomeworkOpen] = useState(false);
+  const [intentionsOpen, setIntentionsOpen] = useState(false);
+  const [intentionSeed, setIntentionSeed] = useState<Partial<Intention> | null>(null);
+  const [deeperSource, setDeeperSource] = useState<LearningSource | null>(null);
+  const [deeperExploration, setDeeperExploration] = useState<Exploration | null>(null);
+  const [deeperBusy, setDeeperBusy] = useState(false);
+  const [deeperError, setDeeperError] = useState("");
   const [hudOpen, setHudOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileCreateOpen, setMobileCreateOpen] = useState(false);
   const [isCompact, setIsCompact] = useState(false);
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [dragSnap, setDragSnap] = useState<{
@@ -682,6 +974,11 @@ export default function Home() {
   } | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [email, setEmail] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [inviteToken, setInviteToken] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteUrl, setInviteUrl] = useState("");
+  const [inviteBusy, setInviteBusy] = useState(false);
   const [authSent, setAuthSent] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -690,6 +987,7 @@ export default function Home() {
   const [nowLocation, setNowLocation] = useState<CurrentStudyLocation>("home");
   const [nowEnergy, setNowEnergy] = useState<EnergyRequirement>("medium");
   const [nowComputerAvailable, setNowComputerAvailable] = useState(true);
+  const [clockNow, setClockNow] = useState(() => new Date(0));
   const [resizing, setResizing] = useState<{
     id: string;
     minutes: number;
@@ -698,33 +996,49 @@ export default function Home() {
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const resizeGestureActive = useRef(false);
+  const polishedBlocksRef = useRef(new Set<string>());
+  const calendarSwipeStartRef = useRef<SwipePoint | null>(null);
+  const calendarSwipeLastRef = useRef<SwipePoint | null>(null);
+  const suppressSwipeClickUntilRef = useRef(0);
+  const weekWheelRef = useRef({ totalX: 0, lastAt: 0, lockedUntil: 0 });
 
-  const flushPending = useCallback(async () => {
-    const pending = await getPendingMutations();
+  const flushPending = useCallback(async (ownerKey: string) => {
+    const pending = await getPendingMutations(ownerKey);
+    const failures: string[] = [];
     for (const mutation of pending) {
-      let query;
-      if (mutation.action === "insert") {
-        query = supabase.from(mutation.table).insert(mutation.payload ?? {});
-      } else if (mutation.action === "upsert") {
-        query = supabase
-          .from(mutation.table)
-          .upsert(mutation.payload ?? {}, { onConflict: "id" });
-      } else if (mutation.action === "update") {
-        query = supabase
-          .from(mutation.table)
-          .update(mutation.payload ?? {})
-          .eq("id", mutation.recordId);
-      } else {
-        query = supabase
-          .from(mutation.table)
-          .delete()
-          .eq("id", mutation.recordId);
+      try {
+        let query;
+        const payload = safeMutationPayload(mutation);
+        if (mutation.action === "insert") query = supabase.from(mutation.table).insert(payload ?? {});
+        else if (mutation.action === "upsert") query = supabase.from(mutation.table).upsert(payload ?? {}, { onConflict: "id" });
+        else if (mutation.action === "update") query = supabase.from(mutation.table).update(payload ?? {}).eq("id", mutation.recordId);
+        else query = supabase.from(mutation.table).delete().eq("id", mutation.recordId);
+        const { error } = await query;
+        if (error) throw new Error(syncErrorMessage(error));
+        if (mutation.id !== undefined) await removePendingMutation(mutation.id);
+      } catch (error) {
+        const message = syncErrorMessage(error);
+        failures.push(message);
+        await updatePendingMutation({
+          ...mutation,
+          ownerKey,
+          failureCount: (mutation.failureCount ?? 0) + 1,
+          lastError: message,
+        });
       }
-      const { error } = await query;
-      if (error) throw error;
-      if (mutation.id !== undefined) await removePendingMutation(mutation.id);
     }
+    return failures;
   }, [supabase]);
+
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get("invite");
+    if (!token || !/^[a-f0-9]{64}$/.test(token)) return;
+    const timeout = window.setTimeout(() => {
+      setInviteToken(token);
+      setAccountOpen(true);
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, []);
 
   const loadCloud = useCallback(
     async (activeUser: User) => {
@@ -738,6 +1052,10 @@ export default function Home() {
         assignmentResult,
         assessmentResult,
         homeworkResult,
+        intentionResult,
+        signalResult,
+        explorationResult,
+        blockChoiceResult,
         profileResult,
       ] = await Promise.all([
         supabase
@@ -786,6 +1104,32 @@ export default function Home() {
           .neq("status", "archived")
           .order("created_at", { ascending: false }),
         supabase
+          .from("intentions")
+          .select("*")
+          .eq("user_id", activeUser.id)
+          .neq("status", "archived")
+          .order("created_at"),
+        supabase
+          .from("learning_signals")
+          .select("*")
+          .eq("user_id", activeUser.id)
+          .order("created_at", { ascending: false })
+          .limit(500),
+        supabase
+          .from("explorations")
+          .select("*")
+          .eq("user_id", activeUser.id)
+          .neq("status", "dismissed")
+          .order("created_at", { ascending: false })
+          .limit(100),
+        supabase
+          .from("time_block_choices")
+          .select("*")
+          .eq("user_id", activeUser.id)
+          .gte("starts_at", new Date(Date.now() - 30 * 86_400_000).toISOString())
+          .order("starts_at", { ascending: false })
+          .limit(150),
+        supabase
           .from("profiles")
           .select("*")
           .eq("id", activeUser.id)
@@ -800,6 +1144,10 @@ export default function Home() {
         assignmentResult.error ??
         assessmentResult.error ??
         homeworkResult.error ??
+        intentionResult.error ??
+        signalResult.error ??
+        explorationResult.error ??
+        blockChoiceResult.error ??
         profileResult.error;
       if (error) {
         setSyncing(false);
@@ -850,6 +1198,26 @@ export default function Home() {
           rowToHomeworkCapture(row as Record<string, unknown>),
         ),
       );
+      setIntentions(
+        (intentionResult.data ?? []).map((row) =>
+          rowToIntention(row as Record<string, unknown>),
+        ),
+      );
+      setLearningSignals(
+        (signalResult.data ?? []).map((row) =>
+          rowToLearningSignal(row as Record<string, unknown>),
+        ),
+      );
+      setExplorations(
+        (explorationResult.data ?? []).map((row) =>
+          rowToExploration(row as Record<string, unknown>),
+        ),
+      );
+      setBlockChoices(
+        (blockChoiceResult.data ?? []).map((row) =>
+          rowToBlockChoice(row as Record<string, unknown>),
+        ),
+      );
       setSchoolDaySettings(
         rowToSchoolDaySettings(
           profileResult.data as Record<string, unknown> | null,
@@ -859,6 +1227,13 @@ export default function Home() {
     },
     [supabase],
   );
+
+  useEffect(() => {
+    const updateClock = () => setClockNow(new Date());
+    updateClock();
+    const timer = window.setInterval(updateClock, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const updateNetwork = () => setIsOnline(navigator.onLine);
@@ -893,6 +1268,10 @@ export default function Home() {
         setClassExceptions(stored.classExceptions ?? []);
         setAssignments((stored.assignments ?? []).map(normalizeAssignment));
         setAssessments((stored.assessments ?? []).map(normalizeAssessment));
+        setIntentions(stored.intentions ?? []);
+        setLearningSignals(stored.learningSignals ?? []);
+        setExplorations(stored.explorations ?? []);
+        setBlockChoices(stored.blockChoices ?? []);
         setHomeworkCaptures(stored.homeworkCaptures ?? []);
         setSchoolDaySettings(
           normalizeSchoolDaySettings(
@@ -929,35 +1308,49 @@ export default function Home() {
       classExceptions,
       assignments,
       assessments,
+      intentions,
+      learningSignals,
+      explorations,
+      blockChoices,
       homeworkCaptures,
       schoolDaySettings,
+      ownerKey: user?.id ?? "local",
     }).catch(() => undefined);
   }, [
     assessments,
     assignments,
+    blockChoices,
     classExceptions,
     classes,
     history,
     homeworkCaptures,
     hydrated,
+    intentions,
+    learningSignals,
+    explorations,
     items,
     schoolDaySettings,
     subjects,
+    user,
   ]);
 
   useEffect(() => {
     if (!hydrated || !isOnline || !user) return;
     let cancelled = false;
-    flushPending()
-      .then(() => {
-        if (!cancelled) return loadCloud(user);
+    flushPending(user.id)
+      .then((failures) => {
+        if (cancelled) return;
+        if (failures.length) {
+          setNotice(`Sync paused for ${failures.length} change${failures.length === 1 ? "" : "s"}. Your local work is safe.`);
+          setSyncing(false);
+          return;
+        }
+        return loadCloud(user);
       })
       .catch((error) => {
         if (!cancelled) {
           setNotice(
-            `Sync paused: ${
-              error instanceof Error ? error.message : "Unknown error"
-            }`,
+            `Sync paused: ${syncErrorMessage(error)}`,
           );
           setSyncing(false);
         }
@@ -975,6 +1368,10 @@ export default function Home() {
         setPaletteOpen(true);
         setPaletteMode("command");
         setHomeworkOpen(false);
+        setIntentionsOpen(false);
+        setIntentionSeed(null);
+        setDeeperSource(null);
+        setDeeperExploration(null);
       }
       if (modifier && event.shiftKey && event.key.toLowerCase() === "h") {
         event.preventDefault();
@@ -996,42 +1393,48 @@ export default function Home() {
         setNowOpen(false);
         setPaletteOpen(false);
         setProposal(null);
+        setTimetableSubjectProposal(null);
         setSelectedItem(null);
         setDraftItem(null);
         setIsCreatingItem(false);
         setHomeworkOpen(false);
+        setIntentionsOpen(false);
+        setIntentionSeed(null);
+        setMobileMenuOpen(false);
+        setMobileCreateOpen(false);
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   });
 
-  async function persistMutation(mutation: PendingMutation) {
+  const persistMutation = useCallback(async (mutation: PendingMutation) => {
+    const scopedMutation = { ...mutation, ownerKey: user?.id ?? "local" };
     if (user && isOnline) {
       let query;
-      if (mutation.action === "insert") {
-        query = supabase.from(mutation.table).insert(mutation.payload ?? {});
-      } else if (mutation.action === "upsert") {
+      if (scopedMutation.action === "insert") {
+        query = supabase.from(scopedMutation.table).insert(scopedMutation.payload ?? {});
+      } else if (scopedMutation.action === "upsert") {
         query = supabase
-          .from(mutation.table)
-          .upsert(mutation.payload ?? {}, { onConflict: "id" });
-      } else if (mutation.action === "update") {
+          .from(scopedMutation.table)
+          .upsert(scopedMutation.payload ?? {}, { onConflict: "id" });
+      } else if (scopedMutation.action === "update") {
         query = supabase
-          .from(mutation.table)
-          .update(mutation.payload ?? {})
-          .eq("id", mutation.recordId);
+          .from(scopedMutation.table)
+          .update(scopedMutation.payload ?? {})
+          .eq("id", scopedMutation.recordId);
       } else {
         query = supabase
-          .from(mutation.table)
+          .from(scopedMutation.table)
           .delete()
-          .eq("id", mutation.recordId);
+          .eq("id", scopedMutation.recordId);
       }
       const { error } = await query;
       if (!error) return true;
     }
-    await queueMutation(mutation);
+    await queueMutation(scopedMutation);
     return false;
-  }
+  }, [isOnline, supabase, user]);
 
   function recordHistory(label: string, snapshot = items) {
     const entry: HistoryEntry = {
@@ -1206,7 +1609,21 @@ export default function Home() {
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/calendar-item", item.id);
     event.dataTransfer.setData("text/plain", item.id);
+    const transparentDragImage = document.createElement("span");
+    transparentDragImage.style.cssText =
+      "position:fixed;top:-10px;left:-10px;width:1px;height:1px;opacity:0;pointer-events:none";
+    document.body.appendChild(transparentDragImage);
+    event.dataTransfer.setDragImage(transparentDragImage, 0, 0);
+    window.setTimeout(() => transparentDragImage.remove(), 0);
     setDraggingItemId(item.id);
+    if (item.startsAt) {
+      const start = new Date(item.startsAt);
+      setDragSnap({
+        day: dateKey(start),
+        hour: start.getHours(),
+        minute: start.getMinutes(),
+      });
+    }
   }
 
   function onCalendarDragOver(
@@ -1291,7 +1708,7 @@ export default function Home() {
     // Manual resizing shouldn't be restricted by the
     // scheduler's preferred duration range.
     const minimum = 15;
-    const maximum = 720;
+    const maximum = 525_600;
 
     const onMove = (moveEvent: PointerEvent) => {
       moveEvent.preventDefault();
@@ -1336,14 +1753,9 @@ export default function Home() {
 
       if (nextMinutes === original) return;
 
+      const resizedItem = withResizedDuration(item, nextMinutes);
       const validation = validatePlacement(
-        item.flexibility === "fixed"
-          ? {
-              ...item,
-              durationMin: nextMinutes,
-              durationMax: nextMinutes,
-            }
-          : item,
+        resizedItem,
         nextStart.toISOString(),
         nextEnd.toISOString(),
         items,
@@ -1357,19 +1769,9 @@ export default function Home() {
 
       updateItem(
         {
-          ...item,
+          ...resizedItem,
           startsAt: nextStart.toISOString(),
           endsAt: nextEnd.toISOString(),
-
-          ...(item.flexibility === "fixed"
-            ? {
-                durationMin: nextMinutes,
-                durationMax: nextMinutes,
-              }
-            : {
-                durationMin: Math.min(item.durationMin, nextMinutes),
-                durationMax: Math.max(item.durationMax, nextMinutes),
-              }),
         },
         `Resize “${item.title}”`,
       );
@@ -1399,13 +1801,35 @@ export default function Home() {
       setCommandText("");
       return;
     }
+    if (isAttentionQuestion(clean)) {
+      setZoom("upcoming");
+      setPaletteOpen(false);
+      setCommandText("");
+      setNotice("Your attention home has been refreshed for the time and energy you have now.");
+      return;
+    }
+    const intentionDraft = intentionFromCommand(clean);
+    if (intentionDraft) {
+      setIntentionSeed(intentionDraft);
+      setIntentionsOpen(true);
+      setPaletteOpen(false);
+      setCommandText("");
+      return;
+    }
     setCommandBusy(true);
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 7_500);
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session?.access_token) {
+        throw new Error("Sign in to use AI commands");
+      }
       const response = await fetch("/api/command", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+        },
         signal: controller.signal,
         body: JSON.stringify({
           command: clean,
@@ -1420,7 +1844,11 @@ export default function Home() {
       }
       setProposal(proposalFromCommandResponse(raw, items));
     } catch {
-      setProposal(simpleFallbackProposal(clean));
+      if (/^(?:add|create|schedule|new)\b/i.test(clean) && !/(?:move|delete|remove|cancel)\b/i.test(clean)) {
+        setProposal(simpleFallbackProposal(clean));
+      } else {
+        setNotice(user ? "I couldn't interpret that safely. Try a more specific command." : "Sign in to use AI schedule changes. Local captures and intentions still work.");
+      }
     } finally {
       window.clearTimeout(timeoutId);
       setCommandBusy(false);
@@ -1429,14 +1857,28 @@ export default function Home() {
     }
   }
 
-  async function onDocumentSelected(file: File | null) {
+  async function onDocumentSelected(
+    file: File | null,
+    options: {
+      mode?: "calendar_document" | "school_timetable";
+      weekStart?: string;
+    } = {},
+  ) {
     if (!file) return;
+    const timetableMode = options.mode === "school_timetable";
+    if (timetableMode && !file.type.startsWith("image/")) {
+      setNotice("Choose an image screenshot for the weekly timetable import.");
+      return;
+    }
     if (file.size > 5_000_000) {
       setNotice("Choose a document smaller than 5 MB.");
       return;
     }
-    setCommandBusy(true);
+    if (timetableMode) setTimetableImportBusy(true);
+    else setCommandBusy(true);
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session?.access_token) throw new Error("Sign in to use document extraction");
       const data = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result));
@@ -1445,18 +1887,81 @@ export default function Home() {
       });
       const response = await fetch("/api/extract", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+        },
         body: JSON.stringify({
           filename: file.name,
           mediaType: file.type || "application/pdf",
           data,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          mode: options.mode ?? "calendar_document",
+          weekStart: options.weekStart,
+          subjects: timetableMode
+            ? subjects.map((subject) => ({
+                name: subject.name,
+                shortName: subject.shortName,
+                teacher: subject.teacher,
+                room: subject.room,
+              }))
+            : [],
         }),
       });
       if (!response.ok) throw new Error("Extraction failed");
       const raw: unknown = await response.json();
       if (!isExtractionResponse(raw)) {
         throw new Error("AI returned an invalid document proposal");
+      }
+      if (timetableMode && options.weekStart) {
+        const { lessons, newSubjects } = reconcileTimetableImport(
+          raw.items,
+          options.weekStart,
+          subjects,
+        );
+        if (!lessons.length) {
+          throw new Error("No exact lessons found in the selected week");
+        }
+        const previousWeek = items.filter(
+          (item) =>
+            isImportedTimetableItem(item) &&
+            isItemInWeek(item, options.weekStart!),
+        );
+        const changes: ProposalChange[] = [
+          ...previousWeek.map((item) => ({
+            id: crypto.randomUUID(),
+            type: "delete" as const,
+            itemId: item.id,
+            reason: "Replace the previous screenshot import for this week.",
+            before: item,
+            after: null,
+          })),
+          ...lessons.map(({ item, evidence }) => ({
+            id: crypto.randomUUID(),
+            type: "create" as const,
+            itemId: null,
+            reason: evidence,
+            before: null,
+            after: item,
+          })),
+        ];
+        const proposalId = crypto.randomUUID();
+        setProposal({
+          id: proposalId,
+          title: `Import ${lessons.length} timetable lesson${lessons.length === 1 ? "" : "s"}`,
+          summary: `${previousWeek.length ? `Replace ${previousWeek.length} earlier imported lesson${previousWeek.length === 1 ? "" : "s"}. ` : ""}${newSubjects.length ? `Add ${newSubjects.length} new subject${newSubjects.length === 1 ? "" : "s"}; similar labels were matched to subjects you already have. ` : ""}This applies only to the week of ${options.weekStart}. Review everything before applying.`,
+          source: "document",
+          changes,
+        });
+        setTimetableSubjectProposal(
+          newSubjects.length
+            ? { proposalId, subjects: newSubjects, reviewed: false }
+            : null,
+        );
+        setAnchorDate(options.weekStart);
+        setSelectedDay(options.weekStart);
+        setPaletteOpen(false);
+        return;
       }
       const changes: ProposalChange[] = raw.items.map((candidate) => ({
         id: crypto.randomUUID(),
@@ -1467,6 +1972,11 @@ export default function Home() {
         after: makeItem({
           ...candidate,
           id: crypto.randomUUID(),
+          flexibility: flexibilityForNewItem({
+            kind: candidate.kind,
+            flexibility: candidate.flexibility,
+            constraints: candidate.constraints,
+          }),
           source: "document",
           syncStatus: "pending",
         }),
@@ -1478,19 +1988,30 @@ export default function Home() {
         source: "document",
         changes,
       });
+      setTimetableSubjectProposal(null);
       setPaletteOpen(false);
     } catch {
       setNotice(
-        "I couldn’t read that file. Try a clear image, text file, or PDF.",
+        timetableMode
+          ? "I couldn’t find exact lessons in that screenshot. Check the selected week and try a clearer full timetable image."
+          : "I couldn’t read that file. Try a clear image, text file, or PDF.",
       );
     } finally {
-      setCommandBusy(false);
+      if (timetableMode) setTimetableImportBusy(false);
+      else setCommandBusy(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
 
   function approveProposal() {
     if (!proposal) return;
+    if (
+      timetableSubjectProposal?.proposalId === proposal.id &&
+      !timetableSubjectProposal.reviewed
+    ) {
+      setNotice("Review the detected subjects before applying the timetable.");
+      return;
+    }
     const validation = validateProposal(proposal, items);
     if (!validation.valid) {
       setNotice("This proposal failed deterministic scheduling checks.");
@@ -1503,14 +2024,158 @@ export default function Home() {
     }));
     transitionState(() => setItems(next));
     syncSnapshotDiff(items, next);
+    const importedSubjects =
+      timetableSubjectProposal?.proposalId === proposal.id
+        ? timetableSubjectProposal.subjects
+        : [];
+    if (importedSubjects.length) {
+      setSubjects((current) => [
+        ...current.filter(
+          (subject) =>
+            !importedSubjects.some((candidate) => candidate.id === subject.id),
+        ),
+        ...importedSubjects,
+      ]);
+      importedSubjects.forEach((subject) => {
+        persistMutation({
+          table: "subjects",
+          action: "upsert",
+          recordId: subject.id,
+          payload: subjectToRow(subject),
+        }).catch(() => undefined);
+      });
+    }
     setProposal(null);
-    setNotice(`Applied: ${proposal.title}. Cmd+Z to undo.`);
+    setTimetableSubjectProposal(null);
+    setNotice(
+      `Applied: ${proposal.title}.${
+        importedSubjects.length
+          ? ` Added ${importedSubjects.length} subject${importedSubjects.length === 1 ? "" : "s"}.`
+          : ""
+      } Cmd+Z to undo calendar changes.`,
+    );
+  }
+
+  function closeProposal() {
+    setProposal(null);
+    setTimetableSubjectProposal(null);
+  }
+
+  function updateTimetableSubject(
+    subjectId: string,
+    patch: Partial<Pick<Subject, "name" | "shortName" | "teacher" | "room" | "color">>,
+  ) {
+    const currentSubject = timetableSubjectProposal?.subjects.find(
+      (subject) => subject.id === subjectId,
+    );
+    if (!currentSubject) return;
+    if (patch.name !== undefined && patch.name !== currentSubject.name) {
+      setProposal((current) =>
+        current
+          ? {
+              ...current,
+              changes: current.changes.map((change) =>
+                change.after?.title === currentSubject.name
+                  ? {
+                      ...change,
+                      after: { ...change.after, title: patch.name || currentSubject.name },
+                    }
+                  : change,
+              ),
+            }
+          : current,
+      );
+    }
+    setTimetableSubjectProposal((current) =>
+      current
+        ? {
+            ...current,
+            subjects: current.subjects.map((subject) =>
+              subject.id === subjectId ? { ...subject, ...patch } : subject,
+            ),
+          }
+        : current,
+    );
+  }
+
+  function addTimetableSubject() {
+    const subject: Subject = {
+      id: crypto.randomUUID(),
+      name: "",
+      shortName: "",
+      teacher: "",
+      room: "",
+      color: "#7f70e8",
+      icon: "",
+      createdAt: new Date().toISOString(),
+    };
+    setTimetableSubjectProposal((current) =>
+      current
+        ? { ...current, subjects: [...current.subjects, subject] }
+        : current,
+    );
+  }
+
+  function removeTimetableSubject(subjectId: string) {
+    setTimetableSubjectProposal((current) =>
+      current
+        ? {
+            ...current,
+            subjects: current.subjects.filter((subject) => subject.id !== subjectId),
+          }
+        : current,
+    );
+  }
+
+  function finishTimetableSubjectReview() {
+    const pending = timetableSubjectProposal?.subjects ?? [];
+    if (pending.some((subject) => !subject.name.trim() || !subject.shortName.trim())) {
+      setNotice("Give every new subject a name and short name, or remove it.");
+      return;
+    }
+    setProposal((current) =>
+      current
+        ? {
+            ...current,
+            changes: current.changes.map((change) => {
+              const subject = pending.find(
+                (candidate) => candidate.name === change.after?.title,
+              );
+              return subject && change.after
+                ? {
+                    ...change,
+                    after: { ...change.after, title: subject.name.trim() },
+                  }
+                : change;
+            }),
+          }
+        : current,
+    );
+    setTimetableSubjectProposal((current) =>
+      current
+        ? {
+            ...current,
+            reviewed: true,
+            subjects: current.subjects.map((subject) => ({
+              ...subject,
+              name: subject.name.trim(),
+              shortName: subject.shortName.trim().toUpperCase(),
+              teacher: subject.teacher.trim(),
+              room: subject.room.trim(),
+            })),
+          }
+        : current,
+    );
   }
 
   function openItem(item: CalendarItem) {
+    const editableItem = structuredClone(item);
+    if (isImportedTimetableItem(editableItem) && !editableItem.room) {
+      editableItem.room = timetableRoomForItem(editableItem);
+    }
     setIsCreatingItem(false);
     setSelectedItem(item);
-    setDraftItem(structuredClone(item));
+    setDraftItem(editableItem);
   }
 
   function openNewEvent(
@@ -1536,7 +2201,7 @@ export default function Home() {
     } else {
       start.setHours(hour, minute ?? 0, 0, 0);
     }
-    const minutes = Math.max(15, Math.min(720, duration));
+    const minutes = Math.max(15, duration);
     const end = new Date(start.getTime() + minutes * 60_000);
     const item = makeItem({
       kind: "event",
@@ -1546,10 +2211,57 @@ export default function Home() {
       durationMin: minutes,
       durationMax: minutes,
       status: "scheduled",
-      flexibility: "fixed",
+      flexibility: "flexible",
       source: "manual",
     });
     setSelectedDay(day);
+    setIsCreatingItem(true);
+    setSelectedItem(item);
+    setDraftItem(structuredClone(item));
+  }
+
+  function openNewSpan(startDay: string, endDay: string) {
+    const first = dateFromKey(startDay);
+    const last = dateFromKey(endDay);
+    const rangeStart = first <= last ? first : last;
+    const rangeLast = first <= last ? last : first;
+    rangeStart.setHours(0, 0, 0, 0);
+    rangeLast.setHours(0, 0, 0, 0);
+    const rangeEnd = addDays(rangeLast, 1);
+    rangeEnd.setHours(0, 0, 0, 0);
+    const duration = Math.max(
+      24 * 60,
+      Math.round((rangeEnd.getTime() - rangeStart.getTime()) / 60_000),
+    );
+    const item = makeItem({
+      kind: "event",
+      title: "",
+      startsAt: rangeStart.toISOString(),
+      endsAt: rangeEnd.toISOString(),
+      durationMin: duration,
+      durationMax: duration,
+      status: "scheduled",
+      flexibility: "flexible",
+      source: "manual",
+    });
+    setSelectedDay(dateKey(rangeStart));
+    setIsCreatingItem(true);
+    setSelectedItem(item);
+    setDraftItem(structuredClone(item));
+  }
+
+  function openNewTask() {
+    const item = makeItem({
+      kind: "task",
+      title: "",
+      startsAt: null,
+      endsAt: null,
+      durationMin: 30,
+      durationMax: 60,
+      status: "inbox",
+      flexibility: "flexible",
+      source: "manual",
+    });
     setIsCreatingItem(true);
     setSelectedItem(item);
     setDraftItem(structuredClone(item));
@@ -1708,6 +2420,7 @@ export default function Home() {
       classes,
       classExceptions,
       settings: schoolDaySettings,
+      calendarItems: items,
     });
     if (!result.proposal) {
       const progress = assignmentProgress(assignment, items);
@@ -1834,7 +2547,9 @@ export default function Home() {
     setNotice(
       session.status === "completed"
         ? "Work session reopened."
-        : "Work session completed. Assignment progress updated.",
+        : session.intentionId
+          ? "Work session completed. Intention progress updated."
+          : "Work session completed. Assignment progress updated.",
     );
   }
 
@@ -1871,6 +2586,7 @@ export default function Home() {
       classes,
       classExceptions,
       settings: schoolDaySettings,
+      calendarItems: items,
     });
     if (!result.proposal) {
       setNotice(
@@ -1909,6 +2625,7 @@ export default function Home() {
         classes,
         classExceptions,
         settings: schoolDaySettings,
+        calendarItems: items,
       },
     );
     if (reviewProposal) {
@@ -1949,21 +2666,29 @@ export default function Home() {
     }).catch(() => undefined);
   }
 
-  function captureHomework(rawText: string, subjectOverride?: string | null) {
+  function captureHomework(
+    rawText: string,
+    overrides: {
+      subjectId?: string | null;
+      deadline?: string | null;
+      estimatedMinutes?: number | null;
+    } = {},
+  ) {
     const parsed = parseHomework(
       rawText,
       subjects,
       new Date(),
-      subjectOverride,
+      overrides.subjectId,
     );
     const capture: HomeworkCapture = {
       id: crypto.randomUUID(),
       rawText: parsed.rawText,
       title: parsed.title,
-      subjectId: parsed.subjectId,
-      deadline: parsed.deadline,
+      subjectId: overrides.subjectId ?? parsed.subjectId,
+      deadline: overrides.deadline ?? parsed.deadline,
       taskType: parsed.taskType,
-      estimatedMinutes: parsed.estimatedMinutes,
+      estimatedMinutes:
+        overrides.estimatedMinutes ?? parsed.estimatedMinutes,
       status: "captured",
       convertedAssignmentId: null,
       scheduledCalendarItemId: null,
@@ -2159,15 +2884,21 @@ export default function Home() {
   function saveDraft(event: FormEvent) {
     event.preventDefault();
     if (!draftItem) return;
-    let nextDraft = draftItem;
+    let nextDraft =
+      isCreatingItem && !isImportedTimetableItem(draftItem)
+        ? {
+            ...draftItem,
+            flexibility: flexibilityForNewItem(draftItem),
+          }
+        : draftItem;
     if (
-      draftItem.flexibility === "fixed" &&
-      draftItem.startsAt &&
-      draftItem.endsAt
+      nextDraft.flexibility === "fixed" &&
+      nextDraft.startsAt &&
+      nextDraft.endsAt
     ) {
-      const minutes = Math.max(15, durationMinutes(draftItem));
+      const minutes = Math.max(15, durationMinutes(nextDraft));
       nextDraft = {
-        ...draftItem,
+        ...nextDraft,
         durationMin: minutes,
         durationMax: minutes,
       };
@@ -2206,20 +2937,91 @@ export default function Home() {
     setIsCreatingItem(false);
   }
 
-  async function sendMagicLink(event: FormEvent) {
+  async function sendVerificationCode(event: FormEvent) {
     event.preventDefault();
     if (!email.trim()) return;
     setAuthBusy(true);
-    const { error } = await supabase.auth.signInWithOtp({
+    let errorMessage = "";
+    if (inviteToken) {
+      const response = await fetch("/api/invitations/claim", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), token: inviteToken }),
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) errorMessage = result.error ?? "Could not accept invitation";
+    } else {
+      const { error } = await supabase.auth.signInWithOtp({
+        email: email.trim(),
+        options: { shouldCreateUser: false },
+      });
+      errorMessage = error?.message ?? "";
+    }
+    setAuthBusy(false);
+    if (errorMessage) {
+      setNotice(errorMessage);
+      return;
+    }
+    setAuthSent(true);
+  }
+
+  async function verifyCode(event: FormEvent) {
+    event.preventDefault();
+    if (!email.trim() || !verificationCode.trim()) return;
+    setAuthBusy(true);
+    const { error } = await supabase.auth.verifyOtp({
       email: email.trim(),
-      options: { emailRedirectTo: window.location.origin },
+      token: verificationCode.replace(/\s/g, ""),
+      type: "email",
     });
     setAuthBusy(false);
     if (error) {
       setNotice(error.message);
       return;
     }
-    setAuthSent(true);
+    if (inviteToken) {
+      window.history.replaceState({}, "", window.location.pathname);
+      setInviteToken("");
+    }
+    setVerificationCode("");
+    setAuthSent(false);
+    setNotice("Signed in. Your calendar is syncing now.");
+  }
+
+  async function createInvitation(sendCode: boolean) {
+    setInviteBusy(true);
+    setInviteUrl("");
+    const { data } = await supabase.auth.getSession();
+    const response = await fetch("/api/invitations", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${data.session?.access_token ?? ""}`,
+      },
+      body: JSON.stringify({ email: sendCode ? inviteEmail : "" }),
+    });
+    const result = (await response.json()) as {
+      error?: string;
+      inviteUrl?: string;
+    };
+    setInviteBusy(false);
+    if (!response.ok || !result.inviteUrl) {
+      setNotice(result.error ?? "Could not create invitation");
+      return;
+    }
+    if (sendCode) {
+      setInviteUrl("");
+      setNotice(`Account ready. A verification code was sent to ${inviteEmail.trim()}.`);
+      setInviteEmail("");
+    } else {
+      setInviteUrl(result.inviteUrl);
+      try {
+        await navigator.clipboard.writeText(result.inviteUrl);
+        setNotice("One-time invite link copied.");
+      } catch {
+        setNotice("Invite link created. Copy it below.");
+      }
+    }
   }
 
   async function signOut() {
@@ -2232,6 +3034,10 @@ export default function Home() {
     setClassExceptions([]);
     setAssignments([]);
     setAssessments([]);
+    setIntentions([]);
+    setLearningSignals([]);
+    setExplorations([]);
+    setBlockChoices([]);
     setHomeworkCaptures([]);
     setSchoolDaySettings(DEFAULT_SCHOOL_DAY_SETTINGS);
     setUndoStack([]);
@@ -2243,8 +3049,13 @@ export default function Home() {
       classExceptions: [],
       assignments: [],
       assessments: [],
+      intentions: [],
+      learningSignals: [],
+      explorations: [],
+      blockChoices: [],
       homeworkCaptures: [],
       schoolDaySettings: DEFAULT_SCHOOL_DAY_SETTINGS,
+      ownerKey: "local",
     });
     setNotice("Signed out. This device now has a fresh local calendar.");
   }
@@ -2262,6 +3073,7 @@ export default function Home() {
       currentLocation: nowLocation,
       currentEnergy: nowEnergy,
       computerAvailable: nowComputerAvailable,
+      learningSignals,
     });
   }
 
@@ -2275,6 +3087,21 @@ export default function Home() {
   }
 
   function startNow(recommendation: NowRecommendation) {
+    if (recommendation.source === "exploration") {
+      const subject = subjects.find((entry) => entry.id === recommendation.subjectId);
+      if (subject) {
+        openGoDeeper({
+          type: "subject",
+          id: subject.id,
+          title: subject.name,
+          subjectId: subject.id,
+          subjectName: subject.name,
+          context: "Suggested because recent work felt too easy.",
+        });
+      }
+      setNowOpen(false);
+      return;
+    }
     const startedAt = new Date();
     const fresh = nowRecommendations(startedAt).recommendations.find(
       (candidate) => candidate.id === recommendation.id,
@@ -2352,6 +3179,7 @@ export default function Home() {
           ],
           assignmentId: fresh.assignmentId,
           assessmentId: fresh.assessmentId,
+          subjectId: fresh.subjectId,
           revisionStage: fresh.revisionStage,
           taskContext: fresh.taskContext,
           computerRequired: fresh.computerRequired,
@@ -2383,6 +3211,305 @@ export default function Home() {
         validation.warnings[0] ? ` ${validation.warnings[0]}` : ""
       }`,
     );
+  }
+
+  function saveIntention(intention: Intention) {
+    const normalized = makeIntention(intention);
+    setIntentions((current) => [normalized, ...current.filter((entry) => entry.id !== normalized.id)]);
+    persistMutation({ table: "intentions", action: "upsert", recordId: normalized.id, payload: intentionToRow(normalized) }).catch(() => undefined);
+    setIntentionSeed(null);
+    setNotice(`Saved intention “${normalized.title}”. No calendar time was created.`);
+  }
+
+  function deleteIntention(intention: Intention) {
+    const archived = { ...intention, status: "archived" as const };
+    setIntentions((current) => current.map((entry) => entry.id === archived.id ? archived : entry));
+    persistMutation({ table: "intentions", action: "update", recordId: archived.id, payload: { status: "archived" } }).catch(() => undefined);
+    setNotice(`Archived “${intention.title}”.`);
+  }
+
+  function startIntention(intention: Intention, requestedMinutes = intention.preferredSessionMinutes) {
+    const start = new Date();
+    start.setSeconds(0, 0);
+    const minutes = Math.max(5, Math.min(240, requestedMinutes));
+    const end = new Date(start.getTime() + minutes * 60_000);
+    const task = makeItem({
+      kind: "task",
+      title: intention.title,
+      description: intention.notes || "A small step toward this intention.",
+      startsAt: start.toISOString(),
+      endsAt: end.toISOString(),
+      durationMin: minutes,
+      durationMax: minutes,
+      deadline: intention.horizonEnd ? `${intention.horizonEnd}T23:59:00` : null,
+      energyType: intention.workType === "deep_focus" || intention.workType === "problem_solving" ? "deep_focus" : "light_work",
+      priority: intention.priority,
+      flexibility: "elastic",
+      intentionId: intention.id,
+      subjectId: intention.subjectId,
+      taskContext: intention.taskContext,
+      workType: intention.workType,
+      requiredEnergy: intention.requiredEnergy,
+      status: "scheduled",
+      source: "manual",
+    });
+    const validation = validatePlacement(task, start.toISOString(), end.toISOString(), items);
+    if (!validation.valid) {
+      setNotice(validation.errors[0] ?? "That intention does not fit right now.");
+      return;
+    }
+    createItem(task);
+    setIntentionsOpen(false);
+    setNotice(`Started “${intention.title}” for ${minutes} minutes.`);
+  }
+
+  function subjectName(subjectId: string | null) {
+    return subjects.find((subject) => subject.id === subjectId)?.name ?? null;
+  }
+
+  function sourceForCalendarItem(item: CalendarItem): LearningSource {
+    const assignment = item.assignmentId
+      ? assignments.find((entry) => entry.id === item.assignmentId)
+      : null;
+    const assessment = item.assessmentId
+      ? assessments.find((entry) => entry.id === item.assessmentId)
+      : null;
+    const subjectId = item.subjectId ?? assignment?.subjectId ?? assessment?.subjectId ?? null;
+    return {
+      type: "calendar_item",
+      id: item.id,
+      title: item.title,
+      subjectId,
+      subjectName: subjectName(subjectId),
+      context: [item.description, item.revisionStage, item.workType].filter(Boolean).join(" · "),
+    };
+  }
+
+  function recordChallenge(source: LearningSource, challengeLevel: ChallengeLevel) {
+    const signal = makeLearningSignal(source, challengeLevel);
+    setLearningSignals((current) => [signal, ...current]);
+    persistMutation({
+      table: "learning_signals",
+      action: "insert",
+      recordId: signal.id,
+      payload: learningSignalToRow(signal),
+    }).catch(() => undefined);
+    setNotice(`Challenge noted: ${challengeLevel === "not_understood" ? "not understood yet" : challengeLevel.replace("_", " ")}.`);
+  }
+
+  async function generateDeeper(source: LearningSource, fresh = false) {
+    if (!fresh) {
+      const cached = explorations.find(
+        (entry) =>
+          entry.sourceType === source.type &&
+          entry.sourceId === source.id &&
+          entry.sourceTitle === source.title &&
+          entry.status !== "dismissed",
+      );
+      if (cached) {
+        setDeeperExploration(cached);
+        return;
+      }
+    }
+    setDeeperBusy(true);
+    setDeeperError("");
+    setDeeperExploration(null);
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session?.access_token) throw new Error("Sign in to use Go Deeper. Challenge feedback still works locally.");
+      const latest = latestSignalFor(source, learningSignals);
+      const summary = subjectChallengeSummary(source.subjectId, learningSignals);
+      const response = await fetch("/api/go-deeper", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${data.session.access_token}`,
+        },
+        body: JSON.stringify({
+          source: {
+            type: source.type,
+            title: source.title,
+            subjectName: source.subjectName ?? null,
+            context: source.context ?? "",
+          },
+          challengeLevel: latest?.challengeLevel ?? null,
+          challengeSummary: {
+            tooEasy: summary.counts.too_easy,
+            goodChallenge: summary.counts.good_challenge,
+            difficult: summary.counts.difficult,
+            notUnderstood: summary.counts.not_understood,
+          },
+        }),
+      });
+      const raw: unknown = await response.json();
+      if (!response.ok || !isDeeperResponse(raw)) throw new Error("No useful exploration was returned. Try again in a moment.");
+      const exploration: Exploration = {
+        id: crypto.randomUUID(),
+        sourceType: source.type,
+        sourceId: source.id,
+        sourceTitle: source.title,
+        sourceContext: source.context ?? "",
+        subjectId: source.subjectId,
+        challengeLevel: latest?.challengeLevel ?? null,
+        framing: raw.framing,
+        directions: raw.directions,
+        status: "generated",
+        promptVersion: 1,
+        createdAt: new Date().toISOString(),
+      };
+      setExplorations((current) => [exploration, ...current]);
+      setDeeperExploration(exploration);
+      persistMutation({ table: "explorations", action: "insert", recordId: exploration.id, payload: explorationToRow(exploration) }).catch(() => undefined);
+    } catch (error) {
+      setDeeperError(error instanceof Error ? error.message : "Go Deeper is unavailable right now.");
+    } finally {
+      setDeeperBusy(false);
+    }
+  }
+
+  function openGoDeeper(source: LearningSource) {
+    setDeeperSource(source);
+    setDeeperExploration(null);
+    setDeeperError("");
+    generateDeeper(source).catch(() => undefined);
+  }
+
+  function saveExploration(exploration: Exploration) {
+    const saved = { ...exploration, status: "saved" as const };
+    setExplorations((current) => current.map((entry) => entry.id === saved.id ? saved : entry));
+    setDeeperExploration(saved);
+    persistMutation({ table: "explorations", action: "update", recordId: saved.id, payload: { status: "saved" } }).catch(() => undefined);
+    setNotice("Exploration saved for later.");
+  }
+
+  function startExplorationDirection(direction: ExplorationDirection) {
+    if (!deeperSource) return;
+    const start = new Date();
+    start.setSeconds(0, 0);
+    const end = new Date(start.getTime() + 15 * 60_000);
+    const base = makeItem({
+      kind: "task",
+      title: `${direction.title} · explore`,
+      description: `${direction.prompt}\n\nWhy it is useful: ${direction.whyUseful}`,
+      durationMin: 15,
+      durationMax: 15,
+      startsAt: start.toISOString(),
+      endsAt: end.toISOString(),
+      energyType: "deep_focus",
+      priority: "low",
+      flexibility: "elastic",
+      subjectId: deeperSource.subjectId,
+      workType: "problem_solving",
+      requiredEnergy: "high",
+      status: "scheduled",
+      source: "manual",
+      constraints: ["Chosen from Go Deeper", `Source: ${deeperSource.title}`],
+    });
+    const validation = validatePlacement(base, base.startsAt!, base.endsAt!, items);
+    if (validation.valid) {
+      createItem(base);
+      setNotice(`Started a 15-minute exploration: “${direction.title}”.`);
+    } else {
+      createItem({ ...base, startsAt: null, endsAt: null, status: "inbox" });
+      setNotice(`Saved “${direction.title}” as a 15-minute possibility; your current fixed event stays protected.`);
+    }
+    setDeeperSource(null);
+  }
+
+  function openAttentionCard(card: AttentionCard) {
+    if (card.source === "calendar_item" && card.sourceId) {
+      const item = items.find((entry) => entry.id === card.sourceId);
+      if (item) openItem(item);
+      return;
+    }
+    if (card.source === "recommendation" && attentionSnapshot.recommendation) {
+      openNowRecommendations();
+      return;
+    }
+    if (card.source === "intention" && card.sourceId) {
+      const intention = intentions.find((entry) => entry.id === card.sourceId);
+      setIntentionSeed(intention ?? null);
+      setIntentionsOpen(true);
+      return;
+    }
+    if (card.source === "class") {
+      setZoom("school");
+      return;
+    }
+    setZoom("school");
+    setNotice(`Opened school work for “${card.title}”.`);
+  }
+
+  const saveBlockChoice = useCallback((choice: BlockChoice) => {
+    setBlockChoices((current) => [
+      choice,
+      ...current.filter((entry) => entry.id !== choice.id),
+    ].slice(0, 150));
+    persistMutation({
+      table: "time_block_choices",
+      action: "upsert",
+      recordId: choice.id,
+      payload: blockChoiceToRow(choice),
+    }).catch(() => undefined);
+  }, [persistMutation]);
+
+  function selectBlockSuggestion(suggestion: BlockSuggestion) {
+    if (!currentBlockChoice) return;
+    const next = updateBlockChoice(
+      currentBlockChoice,
+      suggestion.id,
+      "selected",
+    );
+    saveBlockChoice(next);
+    setNotice(`This ${next.context.label.toLowerCase()}: “${suggestion.title}”. You can change your mind.`);
+  }
+
+  function setBlockChoiceStatus(status: BlockChoiceStatus) {
+    if (!currentBlockChoice?.selectedSuggestionId) return;
+    const next = updateBlockChoice(
+      currentBlockChoice,
+      currentBlockChoice.selectedSuggestionId,
+      status,
+    );
+    saveBlockChoice(next);
+  }
+
+  function changeBlockSuggestion() {
+    if (!currentBlockChoice) return;
+    saveBlockChoice(
+      updateBlockChoice(currentBlockChoice, null, "suggested"),
+    );
+  }
+
+  function openBlockSuggestion(suggestion: BlockSuggestion) {
+    if (suggestion.sourceType === "recommendation") {
+      openNowRecommendations();
+      return;
+    }
+    if (suggestion.sourceType === "calendar_item" && suggestion.sourceId) {
+      const item = items.find((entry) => entry.id === suggestion.sourceId);
+      if (item) openItem(item);
+      return;
+    }
+    if (suggestion.sourceType === "intention" && suggestion.sourceId) {
+      const intention = intentions.find((entry) => entry.id === suggestion.sourceId);
+      setIntentionSeed(intention ?? null);
+      setIntentionsOpen(true);
+      return;
+    }
+    if (suggestion.sourceType === "exploration" && suggestion.sourceId) {
+      const exploration = explorations.find((entry) => entry.id === suggestion.sourceId);
+      if (!exploration) return;
+      setDeeperSource({
+        type: exploration.sourceType,
+        id: exploration.sourceId,
+        title: exploration.sourceTitle,
+        subjectId: exploration.subjectId,
+        subjectName: subjects.find((entry) => entry.id === exploration.subjectId)?.name,
+        context: exploration.sourceContext,
+      });
+      setDeeperExploration(exploration);
+    }
   }
 
   const filteredItems = items.filter((item) => {
@@ -2418,7 +3545,140 @@ export default function Home() {
       : Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
   const dayCapacity = capacityForDay(items, selectedDay);
   const insights = scheduleInsights(items, selectedDay);
-  const now = new Date();
+  const now = clockNow;
+  const attentionSnapshot = buildAttentionSnapshot({
+    now,
+    items,
+    assignments,
+    assessments,
+    intentions,
+    subjects,
+    classes,
+    classExceptions,
+    settings: schoolDaySettings,
+    currentLocation: nowLocation,
+    currentEnergy: nowEnergy,
+    computerAvailable: nowComputerAvailable,
+    learningSignals,
+  });
+  const blockMinute = Math.floor(now.getTime() / 60_000);
+  const blockNow = useMemo(() => new Date(blockMinute * 60_000), [blockMinute]);
+  const currentBlockChoice = useMemo(
+    () =>
+      hydrated ? buildBlockChoice({
+        now: blockNow,
+        items,
+        assignments,
+        assessments,
+        intentions,
+        explorations,
+        subjects,
+        classes,
+        classExceptions,
+        settings: schoolDaySettings,
+        currentEnergy: nowEnergy,
+        computerAvailable: nowComputerAvailable,
+        learningSignals,
+        recentChoices: blockChoices,
+      }) : null,
+    [
+      blockNow,
+      hydrated,
+      items,
+      assignments,
+      assessments,
+      intentions,
+      explorations,
+      subjects,
+      classes,
+      classExceptions,
+      schoolDaySettings,
+      nowEnergy,
+      nowComputerAvailable,
+      learningSignals,
+      blockChoices,
+    ],
+  );
+  useEffect(() => {
+    if (
+      !hydrated ||
+      !currentBlockChoice ||
+      blockChoices.some((choice) => choice.blockKey === currentBlockChoice.blockKey)
+    ) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setBlockChoices((current) => [currentBlockChoice, ...current].slice(0, 150));
+      persistMutation({
+        table: "time_block_choices",
+        action: "upsert",
+        recordId: currentBlockChoice.id,
+        payload: blockChoiceToRow(currentBlockChoice),
+      }).catch(() => undefined);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [blockChoices, currentBlockChoice, hydrated, persistMutation]);
+  useEffect(() => {
+    if (
+      !currentBlockChoice ||
+      currentBlockChoice.status !== "suggested" ||
+      currentBlockChoice.context.aiPolished ||
+      !user ||
+      !isOnline ||
+      polishedBlocksRef.current.has(currentBlockChoice.blockKey)
+    ) {
+      return;
+    }
+    polishedBlocksRef.current.add(currentBlockChoice.blockKey);
+    let cancelled = false;
+    const polish = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session?.access_token) return;
+      const response = await fetch("/api/block-suggestions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${data.session.access_token}`,
+        },
+        body: JSON.stringify({
+          block: {
+            label: currentBlockChoice.context.label,
+            startsAt: currentBlockChoice.startsAt,
+            endsAt: currentBlockChoice.endsAt,
+            location: currentBlockChoice.context.location,
+            energy: nowEnergy,
+          },
+          suggestions: currentBlockChoice.suggestions,
+        }),
+      });
+      const raw: unknown = await response.json();
+      if (cancelled || !response.ok || !isBlockPolishResponse(raw)) return;
+      const wording = new Map(raw.suggestions.map((suggestion) => [suggestion.id, suggestion]));
+      const polished: BlockChoice = {
+        ...currentBlockChoice,
+        context: { ...currentBlockChoice.context, aiPolished: true },
+        suggestions: currentBlockChoice.suggestions.map((suggestion) => {
+          const replacement = wording.get(suggestion.id);
+          return replacement && replacement.category === suggestion.category
+            ? { ...suggestion, ...replacement }
+            : suggestion;
+        }),
+        updatedAt: new Date().toISOString(),
+      };
+      saveBlockChoice(polished);
+    };
+    polish().catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    currentBlockChoice,
+    isOnline,
+    nowEnergy,
+    saveBlockChoice,
+    supabase,
+    user,
+  ]);
   const future = [...scheduledItems]
     .filter((item) => new Date(item.endsAt!).getTime() >= now.getTime())
     .sort(
@@ -2436,7 +3696,6 @@ export default function Home() {
   const laterItems = future
     .filter((item) => item.id !== nowItem?.id && item.id !== nextItem?.id)
     .slice(0, 3);
-  const soonestItems = future.slice(0, 5);
   const proposalValidation = proposal
     ? validateProposal(proposal, items)
     : null;
@@ -2447,12 +3706,106 @@ export default function Home() {
     homeworkCommandPreview,
   );
   const nowResult = nowMoment ? nowRecommendations(new Date(nowMoment)) : null;
+  const draftTimingError =
+    draftItem?.startsAt &&
+    draftItem.endsAt &&
+    new Date(draftItem.endsAt) <= new Date(draftItem.startsAt)
+      ? "End must be after start."
+      : null;
 
   function moveAnchor(amount: number) {
-    const unit = zoom === "month" ? 30 : zoom === "semester" ? 180 : 7;
-    const next = addDays(anchor, amount * unit);
+    const next =
+      zoom === "month" || zoom === "semester"
+        ? new Date(
+            anchor.getFullYear(),
+            anchor.getMonth() + amount * (zoom === "semester" ? 6 : 1),
+            1,
+            12,
+          )
+        : addDays(anchor, amount * (zoom === "day" ? 1 : 7));
     setAnchorDate(dateKey(next));
-    if (zoom === "day") setSelectedDay(dateKey(next));
+    if (zoom === "day") {
+      setSelectedDay(dateKey(next));
+    } else if (zoom === "week") {
+      setSelectedDay(dateKey(addDays(dateFromKey(selectedDay), amount * 7)));
+    }
+  }
+
+  function canStartCalendarSwipe(target: EventTarget | null) {
+    return !(
+      target instanceof Element &&
+      target.closest(
+        "input, textarea, select, [contenteditable='true'], [draggable='true'], .resize-handle, .mobile-date-ribbon, .block-choice-carousel, .overview-grid.months-6, .multi-day-strip, [data-horizontal-scroll]",
+      )
+    );
+  }
+
+  function onCalendarPointerDown(event: ReactPointerEvent<HTMLElement>) {
+    if (
+      !isCompact ||
+      !(["day", "week", "month"] as Zoom[]).includes(zoom) ||
+      event.pointerType === "mouse" ||
+      draggingItemId ||
+      event.button !== 0 ||
+      !canStartCalendarSwipe(event.target)
+    ) {
+      calendarSwipeStartRef.current = null;
+      return;
+    }
+    const point = { x: event.clientX, y: event.clientY, at: performance.now() };
+    calendarSwipeStartRef.current = point;
+    calendarSwipeLastRef.current = point;
+  }
+
+  function onCalendarPointerMove(event: ReactPointerEvent<HTMLElement>) {
+    const start = calendarSwipeStartRef.current;
+    if (!start) return;
+    const point = { x: event.clientX, y: event.clientY, at: performance.now() };
+    calendarSwipeLastRef.current = point;
+    if (
+      Math.abs(point.x - start.x) > 12 &&
+      Math.abs(point.x - start.x) > Math.abs(point.y - start.y)
+    ) {
+      event.preventDefault();
+    }
+  }
+
+  function finishCalendarPointerSwipe(event: ReactPointerEvent<HTMLElement>) {
+    const start = calendarSwipeStartRef.current;
+    const end = calendarSwipeLastRef.current;
+    calendarSwipeStartRef.current = null;
+    calendarSwipeLastRef.current = null;
+    if (!start || !end || draggingItemId) return;
+    const direction = calendarSwipeDirection(start, end);
+    if (!direction) return;
+    event.preventDefault();
+    event.stopPropagation();
+    suppressSwipeClickUntilRef.current = performance.now() + 450;
+    moveAnchor(direction);
+  }
+
+  function onWeekWheel(event: ReactWheelEvent<HTMLElement>) {
+    if (
+      zoom !== "week" ||
+      draggingItemId ||
+      event.ctrlKey ||
+      event.metaKey ||
+      Math.abs(event.deltaX) <= Math.abs(event.deltaY) * 1.15
+    ) {
+      return;
+    }
+    const gesture = weekWheelRef.current;
+    const current = performance.now();
+    event.preventDefault();
+    if (current < gesture.lockedUntil) return;
+    if (current - gesture.lastAt > 180) gesture.totalX = 0;
+    gesture.totalX += event.deltaX;
+    gesture.lastAt = current;
+    if (Math.abs(gesture.totalX) < 80) return;
+    const direction = gesture.totalX > 0 ? 1 : -1;
+    gesture.totalX = 0;
+    gesture.lockedUntil = current + 650;
+    moveAnchor(direction);
   }
 
   return (
@@ -2469,6 +3822,7 @@ export default function Home() {
           }}
         >
           <Zap size={17} fill="currentColor" />
+          <small className="rail-label">Today</small>
         </button>
         <nav aria-label="Calendar tools">
           <button
@@ -2478,7 +3832,7 @@ export default function Home() {
                 : ""
             }
             type="button"
-            aria-label="Calendar"
+            aria-label="Attention home"
             onClick={() => {
               setInboxOpen(false);
               setHomeworkOpen(false);
@@ -2487,6 +3841,7 @@ export default function Home() {
             }}
           >
             <CalendarClock size={19} />
+            <small className="rail-label">Home</small>
           </button>
           <button
             className={zoom === "school" ? "active" : ""}
@@ -2500,6 +3855,7 @@ export default function Home() {
             }}
           >
             <GraduationCap size={19} />
+            <small className="rail-label">School</small>
           </button>
           <button
             className={homeworkOpen ? "active" : ""}
@@ -2513,6 +3869,7 @@ export default function Home() {
           >
             <BookOpen size={18} />
             {activeHomework.length > 0 && <span>{activeHomework.length}</span>}
+            <small className="rail-label">Homework</small>
           </button>
           <button
             className={inboxOpen ? "active" : ""}
@@ -2526,6 +3883,7 @@ export default function Home() {
           >
             <Inbox size={18} />
             {inboxItems.length > 0 && <span>{inboxItems.length}</span>}
+            <small className="rail-label">Flexible work</small>
           </button>
           <button
             type="button"
@@ -2538,6 +3896,7 @@ export default function Home() {
             }}
           >
             <Command size={19} />
+            <small className="rail-label">Command menu</small>
           </button>
           <button
             className={hudOpen && !historyOpen ? "active" : ""}
@@ -2551,6 +3910,7 @@ export default function Home() {
             }}
           >
             <Activity size={18} />
+            <small className="rail-label">Now & next</small>
           </button>
           <button
             className={hudOpen && historyOpen ? "active" : ""}
@@ -2564,6 +3924,7 @@ export default function Home() {
             }}
           >
             <History size={19} />
+            <small className="rail-label">History</small>
           </button>
         </nav>
         <button
@@ -2573,8 +3934,179 @@ export default function Home() {
           onClick={() => setAccountOpen((current) => !current)}
         >
           {initials(user?.email)}
+          <small className="rail-label">Account & sync</small>
         </button>
       </aside>
+
+      <nav className="mobile-tab-bar" aria-label="Mobile navigation">
+        <button
+          className={zoom === "upcoming" ? "active" : ""}
+          type="button"
+          onClick={() => {
+            setInboxOpen(false);
+            setHomeworkOpen(false);
+            setHudOpen(false);
+            setMobileMenuOpen(false);
+            setMobileCreateOpen(false);
+            transitionState(() => setZoom("upcoming"));
+          }}
+        >
+          <CalendarClock size={20} />
+          <span>Home</span>
+        </button>
+        <button
+          className={!["upcoming", "school"].includes(zoom) ? "active" : ""}
+          type="button"
+          onClick={() => {
+            setInboxOpen(false);
+            setHomeworkOpen(false);
+            setHudOpen(false);
+            setMobileMenuOpen(false);
+            setMobileCreateOpen(false);
+            transitionState(() => setZoom("day"));
+          }}
+        >
+          <CalendarPlus size={20} />
+          <span>Calendar</span>
+        </button>
+        <button
+          className="mobile-create-button"
+          type="button"
+          aria-label="Add something"
+          aria-expanded={mobileCreateOpen}
+          onClick={() => {
+            setMobileMenuOpen(false);
+            setMobileCreateOpen((current) => !current);
+          }}
+        >
+          <Plus size={23} />
+          <span>Add</span>
+        </button>
+        <button
+          className={zoom === "school" ? "active" : ""}
+          type="button"
+          onClick={() => {
+            setInboxOpen(false);
+            setHomeworkOpen(false);
+            setHudOpen(false);
+            setMobileMenuOpen(false);
+            setMobileCreateOpen(false);
+            transitionState(() => setZoom("school"));
+          }}
+        >
+          <GraduationCap size={20} />
+          <span>School</span>
+        </button>
+        <button
+          className={mobileMenuOpen ? "active" : ""}
+          type="button"
+          aria-expanded={mobileMenuOpen}
+          onClick={() => {
+            setMobileCreateOpen(false);
+            setMobileMenuOpen((current) => !current);
+          }}
+        >
+          <Layers3 size={20} />
+          <span>More</span>
+        </button>
+      </nav>
+
+      {(mobileCreateOpen || mobileMenuOpen) && (
+        <button
+          className="mobile-sheet-scrim"
+          type="button"
+          aria-label="Close mobile menu"
+          onClick={() => {
+            setMobileCreateOpen(false);
+            setMobileMenuOpen(false);
+          }}
+        />
+      )}
+
+      {mobileCreateOpen && (
+        <aside className="mobile-action-sheet mobile-create-sheet" aria-label="Add something">
+          <header>
+            <span className="micro-label">Quick capture</span>
+            <h2>What are you adding?</h2>
+          </header>
+          <div>
+            <button
+              type="button"
+              onClick={() => {
+                setMobileCreateOpen(false);
+                setPaletteMode("command");
+                setPaletteOpen(true);
+              }}
+            >
+              <Command size={19} />
+              <span><strong>Describe it</strong><small>Use natural language for anything</small></span>
+              <ChevronRight size={17} />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMobileCreateOpen(false);
+                openNewEvent();
+              }}
+            >
+              <CalendarPlus size={19} />
+              <span><strong>Calendar event</strong><small>Choose a date, time, or all day</small></span>
+              <ChevronRight size={17} />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMobileCreateOpen(false);
+                openNewTask();
+              }}
+            >
+              <Inbox size={19} />
+              <span><strong>Flexible task</strong><small>Keep it unscheduled until it fits</small></span>
+              <ChevronRight size={17} />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMobileCreateOpen(false);
+                setHomeworkOpen(true);
+              }}
+            >
+              <BookOpen size={19} />
+              <span><strong>Homework</strong><small>Capture it quickly during class</small></span>
+              <ChevronRight size={17} />
+            </button>
+          </div>
+        </aside>
+      )}
+
+      {mobileMenuOpen && (
+        <aside className="mobile-action-sheet mobile-more-sheet" aria-label="More tools">
+          <header>
+            <span className="micro-label">Syllabi</span>
+            <h2>More tools</h2>
+          </header>
+          <div>
+            <button type="button" onClick={() => { setMobileMenuOpen(false); setHomeworkOpen(true); }}>
+              <BookOpen size={19} /><span><strong>Homework</strong><small>{activeHomework.length} waiting</small></span><ChevronRight size={17} />
+            </button>
+            <button type="button" onClick={() => { setMobileMenuOpen(false); setInboxOpen(true); }}>
+              <Inbox size={19} /><span><strong>Flexible work</strong><small>{inboxItems.length} unscheduled</small></span><ChevronRight size={17} />
+            </button>
+            <button type="button" onClick={() => { setMobileMenuOpen(false); setHudOpen(true); setHistoryOpen(false); }}>
+              <Activity size={19} /><span><strong>Now & next</strong><small>See the shape of today</small></span><ChevronRight size={17} />
+            </button>
+            <button type="button" onClick={() => { setMobileMenuOpen(false); setHudOpen(true); setHistoryOpen(true); }}>
+              <History size={19} /><span><strong>History</strong><small>Review recent calendar changes</small></span><ChevronRight size={17} />
+            </button>
+            <button type="button" disabled={undoStack.length === 0} onClick={() => { setMobileMenuOpen(false); undoLast(); }}>
+              <Undo2 size={19} /><span><strong>Undo last change</strong><small>{undoStack.length ? "Restore the previous calendar state" : "Nothing to undo"}</small></span><ChevronRight size={17} />
+            </button>
+            <button type="button" onClick={() => { setMobileMenuOpen(false); setAccountOpen(true); }}>
+              <UserRound size={19} /><span><strong>Account & sync</strong><small>{user ? "Calendar synced" : "Sign in on this device"}</small></span><ChevronRight size={17} />
+            </button>
+          </div>
+        </aside>
+      )}
 
       <aside
         className={`task-dock ${inboxOpen ? "is-open" : ""}`}
@@ -2746,7 +4278,23 @@ export default function Home() {
         }}
       />
 
-      <section className={`calendar-stage zoom-${zoom}`}>
+      <section
+        className={`calendar-stage zoom-${zoom}`}
+        onPointerDown={onCalendarPointerDown}
+        onPointerMove={onCalendarPointerMove}
+        onPointerUp={finishCalendarPointerSwipe}
+        onPointerCancel={() => {
+          calendarSwipeStartRef.current = null;
+          calendarSwipeLastRef.current = null;
+        }}
+        onClickCapture={(event) => {
+          if (performance.now() < suppressSwipeClickUntilRef.current) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        }}
+        onWheel={onWeekWheel}
+      >
         <header className="calendar-toolbar">
           {zoom === "school" ? (
             <div className="school-toolbar-title">
@@ -2780,10 +4328,27 @@ export default function Home() {
                 >
                   <ChevronRight size={16} />
                 </button>
+                <TemporalField
+                  className="toolbar-date-jump"
+                  mode="date"
+                  value={anchorDate}
+                  onChange={(value) => {
+                    if (!value) return;
+                    setAnchorDate(value);
+                    setSelectedDay(value);
+                  }}
+                  required
+                  ariaLabel="Jump to a date"
+                />
                 <h2>
                   {zoom === "semester"
                     ? `${formatDate(anchor, { month: "long" })} – ${formatDate(
-                        addDays(anchor, 150),
+                        new Date(
+                          anchor.getFullYear(),
+                          anchor.getMonth() + 5,
+                          1,
+                          12,
+                        ),
                         { month: "long", year: "numeric" },
                       )}`
                     : formatDate(anchor, {
@@ -2802,7 +4367,7 @@ export default function Home() {
                     key={level}
                     onClick={() => transitionState(() => setZoom(level))}
                   >
-                    {level === "upcoming" ? "next 5" : level}
+                    {level === "upcoming" ? "home" : level}
                   </button>
                 ))}
               </div>
@@ -2859,26 +4424,47 @@ export default function Home() {
             onPlanRevision={previewRevisionRunway}
             onMarkRevisionLearned={markRevisionLearned}
             onOpenRevisionSession={openItem}
+            onOpenCalendarItem={openItem}
+            onImportTimetable={(file, weekStart) =>
+              onDocumentSelected(file, {
+                mode: "school_timetable",
+                weekStart,
+              })
+            }
+            timetableImportBusy={timetableImportBusy}
+            learningSignals={learningSignals}
+            onChallenge={recordChallenge}
+            onGoDeeper={openGoDeeper}
           />
         ) : zoom === "upcoming" ? (
-          <UpcomingView
-            items={soonestItems}
-            onOpenItem={openItem}
-            onCreate={() => openNewEvent()}
+          <AttentionHome
+            snapshot={attentionSnapshot}
             commandText={commandText}
             commandBusy={commandBusy}
+            intentionCount={intentions.filter((entry) => entry.status === "active").length}
             onCommandChange={setCommandText}
             onCommandSubmit={(event) => submitCommand(event, "command")}
             onOpenCommand={() => {
               setPaletteMode("command");
               setPaletteOpen(true);
             }}
-            onOpenNow={openNowRecommendations}
+            onOpenCard={openAttentionCard}
+            onStartRecommendation={() => attentionSnapshot.recommendation && startNow(attentionSnapshot.recommendation)}
+            onStartIntention={() => attentionSnapshot.intentionOpportunity && startIntention(attentionSnapshot.intentionOpportunity.intention, attentionSnapshot.intentionOpportunity.durationMinutes)}
+            onOpenIntentions={() => { setIntentionSeed(null); setIntentionsOpen(true); }}
+            onOpenCalendar={() => transitionState(() => setZoom("week"))}
+            blockChoice={currentBlockChoice}
+            onSelectBlockSuggestion={selectBlockSuggestion}
+            onBlockStatus={setBlockChoiceStatus}
+            onChangeBlockSuggestion={changeBlockSuggestion}
+            onOpenBlockSuggestion={openBlockSuggestion}
           />
         ) : isCompact && zoom === "week" ? (
           <MobileAgenda
-            days={visibleDays}
+            mode={zoom}
+            days={Array.from({ length: 7 }, (_, index) => addDays(weekStart, index))}
             items={filteredItems}
+            subjects={subjects}
             selectedDay={selectedDay}
             onSelectDay={setSelectedDay}
             onOpenItem={openItem}
@@ -2892,29 +4478,39 @@ export default function Home() {
             anchor={anchor}
             months={zoom === "month" ? 1 : 6}
             items={filteredItems}
+            subjects={subjects}
             onSelectDay={(day) => {
               setSelectedDay(day);
               setAnchorDate(day);
-              transitionState(() => setZoom("week"));
+              transitionState(() => setZoom(isCompact ? "day" : "week"));
             }}
           />
         ) : (
           <TimeCalendar
             days={visibleDays}
             items={filteredItems}
+            subjects={subjects}
             proposal={proposal}
             rowHeight={zoom === "day" ? 72 : 52}
             selectedDay={selectedDay}
             resizing={resizing}
             dragSnap={dragSnap}
+            draggingItem={
+              draggingItemId
+                ? filteredItems.find((item) => item.id === draggingItemId) ?? null
+                : null
+            }
             onSelectDay={setSelectedDay}
             onDrop={onCalendarDrop}
             onDragOver={onCalendarDragOver}
-            onDragStart={onDragStart}
-            onDragEnd={endDrag}
             onOpenItem={openItem}
             onResize={beginResize}
             onCreateAt={openNewEvent}
+            onCreateSpan={openNewSpan}
+            onMoveAt={(item, day, hour, minute) =>
+              scheduleAt(item.id, day, hour, minute)
+            }
+            compact={isCompact && zoom === "day"}
           />
         )}
       </section>
@@ -3080,6 +4676,35 @@ export default function Home() {
             setHomeworkOpen(false);
             setHudOpen(false);
           }}
+        />
+      )}
+
+      {intentionsOpen && <IntentionsPanel
+        key={intentionSeed?.id ?? intentionSeed?.title ?? "intentions"}
+        open={intentionsOpen}
+        intentions={intentions}
+        subjects={subjects}
+        items={items}
+        learningSignals={learningSignals}
+        seed={intentionSeed}
+        onClose={() => { setIntentionsOpen(false); setIntentionSeed(null); }}
+        onSave={saveIntention}
+        onDelete={deleteIntention}
+        onStart={startIntention}
+        onChallenge={recordChallenge}
+        onGoDeeper={openGoDeeper}
+      />}
+
+      {deeperSource && (
+        <GoDeeperPanel
+          source={deeperSource}
+          exploration={deeperExploration}
+          busy={deeperBusy}
+          error={deeperError}
+          onClose={() => { setDeeperSource(null); setDeeperExploration(null); setDeeperError(""); }}
+          onGenerate={(fresh) => generateDeeper(deeperSource, fresh).catch(() => undefined)}
+          onSave={saveExploration}
+          onStart={startExplorationDirection}
         />
       )}
 
@@ -3275,7 +4900,12 @@ export default function Home() {
       {proposal && (
         <div className="overlay proposal-overlay">
           <section
-            className="proposal-sheet"
+            className={`proposal-sheet${
+              timetableSubjectProposal?.proposalId === proposal.id &&
+              !timetableSubjectProposal.reviewed
+                ? " subject-reviewing"
+                : ""
+            }`}
             aria-label="Calendar change preview"
           >
             <header>
@@ -3289,13 +4919,162 @@ export default function Home() {
               </div>
               <button
                 type="button"
-                onClick={() => setProposal(null)}
+                onClick={closeProposal}
                 aria-label="Close proposal"
               >
                 <X size={16} />
               </button>
             </header>
-            <div className="proposal-list">
+            {timetableSubjectProposal?.proposalId === proposal.id &&
+            !timetableSubjectProposal.reviewed ? (
+              <section className="subject-review-splash">
+                <div className="subject-review-intro">
+                  <span className="micro-label">Before the timetable</span>
+                  <h3>Check the subjects I found</h3>
+                  <p>
+                    Unknown labels stay editable. Correct names, teachers, and
+                    rooms now; nothing is saved until the final timetable review.
+                  </p>
+                </div>
+                <div className="subject-review-grid">
+                  {timetableSubjectProposal.subjects.map((subject, index) => (
+                    <article className="subject-review-card" key={subject.id}>
+                      <header>
+                        <span
+                          className="proposal-subject-dot"
+                          style={{ background: subject.color }}
+                        />
+                        <strong>Subject {index + 1}</strong>
+                        <button
+                          type="button"
+                          onClick={() => removeTimetableSubject(subject.id)}
+                          aria-label={`Do not create ${subject.name || "this subject"}`}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </header>
+                      <label className="subject-review-name">
+                        <span>Name</span>
+                        <input
+                          autoFocus={index === 0}
+                          value={subject.name}
+                          onChange={(event) =>
+                            updateTimetableSubject(subject.id, {
+                              name: event.target.value,
+                            })
+                          }
+                          placeholder="New subject"
+                        />
+                      </label>
+                      <div className="subject-review-fields">
+                        <label>
+                          <span>Short</span>
+                          <input
+                            value={subject.shortName}
+                            onChange={(event) =>
+                              updateTimetableSubject(subject.id, {
+                                shortName: event.target.value,
+                              })
+                            }
+                            placeholder="BIO"
+                          />
+                        </label>
+                        <label>
+                          <span>Color</span>
+                          <input
+                            type="color"
+                            value={subject.color}
+                            onChange={(event) =>
+                              updateTimetableSubject(subject.id, {
+                                color: event.target.value,
+                              })
+                            }
+                          />
+                        </label>
+                        <label>
+                          <span>Teacher</span>
+                          <input
+                            value={subject.teacher}
+                            onChange={(event) =>
+                              updateTimetableSubject(subject.id, {
+                                teacher: event.target.value,
+                              })
+                            }
+                            placeholder="Optional"
+                          />
+                        </label>
+                        <label>
+                          <span>Room</span>
+                          <input
+                            value={subject.room}
+                            onChange={(event) =>
+                              updateTimetableSubject(subject.id, {
+                                room: event.target.value,
+                              })
+                            }
+                            placeholder="Optional"
+                          />
+                        </label>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+                <div className="subject-review-actions">
+                  <button type="button" onClick={addTimetableSubject}>
+                    <Plus size={14} /> Add missing subject
+                  </button>
+                  <button
+                    className="approve"
+                    type="button"
+                    onClick={finishTimetableSubjectReview}
+                    disabled={timetableSubjectProposal.subjects.some(
+                      (subject) =>
+                        !subject.name.trim() || !subject.shortName.trim(),
+                    )}
+                  >
+                    Continue to {proposal.changes.filter((change) => change.type === "create").length} periods
+                  </button>
+                </div>
+              </section>
+            ) : (
+              <>
+                {timetableSubjectProposal?.proposalId === proposal.id &&
+                  timetableSubjectProposal.subjects.length > 0 && (
+                    <section className="proposal-subject-preview">
+                      <div>
+                        <span className="micro-label">New subjects ready</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setTimetableSubjectProposal((current) =>
+                              current ? { ...current, reviewed: false } : current,
+                            )
+                          }
+                        >
+                          Edit {timetableSubjectProposal.subjects.length}
+                        </button>
+                      </div>
+                      <div className="proposal-subject-list">
+                        {timetableSubjectProposal.subjects.map((subject) => (
+                          <article key={subject.id}>
+                            <span
+                              className="proposal-subject-dot"
+                              style={{ background: subject.color }}
+                            />
+                            <div>
+                              <strong>{subject.name}</strong>
+                              <small>
+                                {[subject.shortName, subject.teacher, subject.room]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </small>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                <div className="proposal-list">
               {proposal.changes.map((change) => {
                 const result = proposalValidation?.results.find(
                   (candidate) => candidate.changeId === change.id,
@@ -3317,17 +5096,22 @@ export default function Home() {
                       <p>{change.reason}</p>
                       {change.before && change.after && (
                         <div className="diff-row">
-                          <span>{formatRange(change.before)}</span>
+                          <span>{formatProposalTiming(change.before)}</span>
                           <Move size={12} />
-                          <strong>{formatRange(change.after)}</strong>
+                          <strong>{formatProposalTiming(change.after)}</strong>
                         </div>
                       )}
                       {!change.before && change.after && (
                         <div className="diff-row">
                           <strong>
                             {kindLabels[change.after.kind]} ·{" "}
-                            {formatRange(change.after)}
+                            {formatProposalTiming(change.after)}
                           </strong>
+                        </div>
+                      )}
+                      {change.before && !change.after && (
+                        <div className="diff-row">
+                          <span>{formatProposalTiming(change.before)}</span>
                         </div>
                       )}
                       {result && !result.valid && (
@@ -3347,8 +5131,8 @@ export default function Home() {
                   </article>
                 );
               })}
-            </div>
-            <footer>
+                </div>
+                <footer>
               <div>
                 <Lock size={13} />
                 <span>
@@ -3360,7 +5144,7 @@ export default function Home() {
               <button
                 className="secondary"
                 type="button"
-                onClick={() => setProposal(null)}
+                onClick={closeProposal}
               >
                 Cancel
               </button>
@@ -3370,10 +5154,16 @@ export default function Home() {
                 onClick={approveProposal}
                 disabled={!proposalValidation?.valid}
               >
-                Apply {proposal.changes.length} change
-                {proposal.changes.length === 1 ? "" : "s"}
+                Apply{" "}
+                {proposal.changes.length +
+                  (timetableSubjectProposal?.proposalId === proposal.id
+                    ? timetableSubjectProposal.subjects.length
+                    : 0)}{" "}
+                changes
               </button>
-            </footer>
+                </footer>
+              </>
+            )}
           </section>
         </div>
       )}
@@ -3393,9 +5183,14 @@ export default function Home() {
             <header>
               <div>
                 <span className="micro-label">
-                  {isCreatingItem ? "New calendar item" : "Edit calendar item"}
+                  {isImportedTimetableItem(draftItem)
+                    ? "Edit school period"
+                    : isCreatingItem
+                      ? "New calendar item"
+                      : "Edit calendar item"}
                 </span>
-                <div className="quick-kind-switch" aria-label="Item type">
+                {!isImportedTimetableItem(draftItem) && (
+                  <div className="quick-kind-switch" aria-label="Item type">
                   {kinds.map((kind) => (
                     <button
                       className={draftItem.kind === kind ? "active" : ""}
@@ -3407,7 +5202,7 @@ export default function Home() {
                           kind,
                           flexibility:
                             kind === "event"
-                              ? "fixed"
+                              ? "flexible"
                               : draftItem.flexibility === "fixed"
                                 ? "flexible"
                                 : draftItem.flexibility,
@@ -3417,7 +5212,8 @@ export default function Home() {
                       {kindLabels[kind]}
                     </button>
                   ))}
-                </div>
+                  </div>
+                )}
               </div>
               <button
                 className="inspector-close"
@@ -3432,9 +5228,62 @@ export default function Home() {
                 <X size={16} />
               </button>
             </header>
+            {isImportedTimetableItem(draftItem) && (
+              <section className="school-period-subject">
+                <label>
+                  <span>Subject</span>
+                  <select
+                    autoFocus
+                    value={
+                      subjects.find((subject) =>
+                        subjectsAreSimilar(
+                          draftItem.title,
+                          subject.name,
+                          "",
+                          subject.shortName,
+                        ),
+                      )?.id ??
+                      (draftItem.title === "Assembly" ? "__assembly" : "__custom")
+                    }
+                    onChange={(event) => {
+                      if (event.target.value === "__assembly") {
+                        setDraftItem({
+                          ...draftItem,
+                          title: "Assembly",
+                          energyType: "social",
+                        });
+                        return;
+                      }
+                      if (event.target.value === "__custom") return;
+                      const subject = subjects.find(
+                        (candidate) => candidate.id === event.target.value,
+                      );
+                      if (!subject) return;
+                      setDraftItem({
+                        ...draftItem,
+                        title: subject.name,
+                        subjectId: subject.id,
+                        description:
+                          draftItem.description ||
+                          subject.teacher,
+                      });
+                    }}
+                  >
+                    <option value="__assembly">Assembly</option>
+                    {subjects.map((subject) => (
+                      <option value={subject.id} key={subject.id}>
+                        {subject.name} ({subject.shortName})
+                      </option>
+                    ))}
+                    <option value="__custom">Custom label</option>
+                  </select>
+                </label>
+                <small>This changes only this period, not the whole subject.</small>
+              </section>
+            )}
             <input
               className="item-title-input"
-              autoFocus
+              autoFocus={!isImportedTimetableItem(draftItem)}
               value={draftItem.title}
               onChange={(event) =>
                 setDraftItem({ ...draftItem, title: event.target.value })
@@ -3446,14 +5295,14 @@ export default function Home() {
                   : "What needs doing?"
               }
             />
-            <div className="quick-item-row">
+            <div className="quick-item-row item-time-range">
               <label>
                 <span>When</span>
-                <input
-                  type="datetime-local"
+                <TemporalField
+                  mode="datetime"
                   value={toLocalInput(draftItem.startsAt)}
-                  onChange={(event) => {
-                    const startsAt = fromLocalInput(event.target.value);
+                  onChange={(value) => {
+                    const startsAt = fromLocalInput(value);
                     const minutes = durationMinutes(draftItem);
                     setDraftItem({
                       ...draftItem,
@@ -3466,39 +5315,126 @@ export default function Home() {
                       status: startsAt ? "scheduled" : "inbox",
                     });
                   }}
+                  ariaLabel="Choose start date and time"
                 />
               </label>
               <label>
-                <span>Duration</span>
-                <div className="compact-duration-control">
-                  <input
-                    type="number"
-                    min={5}
-                    max={720}
-                    step={5}
-                    value={durationMinutes(draftItem)}
-                    onChange={(event) => {
-                      const minutes = Math.max(5, Number(event.target.value));
-                      setDraftItem({
-                        ...draftItem,
-                        durationMin: minutes,
-                        durationMax: minutes,
-                        endsAt: draftItem.startsAt
-                          ? new Date(
-                              new Date(draftItem.startsAt).getTime() +
-                                minutes * 60_000,
-                            ).toISOString()
-                          : null,
-                      });
-                    }}
-                  />
-                  <span>min</span>
-                </div>
+                <span>Ends</span>
+                <TemporalField
+                  mode="datetime"
+                  value={toLocalInput(draftItem.endsAt)}
+                  onChange={(value) => {
+                    const endsAt = fromLocalInput(value);
+                    const minutes =
+                      draftItem.startsAt && endsAt
+                        ? Math.max(
+                            5,
+                            Math.round(
+                              (new Date(endsAt).getTime() -
+                                new Date(draftItem.startsAt).getTime()) /
+                                60_000,
+                            ),
+                          )
+                        : draftItem.durationMin;
+                    setDraftItem({
+                      ...draftItem,
+                      endsAt,
+                      durationMin: minutes,
+                      durationMax: minutes,
+                    });
+                  }}
+                  ariaLabel="Choose end date and time"
+                />
               </label>
             </div>
+            {!isImportedTimetableItem(draftItem) && draftItem.startsAt && (
+              <div className="timing-presets" aria-label="Quick duration">
+                <span>{formatDurationLabel(draftItem)}</span>
+                <button
+                  type="button"
+                  onClick={() => setDraftItem(itemWithDuration(draftItem, 30))}
+                >
+                  30 min
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDraftItem(itemWithDuration(draftItem, 60))}
+                >
+                  1 hour
+                </button>
+                <button
+                  className={isAllDayItem(draftItem) ? "active" : ""}
+                  type="button"
+                  aria-pressed={isAllDayItem(draftItem)}
+                  onClick={() => setDraftItem(toggleAllDayItem(draftItem))}
+                >
+                  All day
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setDraftItem(
+                      itemWithDuration(
+                        draftItem,
+                        durationMinutes(draftItem) + 24 * 60,
+                      ),
+                    )
+                  }
+                >
+                  +1 day
+                </button>
+              </div>
+            )}
+            {draftTimingError && (
+              <p className="item-timing-error" role="alert">
+                {draftTimingError}
+              </p>
+            )}
+            {isCalendarSpanItem(draftItem) && (
+              <p className="item-span-summary">
+                <CalendarClock size={13} /> {formatSpan(draftItem)} · shown as a
+                continuous span in every calendar view
+              </p>
+            )}
+            {isImportedTimetableItem(draftItem) && (
+              <div className="school-period-details">
+                <label className="school-period-room">
+                  <span>Room</span>
+                  <input
+                    value={draftItem.room}
+                    onChange={(event) =>
+                      setDraftItem({
+                        ...draftItem,
+                        room: event.target.value,
+                      })
+                    }
+                    placeholder="e.g. KE114"
+                    maxLength={80}
+                  />
+                  <small>This changes only this class occurrence.</small>
+                </label>
+                <label className="school-period-notes">
+                  <span>Teacher & notes</span>
+                  <textarea
+                    value={draftItem.description}
+                    onChange={(event) =>
+                      setDraftItem({
+                        ...draftItem,
+                        description: event.target.value,
+                      })
+                    }
+                    placeholder="Teacher · class details"
+                  />
+                </label>
+              </div>
+            )}
             <details className="item-more">
               <summary>
-                <span>More options</span>
+                <span>
+                  {isImportedTimetableItem(draftItem)
+                    ? "Advanced calendar rules"
+                    : "More options"}
+                </span>
                 <small>
                   {energyLabels[draftItem.energyType]} · {draftItem.priority}
                 </small>
@@ -3538,61 +5474,75 @@ export default function Home() {
                     ))}
                   </select>
                 </label>
-                <label>
-                  <span>Deadline</span>
-                  <input
-                    type="datetime-local"
-                    value={toLocalInput(draftItem.deadline)}
-                    onChange={(event) =>
-                      setDraftItem({
-                        ...draftItem,
-                        deadline: fromLocalInput(event.target.value),
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  <span>Flexibility</span>
-                  <select
-                    value={draftItem.flexibility}
-                    onChange={(event) =>
-                      setDraftItem({
-                        ...draftItem,
-                        flexibility: event.target.value as Flexibility,
-                      })
-                    }
-                  >
-                    {flexibilities.map((flexibility) => (
-                      <option key={flexibility}>{flexibility}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  <span>Window starts</span>
-                  <input
-                    type="datetime-local"
-                    value={toLocalInput(draftItem.windowStart)}
-                    onChange={(event) =>
-                      setDraftItem({
-                        ...draftItem,
-                        windowStart: fromLocalInput(event.target.value),
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  <span>Window ends</span>
-                  <input
-                    type="datetime-local"
-                    value={toLocalInput(draftItem.windowEnd)}
-                    onChange={(event) =>
-                      setDraftItem({
-                        ...draftItem,
-                        windowEnd: fromLocalInput(event.target.value),
-                      })
-                    }
-                  />
-                </label>
+                {!isImportedTimetableItem(draftItem) && (
+                  <>
+                    <label>
+                      <span>Deadline</span>
+                      <TemporalField
+                        mode="datetime"
+                        value={toLocalInput(draftItem.deadline)}
+                        onChange={(value) =>
+                          setDraftItem({
+                            ...draftItem,
+                            deadline: fromLocalInput(value),
+                          })
+                        }
+                        placeholder="No deadline"
+                        ariaLabel="Choose deadline"
+                      />
+                    </label>
+                    <label>
+                      <span>Flexibility</span>
+                      <select
+                        value={draftItem.flexibility}
+                        disabled={isCreatingItem && draftItem.kind === "event"}
+                        onChange={(event) =>
+                          setDraftItem({
+                            ...draftItem,
+                            flexibility: event.target.value as Flexibility,
+                          })
+                        }
+                      >
+                        {(isCreatingItem && draftItem.kind === "event"
+                          ? (["flexible"] as Flexibility[])
+                          : flexibilities
+                        ).map((flexibility) => (
+                          <option key={flexibility}>{flexibility}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Window starts</span>
+                      <TemporalField
+                        mode="datetime"
+                        value={toLocalInput(draftItem.windowStart)}
+                        onChange={(value) =>
+                          setDraftItem({
+                            ...draftItem,
+                            windowStart: fromLocalInput(value),
+                          })
+                        }
+                        placeholder="No start"
+                        ariaLabel="Choose window start"
+                      />
+                    </label>
+                    <label>
+                      <span>Window ends</span>
+                      <TemporalField
+                        mode="datetime"
+                        value={toLocalInput(draftItem.windowEnd)}
+                        onChange={(value) =>
+                          setDraftItem({
+                            ...draftItem,
+                            windowEnd: fromLocalInput(value),
+                          })
+                        }
+                        placeholder="No end"
+                        ariaLabel="Choose window end"
+                      />
+                    </label>
+                  </>
+                )}
               </div>
               <label className="constraint-field">
                 <span>Constraints</span>
@@ -3610,17 +5560,19 @@ export default function Home() {
                   placeholder="after school, before deadline"
                 />
               </label>
-              <textarea
-                value={draftItem.description}
-                onChange={(event) =>
-                  setDraftItem({
-                    ...draftItem,
-                    description: event.target.value,
-                  })
-                }
-                placeholder="Notes or context"
-                aria-label="Item description"
-              />
+              {!isImportedTimetableItem(draftItem) && (
+                <textarea
+                  value={draftItem.description}
+                  onChange={(event) =>
+                    setDraftItem({
+                      ...draftItem,
+                      description: event.target.value,
+                    })
+                  }
+                  placeholder="Notes or context"
+                  aria-label="Item description"
+                />
+              )}
               {draftItem.kind === "task" && (
                 <>
                   <label className="constraint-field">
@@ -3725,6 +5677,18 @@ export default function Home() {
                 </>
               )}
             </details>
+            {!isCreatingItem &&
+              (selectedItem.kind === "task" ||
+                selectedItem.subjectId ||
+                selectedItem.assignmentId ||
+                selectedItem.assessmentId) && (
+                <LearningControls
+                  source={sourceForCalendarItem(selectedItem)}
+                  value={latestSignalFor(sourceForCalendarItem(selectedItem), learningSignals)?.challengeLevel ?? null}
+                  onChallenge={recordChallenge}
+                  onGoDeeper={openGoDeeper}
+                />
+              )}
             <footer>
               {!isCreatingItem && (
                 <button
@@ -3752,7 +5716,7 @@ export default function Home() {
                 )}
               {!isCreatingItem &&
                 selectedItem.kind === "task" &&
-                selectedItem.assignmentId && (
+                (selectedItem.assignmentId || selectedItem.intentionId) && (
                   <button
                     className="secondary"
                     type="button"
@@ -3792,9 +5756,11 @@ export default function Home() {
               <button
                 className="save"
                 type="submit"
-                disabled={!draftItem.title.trim()}
+                disabled={!draftItem.title.trim() || Boolean(draftTimingError)}
               >
-                {isCreatingItem ? "Create event" : "Save changes"}
+                {isCreatingItem
+                  ? `Create ${kindLabels[draftItem.kind].toLowerCase()}`
+                  : "Save changes"}
               </button>
             </footer>
           </form>
@@ -3816,25 +5782,84 @@ export default function Home() {
               <Cloud size={18} />
               <h2>Calendar synced</h2>
               <p>{user.email}</p>
+              <div className="account-invites">
+                <h3>Invite someone</h3>
+                <p>Copy a one-time link, or create their account and email a verification code.</p>
+                <input
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(event) => setInviteEmail(event.target.value)}
+                  placeholder="friend@example.com"
+                  aria-label="Friend's email address"
+                />
+                <div className="account-invite-actions">
+                  <button
+                    type="button"
+                    disabled={inviteBusy}
+                    onClick={() => createInvitation(false)}
+                  >
+                    Copy invite link
+                  </button>
+                  <button
+                    type="button"
+                    disabled={inviteBusy || !inviteEmail.trim()}
+                    onClick={() => createInvitation(true)}
+                  >
+                    {inviteBusy ? "Working…" : "Create & send code"}
+                  </button>
+                </div>
+                {inviteUrl && (
+                  <button
+                    className="invite-url"
+                    type="button"
+                    onClick={() => navigator.clipboard.writeText(inviteUrl)}
+                    title={inviteUrl}
+                  >
+                    {inviteUrl}
+                  </button>
+                )}
+              </div>
               <button type="button" onClick={signOut}>
                 Sign out
               </button>
             </>
           ) : authSent ? (
             <>
-              <Check size={18} />
-              <h2>Check your email</h2>
-              <p>Open the sign-in link sent to {email}.</p>
-              <button type="button" onClick={() => setAuthSent(false)}>
+              <Lock size={18} />
+              <h2>Enter your code</h2>
+              <p>We sent a single-use verification code to {email}.</p>
+              <form onSubmit={verifyCode}>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={verificationCode}
+                  onChange={(event) => setVerificationCode(event.target.value)}
+                  placeholder="Verification code"
+                  minLength={6}
+                  maxLength={8}
+                  required
+                  autoFocus
+                  aria-label="Verification code"
+                />
+                <button type="submit" disabled={authBusy}>
+                  {authBusy ? "Checking…" : "Verify & sign in"}
+                </button>
+              </form>
+              <button type="button" onClick={() => { setAuthSent(false); setVerificationCode(""); }}>
                 Use another email
               </button>
             </>
           ) : (
             <>
               <Cloud size={18} />
-              <h2>Sync every device</h2>
-              <p>Offline first, with secure Supabase sync after sign-in.</p>
-              <form onSubmit={sendMagicLink}>
+              <h2>{inviteToken ? "Accept your invitation" : "Sync every device"}</h2>
+              <p>
+                {inviteToken
+                  ? "Enter your email and we'll create your account with a single-use code."
+                  : "Enter your email to receive a single-use sign-in code."}
+              </p>
+              <form onSubmit={sendVerificationCode}>
                 <input
                   type="email"
                   value={email}
@@ -3844,7 +5869,7 @@ export default function Home() {
                   aria-label="Email address"
                 />
                 <button type="submit" disabled={authBusy}>
-                  {authBusy ? "Sending…" : "Send sign-in link"}
+                  {authBusy ? "Sending…" : "Send verification code"}
                 </button>
               </form>
             </>
@@ -3855,7 +5880,7 @@ export default function Home() {
   );
 }
 
-function UpcomingView({
+export function UpcomingView({
   items,
   onOpenItem,
   onCreate,
@@ -4104,7 +6129,7 @@ function NowPanel({
           ) : (
             <div>
               <strong>{result.availableMinutes} usable minutes</strong>
-              <span>No fixed commitment in the next two hours.</span>
+              <span>No fixed event in the next two hours.</span>
             </div>
           )}
         </div>
@@ -4141,7 +6166,7 @@ function NowPanel({
                   onClick={() => onStart(recommendation)}
                 >
                   <Play size={13} fill="currentColor" />
-                  Start
+                  {recommendation.source === "exploration" ? "Explore" : "Start"}
                 </button>
               </article>
             ))}
@@ -4152,14 +6177,15 @@ function NowPanel({
             <h3>Nothing suitable right now</h3>
             <p>
               {result.blockedReason ??
+                result.freeTimeReason ??
                 "Try changing your location, energy, or available tools."}
             </p>
           </div>
         )}
         <footer>
           <Lock size={12} />
-          Ranked locally from time, urgency, context, energy, tools, and
-          progress. Nothing starts until you choose it.
+          Ranked locally from time, urgency, context, energy, challenge, recent
+          work, tools, and progress. Nothing starts until you choose it.
         </footer>
       </section>
     </div>
@@ -4167,15 +6193,19 @@ function NowPanel({
 }
 
 function MobileAgenda({
+  mode,
   days,
   items,
+  subjects,
   selectedDay,
   onSelectDay,
   onOpenItem,
   onQuickCapture,
 }: {
+  mode: "day" | "week";
   days: Date[];
   items: CalendarItem[];
+  subjects: Subject[];
   selectedDay: string;
   onSelectDay: (day: string) => void;
   onOpenItem: (item: CalendarItem) => void;
@@ -4187,7 +6217,8 @@ function MobileAgenda({
       (item) =>
         item.status === "scheduled" &&
         item.startsAt &&
-        dateKey(new Date(item.startsAt)) === selectedDay,
+        item.endsAt &&
+        itemOverlapsDay(item, selectedDay),
     )
     .sort(
       (a, b) =>
@@ -4239,7 +6270,7 @@ function MobileAgenda({
 
       <header className="mobile-agenda-header">
         <div>
-          <span className="micro-label">Agenda</span>
+          <span className="micro-label">{mode === "day" ? "Day" : "Week"} agenda</span>
           <h2>
             {formatDate(selectedDate, {
               weekday: "long",
@@ -4270,17 +6301,29 @@ function MobileAgenda({
             )}`}
             type="button"
             key={item.id}
+            style={classColorStyle(item, subjects)}
             onClick={() => onOpenItem(item)}
           >
             <time>
-              {formatTime(item.startsAt)}
-              <small>{formatTime(item.endsAt)}</small>
+              {isCalendarSpanItem(item) ? "Span" : formatTime(item.startsAt)}
+              <small>
+                {isCalendarSpanItem(item)
+                  ? formatSpan(item)
+                  : formatTime(item.endsAt)}
+              </small>
             </time>
             <span className="agenda-shape" />
             <div>
               <strong>{item.title}</strong>
+              {isImportedTimetableItem(item) && timetableRoomForItem(item) && (
+                <span className="calendar-class-room">
+                  Room {timetableRoomForItem(item)}
+                </span>
+              )}
               <small>
-                {energyLabels[item.energyType]} · {durationMinutes(item)} min
+                {isCalendarSpanItem(item)
+                  ? `${kindLabels[item.kind]} · continues across days`
+                  : `${energyLabels[item.energyType]} · ${durationMinutes(item)} min`}
               </small>
             </div>
           </button>
@@ -4337,22 +6380,26 @@ function MobileAgenda({
 function TimeCalendar({
   days,
   items,
+  subjects,
   proposal,
   rowHeight,
   selectedDay,
   resizing,
   dragSnap,
+  draggingItem,
   onSelectDay,
   onDrop,
   onDragOver,
-  onDragStart,
-  onDragEnd,
   onOpenItem,
   onResize,
   onCreateAt,
+  onCreateSpan,
+  onMoveAt,
+  compact = false,
 }: {
   days: Date[];
   items: CalendarItem[];
+  subjects: Subject[];
   proposal: CalendarProposal | null;
   rowHeight: number;
   selectedDay: string;
@@ -4363,6 +6410,7 @@ function TimeCalendar({
     endsAt: string;
   } | null;
   dragSnap: { day: string; hour: number; minute: number } | null;
+  draggingItem: CalendarItem | null;
   onSelectDay: (day: string) => void;
   onDrop: (event: DragEvent, day: string, hour: number, minute: number) => void;
   onDragOver: (
@@ -4371,8 +6419,6 @@ function TimeCalendar({
     hour: number,
     minute: number,
   ) => void;
-  onDragStart: (event: DragEvent, item: CalendarItem) => void;
-  onDragEnd: () => void;
   onOpenItem: (item: CalendarItem) => void;
   onResize: (
     event: ReactPointerEvent,
@@ -4386,6 +6432,14 @@ function TimeCalendar({
     minute: number,
     duration?: number,
   ) => void;
+  onCreateSpan: (startDay: string, endDay: string) => void;
+  onMoveAt: (
+    item: CalendarItem,
+    day: string,
+    hour: number,
+    minute: number,
+  ) => void;
+  compact?: boolean;
 }) {
   const hours = DAY_HOURS;
   const [creationRange, setCreationRange] = useState<{
@@ -4398,7 +6452,65 @@ function TimeCalendar({
     anchorMinute: number;
     moved: boolean;
   } | null>(null);
+  const mobileCreationGesture = useRef<{
+    day: string;
+    anchorMinute: number;
+    currentMinute: number;
+    startX: number;
+    startY: number;
+    activated: boolean;
+    timer: number;
+  } | null>(null);
+  const mobileCreationScrollBlocker = useRef<
+    ((event: globalThis.TouchEvent) => void) | null
+  >(null);
+  const [mobileMovePreview, setMobileMovePreview] = useState<{
+    id: string;
+    startsAt: string;
+    endsAt: string;
+  } | null>(null);
+  const [desktopMovePreview, setDesktopMovePreview] = useState<{
+    item: CalendarItem;
+    day: string;
+    startsAt: string;
+    endsAt: string;
+  } | null>(null);
+  const desktopMoveGesture = useRef<{
+    item: CalendarItem;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    grabOffsetMinutes: number;
+    active: boolean;
+    preview: {
+      day: string;
+      startsAt: string;
+      endsAt: string;
+    } | null;
+  } | null>(null);
+  const suppressDesktopMoveClickUntil = useRef(0);
+  const mobileMoveGesture = useRef<{
+    item: CalendarItem;
+    day: string;
+    grabOffsetMinutes: number;
+    currentStartMinute: number;
+    startX: number;
+    startY: number;
+    activated: boolean;
+    timer: number;
+  } | null>(null);
+  const suppressMobileMoveClickUntil = useRef(0);
   const suppressCreateClick = useRef(false);
+  const [spanCreation, setSpanCreation] = useState<{
+    startIndex: number;
+    endIndex: number;
+  } | null>(null);
+  const spanCreationGesture = useRef<{
+    anchorIndex: number;
+  } | null>(null);
+  const calendarRef = useRef<HTMLElement>(null);
+  const autoScrolledDayRef = useRef<string | null>(null);
+  const axisWidth = compact ? 44 : 52;
   const bodyHeight = hours.reduce(
     (total, hour) => total + hourHeight(hour, rowHeight),
     0,
@@ -4412,20 +6524,393 @@ function TimeCalendar({
     proposal?.changes.flatMap((change) =>
       change.after ? [change.after] : [],
     ) ?? [];
+  const spanningItems = items.filter(
+    (item) =>
+      item.status === "scheduled" &&
+      isCalendarSpanItem(item) &&
+      days.some((day) => itemOverlapsDay(item, dateKey(day))),
+  );
+  const proposedSpanningItems = proposalItems.filter(
+    (item) =>
+      item.status === "scheduled" &&
+      isCalendarSpanItem(item) &&
+      days.some((day) => itemOverlapsDay(item, dateKey(day))),
+  );
 
-  function minuteFromPointer(event: ReactPointerEvent<HTMLButtonElement>) {
-    const column = event.currentTarget.parentElement;
+  useEffect(() => {
+    if (!compact || days.length !== 1) return;
+    const day = dateKey(days[0]);
+    if (autoScrolledDayRef.current === day) return;
+    autoScrolledDayRef.current = day;
+    const frame = window.requestAnimationFrame(() => {
+      const calendar = calendarRef.current;
+      const viewport = calendar?.closest<HTMLElement>(".calendar-stage");
+      if (!calendar || !viewport) return;
+      const now = new Date();
+      const focusHour = day === dateKey(now) ? Math.max(6, now.getHours() - 2) : 7;
+      viewport.scrollTo({
+        top: Math.max(
+          0,
+          calendar.offsetTop + timeOffset(focusHour, 0, rowHeight) -
+            Math.min(window.innerHeight * 0.2, 150),
+        ),
+        behavior: "auto",
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [compact, days, rowHeight]);
+
+  useEffect(
+    () => () => {
+      const gesture = mobileCreationGesture.current;
+      if (gesture) window.clearTimeout(gesture.timer);
+      const moveGesture = mobileMoveGesture.current;
+      if (moveGesture) window.clearTimeout(moveGesture.timer);
+      const blocker = mobileCreationScrollBlocker.current;
+      if (blocker) document.removeEventListener("touchmove", blocker);
+    },
+    [],
+  );
+
+  function minuteFromClientY(element: HTMLElement, clientY: number) {
+    const column = element.closest<HTMLElement>(".day-column");
     if (!column) return 0;
     const rect = column.getBoundingClientRect();
-    const time = timeAtOffset(event.clientY - rect.top, rowHeight);
+    const time = timeAtOffset(clientY - rect.top, rowHeight);
     return time.hour * 60 + time.minute;
+  }
+
+  function minuteFromPointer(event: ReactPointerEvent<HTMLButtonElement>) {
+    return minuteFromClientY(event.currentTarget, event.clientY);
+  }
+
+  function clearMobileCreation(clearSelection = true) {
+    const gesture = mobileCreationGesture.current;
+    if (gesture) window.clearTimeout(gesture.timer);
+    mobileCreationGesture.current = null;
+    unlockMobileCreationScroll();
+    if (clearSelection) setCreationRange(null);
+  }
+
+  function clearMobileMove(clearPreview = true) {
+    const gesture = mobileMoveGesture.current;
+    if (gesture) window.clearTimeout(gesture.timer);
+    mobileMoveGesture.current = null;
+    unlockMobileCreationScroll();
+    if (clearPreview) setMobileMovePreview(null);
+  }
+
+  function clearDesktopMove(clearPreview = true) {
+    desktopMoveGesture.current = null;
+    if (clearPreview) setDesktopMovePreview(null);
+  }
+
+  function desktopMovePosition(
+    gesture: NonNullable<typeof desktopMoveGesture.current>,
+    clientX: number,
+    clientY: number,
+  ) {
+    const body = calendarRef.current?.querySelector<HTMLElement>(".time-body");
+    if (!body || days.length === 0) return null;
+    const rect = body.getBoundingClientRect();
+    const columnsWidth = Math.max(1, rect.width - axisWidth);
+    const dayWidth = columnsWidth / days.length;
+    const relativeX = Math.max(
+      0,
+      Math.min(columnsWidth - 1, clientX - rect.left - axisWidth),
+    );
+    const day = dateKey(days[Math.floor(relativeX / dayWidth)] ?? days[0]);
+    const pointerTime = timeAtOffset(clientY - rect.top, rowHeight);
+    const pointerMinute = pointerTime.hour * 60 + pointerTime.minute;
+    const duration = Math.max(15, durationMinutes(gesture.item));
+    const startMinute = Math.max(
+      0,
+      Math.min(
+        24 * 60 - duration,
+        Math.round((pointerMinute - gesture.grabOffsetMinutes) / 15) * 15,
+      ),
+    );
+    const start = dateFromKey(day);
+    start.setHours(Math.floor(startMinute / 60), startMinute % 60, 0, 0);
+    return {
+      item: gesture.item,
+      day,
+      startsAt: start.toISOString(),
+      endsAt: new Date(start.getTime() + duration * 60_000).toISOString(),
+    };
+  }
+
+  function beginDesktopMove(
+    event: ReactPointerEvent<HTMLElement>,
+    item: CalendarItem,
+  ) {
+    if (
+      compact ||
+      event.pointerType === "touch" ||
+      event.button !== 0 ||
+      item.flexibility === "fixed" ||
+      event.target instanceof Element && event.target.closest(".resize-handle")
+    ) {
+      return;
+    }
+    clearDesktopMove();
+    const pointerMinute = minuteFromClientY(event.currentTarget, event.clientY);
+    const start = new Date(item.startsAt!);
+    desktopMoveGesture.current = {
+      item,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      grabOffsetMinutes:
+        pointerMinute - (start.getHours() * 60 + start.getMinutes()),
+      active: false,
+      preview: null,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+
+  function moveDesktopEvent(event: ReactPointerEvent<HTMLElement>) {
+    const gesture = desktopMoveGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    if (!gesture.active) {
+      const distance = Math.hypot(
+        event.clientX - gesture.startX,
+        event.clientY - gesture.startY,
+      );
+      if (distance < 5) return;
+      gesture.active = true;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const preview = desktopMovePosition(gesture, event.clientX, event.clientY);
+    if (preview) {
+      gesture.preview = {
+        day: preview.day,
+        startsAt: preview.startsAt,
+        endsAt: preview.endsAt,
+      };
+      setDesktopMovePreview(preview);
+    }
+  }
+
+  function finishDesktopMove(event: ReactPointerEvent<HTMLElement>) {
+    const gesture = desktopMoveGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const preview = gesture.preview;
+    clearDesktopMove();
+    if (!gesture.active || !preview) return;
+    event.preventDefault();
+    event.stopPropagation();
+    suppressDesktopMoveClickUntil.current = performance.now() + 500;
+    const start = new Date(preview.startsAt);
+    onMoveAt(
+      gesture.item,
+      preview.day,
+      start.getHours(),
+      start.getMinutes(),
+    );
+  }
+
+  function cancelDesktopMove() {
+    clearDesktopMove();
+  }
+
+  function lockMobileCreationScroll() {
+    if (mobileCreationScrollBlocker.current) return;
+    const blocker = (event: globalThis.TouchEvent) => {
+      if (
+        mobileCreationGesture.current?.activated ||
+        mobileMoveGesture.current?.activated
+      ) {
+        event.preventDefault();
+      }
+    };
+    mobileCreationScrollBlocker.current = blocker;
+    document.addEventListener("touchmove", blocker, { passive: false });
+  }
+
+  function unlockMobileCreationScroll() {
+    const blocker = mobileCreationScrollBlocker.current;
+    if (!blocker) return;
+    document.removeEventListener("touchmove", blocker);
+    mobileCreationScrollBlocker.current = null;
+  }
+
+  function beginMobileCreation(
+    event: ReactTouchEvent<HTMLButtonElement>,
+    day: string,
+  ) {
+    if (!compact || event.touches.length !== 1) return;
+    clearMobileMove();
+    clearMobileCreation();
+    const touch = event.touches[0];
+    const button = event.currentTarget;
+    const anchorMinute = minuteFromClientY(button, touch.clientY);
+    const gesture = {
+      day,
+      anchorMinute,
+      currentMinute: Math.min(24 * 60, anchorMinute + 60),
+      startX: touch.clientX,
+      startY: touch.clientY,
+      activated: false,
+      timer: 0,
+    };
+    gesture.timer = window.setTimeout(() => {
+      if (mobileCreationGesture.current !== gesture) return;
+      gesture.activated = true;
+      lockMobileCreationScroll();
+      setCreationRange({
+        day,
+        startMinute: anchorMinute,
+        endMinute: gesture.currentMinute,
+      });
+      navigator.vibrate?.(10);
+    }, 420);
+    mobileCreationGesture.current = gesture;
+  }
+
+  function moveMobileCreation(event: ReactTouchEvent<HTMLButtonElement>) {
+    const gesture = mobileCreationGesture.current;
+    const touch = event.touches[0];
+    if (!gesture || !touch) return;
+    if (!gesture.activated) {
+      const distance = Math.hypot(
+        touch.clientX - gesture.startX,
+        touch.clientY - gesture.startY,
+      );
+      if (distance > 10) clearMobileCreation();
+      return;
+    }
+
+    event.preventDefault();
+    gesture.currentMinute = minuteFromClientY(event.currentTarget, touch.clientY);
+    const startMinute = Math.min(gesture.anchorMinute, gesture.currentMinute);
+    const endMinute = Math.max(
+      Math.max(gesture.anchorMinute, gesture.currentMinute),
+      Math.min(24 * 60, startMinute + 15),
+    );
+    setCreationRange({ day: gesture.day, startMinute, endMinute });
+  }
+
+  function finishMobileCreation(event: ReactTouchEvent<HTMLButtonElement>) {
+    const gesture = mobileCreationGesture.current;
+    if (!gesture) return;
+    window.clearTimeout(gesture.timer);
+    mobileCreationGesture.current = null;
+    unlockMobileCreationScroll();
+    setCreationRange(null);
+    if (!gesture.activated) return;
+
+    event.preventDefault();
+    const startMinute = Math.min(gesture.anchorMinute, gesture.currentMinute);
+    const endMinute = Math.max(
+      Math.max(gesture.anchorMinute, gesture.currentMinute),
+      Math.min(24 * 60, startMinute + 15),
+    );
+    onCreateAt(
+      gesture.day,
+      Math.floor(startMinute / 60),
+      startMinute % 60,
+      Math.max(15, endMinute - startMinute),
+    );
+  }
+
+  function setMobileMovePosition(
+    gesture: NonNullable<typeof mobileMoveGesture.current>,
+    startMinute: number,
+  ) {
+    const duration = Math.max(15, durationMinutes(gesture.item));
+    const boundedStart = Math.max(0, Math.min(24 * 60 - duration, startMinute));
+    gesture.currentStartMinute = boundedStart;
+    const start = dateFromKey(gesture.day);
+    start.setHours(Math.floor(boundedStart / 60), boundedStart % 60, 0, 0);
+    setMobileMovePreview({
+      id: gesture.item.id,
+      startsAt: start.toISOString(),
+      endsAt: new Date(start.getTime() + duration * 60_000).toISOString(),
+    });
+  }
+
+  function beginMobileMove(
+    event: ReactTouchEvent<HTMLElement>,
+    item: CalendarItem,
+    day: string,
+  ) {
+    if (
+      !compact ||
+      item.flexibility === "fixed" ||
+      event.touches.length !== 1
+    ) {
+      return;
+    }
+    clearMobileCreation();
+    clearMobileMove();
+    const touch = event.touches[0];
+    const touchMinute = minuteFromClientY(event.currentTarget, touch.clientY);
+    const start = new Date(item.startsAt!);
+    const startMinute = start.getHours() * 60 + start.getMinutes();
+    const gesture = {
+      item,
+      day,
+      grabOffsetMinutes: touchMinute - startMinute,
+      currentStartMinute: startMinute,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      activated: false,
+      timer: 0,
+    };
+    gesture.timer = window.setTimeout(() => {
+      if (mobileMoveGesture.current !== gesture) return;
+      gesture.activated = true;
+      lockMobileCreationScroll();
+      setMobileMovePosition(gesture, startMinute);
+      navigator.vibrate?.(10);
+    }, 420);
+    mobileMoveGesture.current = gesture;
+  }
+
+  function moveMobileEvent(event: ReactTouchEvent<HTMLElement>) {
+    const gesture = mobileMoveGesture.current;
+    const touch = event.touches[0];
+    if (!gesture || !touch) return;
+    if (!gesture.activated) {
+      const distance = Math.hypot(
+        touch.clientX - gesture.startX,
+        touch.clientY - gesture.startY,
+      );
+      if (distance > 10) clearMobileMove();
+      return;
+    }
+    event.preventDefault();
+    const touchMinute = minuteFromClientY(event.currentTarget, touch.clientY);
+    const startMinute =
+      Math.round((touchMinute - gesture.grabOffsetMinutes) / 15) * 15;
+    setMobileMovePosition(gesture, startMinute);
+  }
+
+  function finishMobileMove(event: ReactTouchEvent<HTMLElement>) {
+    const gesture = mobileMoveGesture.current;
+    if (!gesture) return;
+    window.clearTimeout(gesture.timer);
+    mobileMoveGesture.current = null;
+    unlockMobileCreationScroll();
+    setMobileMovePreview(null);
+    if (!gesture.activated) return;
+    event.preventDefault();
+    suppressMobileMoveClickUntil.current = performance.now() + 500;
+    onMoveAt(
+      gesture.item,
+      gesture.day,
+      Math.floor(gesture.currentStartMinute / 60),
+      gesture.currentStartMinute % 60,
+    );
   }
 
   function beginCreation(
     event: ReactPointerEvent<HTMLButtonElement>,
     day: string,
   ) {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || (compact && event.pointerType !== "mouse")) return;
     const anchorMinute = minuteFromPointer(event);
     event.currentTarget.setPointerCapture?.(event.pointerId);
     creationGesture.current = { day, anchorMinute, moved: false };
@@ -4437,6 +6922,7 @@ function TimeCalendar({
   }
 
   function moveCreation(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (compact && event.pointerType !== "mouse") return;
     const gesture = creationGesture.current;
     if (!gesture) return;
     const currentMinute = minuteFromPointer(event);
@@ -4454,6 +6940,7 @@ function TimeCalendar({
   }
 
   function finishCreation(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (compact && event.pointerType !== "mouse") return;
     const gesture = creationGesture.current;
     if (!gesture) return;
     const currentMinute = minuteFromPointer(event);
@@ -4480,15 +6967,59 @@ function TimeCalendar({
     setCreationRange(null);
   }
 
+  function spanIndexFromPointer(event: ReactPointerEvent<HTMLButtonElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const ratio = rect.width > 0 ? (event.clientX - rect.left) / rect.width : 0;
+    return Math.max(
+      0,
+      Math.min(days.length - 1, Math.floor(ratio * days.length)),
+    );
+  }
+
+  function beginSpanCreation(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0 || days.length === 0) return;
+    const anchorIndex = spanIndexFromPointer(event);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    spanCreationGesture.current = { anchorIndex };
+    setSpanCreation({ startIndex: anchorIndex, endIndex: anchorIndex });
+  }
+
+  function moveSpanCreation(event: ReactPointerEvent<HTMLButtonElement>) {
+    const gesture = spanCreationGesture.current;
+    if (!gesture) return;
+    const currentIndex = spanIndexFromPointer(event);
+    setSpanCreation({
+      startIndex: Math.min(gesture.anchorIndex, currentIndex),
+      endIndex: Math.max(gesture.anchorIndex, currentIndex),
+    });
+  }
+
+  function finishSpanCreation(event: ReactPointerEvent<HTMLButtonElement>) {
+    const gesture = spanCreationGesture.current;
+    if (!gesture || days.length === 0) return;
+    const currentIndex = spanIndexFromPointer(event);
+    const startIndex = Math.min(gesture.anchorIndex, currentIndex);
+    const endIndex = Math.max(gesture.anchorIndex, currentIndex);
+    spanCreationGesture.current = null;
+    setSpanCreation(null);
+    onCreateSpan(dateKey(days[startIndex]), dateKey(days[endIndex]));
+  }
+
+  function cancelSpanCreation() {
+    spanCreationGesture.current = null;
+    setSpanCreation(null);
+  }
+
   return (
     <section
-      className="time-calendar"
+      ref={calendarRef}
+      className={`time-calendar ${compact ? "mobile-day-calendar" : ""}`}
       style={{ "--row-height": `${rowHeight}px` } as CSSProperties}
     >
       <div
         className="day-head"
         style={{
-          gridTemplateColumns: `52px repeat(${days.length}, minmax(110px, 1fr))`,
+          gridTemplateColumns: `${axisWidth}px repeat(${days.length}, minmax(${compact ? 0 : 110}px, 1fr))`,
         }}
       >
         <span />
@@ -4514,9 +7045,84 @@ function TimeCalendar({
         })}
       </div>
       <div
+        className="multi-day-strip"
+        style={{
+          gridTemplateColumns: `${axisWidth}px repeat(${days.length}, minmax(${compact ? 0 : 110}px, 1fr))`,
+        }}
+      >
+          <span className="multi-day-label">{compact ? "all day" : "add span"}</span>
+          <button
+            type="button"
+            className="multi-day-create-surface"
+            aria-label={compact ? "Add an all-day event" : "Drag across days to create a multi-day event"}
+            onPointerDown={beginSpanCreation}
+            onPointerMove={moveSpanCreation}
+            onPointerUp={finishSpanCreation}
+            onPointerCancel={cancelSpanCreation}
+            onLostPointerCapture={cancelSpanCreation}
+          >
+            {compact ? "Tap to add an all-day event" : "Drag across days to add an event"}
+          </button>
+          {spanCreation && (
+            <span
+              className="multi-day-create-selection"
+              aria-hidden="true"
+              style={{
+                gridColumn: `${spanCreation.startIndex + 2} / ${spanCreation.endIndex + 3}`,
+              }}
+            />
+          )}
+          {[...spanningItems, ...proposedSpanningItems].map((item, row) => {
+            const covered = days
+              .map((day, index) =>
+                itemOverlapsDay(item, dateKey(day)) ? index : -1,
+              )
+              .filter((index) => index >= 0);
+            const first = covered[0];
+            const last = covered.at(-1);
+            if (first === undefined || last === undefined) return null;
+            const proposed = proposedSpanningItems.includes(item);
+            const visibleStart = new Date(days[0]);
+            visibleStart.setHours(0, 0, 0, 0);
+            const visibleEnd = addDays(days.at(-1) ?? days[0], 1);
+            visibleEnd.setHours(0, 0, 0, 0);
+            const continuesBefore = new Date(item.startsAt!) < visibleStart;
+            const continuesAfter = new Date(item.endsAt!) > visibleEnd;
+            return (
+              <button
+                className={`multi-day-item kind-${item.kind} energy-${item.energyType} ${
+                  proposed ? "proposal-target" : ""
+                } ${continuesBefore ? "continues-before" : ""} ${
+                  continuesAfter ? "continues-after" : ""
+                }`}
+                type="button"
+                key={`${proposed ? "proposal-" : ""}${item.id}`}
+                onClick={() => !proposed && onOpenItem(item)}
+                aria-label={`${item.title}, ${formatSpan(item)}${
+                  continuesBefore || continuesAfter
+                    ? ", continues beyond this week"
+                    : ""
+                }`}
+                style={{
+                  gridColumn: `${first + 2} / ${last + 3}`,
+                  gridRow: row + 2,
+                }}
+              >
+                {item.flexibility === "fixed" ? (
+                  <Lock size={10} />
+                ) : (
+                  <Sparkles size={10} />
+                )}
+                <strong>{item.title}</strong>
+                <small>{formatSpan(item)}</small>
+              </button>
+            );
+          })}
+        </div>
+      <div
         className="time-body"
         style={{
-          gridTemplateColumns: `52px repeat(${days.length}, minmax(110px, 1fr))`,
+          gridTemplateColumns: `${axisWidth}px repeat(${days.length}, minmax(${compact ? 0 : 110}px, 1fr))`,
           height: `${bodyHeight}px`,
         }}
       >
@@ -4525,7 +7131,9 @@ function TimeCalendar({
             <time
               className={isInactiveHour(hour) ? "inactive" : ""}
               key={hour}
-              style={{ top: `${timeOffset(hour, 0, rowHeight) - 6}px` }}
+              style={{
+                top: `${Math.max(4, timeOffset(hour, 0, rowHeight) - 6)}px`,
+              }}
             >
               {String(hour).padStart(2, "0")}:00
             </time>
@@ -4538,6 +7146,7 @@ function TimeCalendar({
               item.startsAt &&
               item.endsAt &&
               item.status === "scheduled" &&
+              !isCalendarSpanItem(item) &&
               dateKey(new Date(item.startsAt)) === key,
           );
           const ranges = items.filter(
@@ -4555,6 +7164,7 @@ function TimeCalendar({
               item.startsAt &&
               item.endsAt &&
               item.status === "scheduled" &&
+              !isCalendarSpanItem(item) &&
               dateKey(new Date(item.startsAt)) === key,
           );
           const proposedRanges = proposalItems.filter(
@@ -4569,6 +7179,58 @@ function TimeCalendar({
             const rect = event.currentTarget.getBoundingClientRect();
             return timeAtOffset(event.clientY - rect.top, rowHeight);
           };
+          let desktopDropPreview: {
+            item: CalendarItem;
+            top: number;
+            height: number;
+            startsAt: string;
+            endsAt: string;
+            valid: boolean;
+            reason: string;
+          } | null = null;
+          const previewSource = desktopMovePreview?.day === key
+            ? desktopMovePreview
+            : !compact && draggingItem && dragSnap?.day === key
+              ? (() => {
+                  const start = dateFromKey(key);
+                  start.setHours(dragSnap.hour, dragSnap.minute, 0, 0);
+                  const duration = Math.max(
+                    draggingItem.durationMin,
+                    durationMinutes(draggingItem),
+                  );
+                  return {
+                    item: draggingItem,
+                    day: key,
+                    startsAt: start.toISOString(),
+                    endsAt: new Date(
+                      start.getTime() + duration * 60_000,
+                    ).toISOString(),
+                  };
+                })()
+              : null;
+          if (previewSource) {
+            const { item: previewItem } = previewSource;
+            const candidate = {
+              ...previewItem,
+              startsAt: previewSource.startsAt,
+              endsAt: previewSource.endsAt,
+            };
+            const validation = validatePlacement(
+              previewItem,
+              candidate.startsAt,
+              candidate.endsAt,
+              items,
+            );
+            const geometry = itemGeometry(candidate, rowHeight);
+            desktopDropPreview = {
+              item: candidate,
+              ...geometry,
+              startsAt: candidate.startsAt,
+              endsAt: candidate.endsAt,
+              valid: validation.valid,
+              reason: validation.errors[0] ?? "Ready to move",
+            };
+          }
           return (
             <div
               className="day-column"
@@ -4583,12 +7245,11 @@ function TimeCalendar({
               }}
             >
               {hours.map((hour) => {
-                const isSnap = dragSnap?.day === key && dragSnap.hour === hour;
                 return (
                   <button
                     className={`time-slot ${
                       isInactiveHour(hour) ? "inactive" : ""
-                    } ${isSnap ? "snap-active" : ""}`}
+                    }`}
                     type="button"
                     key={hour}
                     aria-label={`Schedule at ${formatDate(day, {
@@ -4597,6 +7258,10 @@ function TimeCalendar({
                       day: "numeric",
                     })} ${hour}:00`}
                     onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
+                      if (compact) {
+                        event.preventDefault();
+                        return;
+                      }
                       if (suppressCreateClick.current) {
                         event.preventDefault();
                         return;
@@ -4614,21 +7279,12 @@ function TimeCalendar({
                     onPointerMove={moveCreation}
                     onPointerUp={finishCreation}
                     onPointerCancel={cancelCreation}
+                    onTouchStart={(event) => beginMobileCreation(event, key)}
+                    onTouchMove={moveMobileCreation}
+                    onTouchEnd={finishMobileCreation}
+                    onTouchCancel={() => clearMobileCreation()}
                     style={{ height: `${hourHeight(hour, rowHeight)}px` }}
                   >
-                    {isSnap && (
-                      <span
-                        className="snap-guide"
-                        style={{
-                          top: `${
-                            (dragSnap.minute / 60) * hourHeight(hour, rowHeight)
-                          }px`,
-                        }}
-                      >
-                        {String(hour).padStart(2, "0")}:
-                        {String(dragSnap.minute).padStart(2, "0")}
-                      </span>
-                    )}
                   </button>
                 );
               })}
@@ -4669,6 +7325,48 @@ function TimeCalendar({
                   </span>
                 </div>
               )}
+              {desktopDropPreview && (
+                <div
+                  className={`calendar-drop-preview ${
+                    desktopDropPreview.valid ? "is-valid" : "is-invalid"
+                  }`}
+                  style={{
+                    top: desktopDropPreview.top,
+                    height: desktopDropPreview.height,
+                    ...classColorStyle(desktopDropPreview.item, subjects),
+                  }}
+                  aria-live="polite"
+                >
+                  <span>
+                    {formatTime(desktopDropPreview.startsAt)}–
+                    {formatTime(desktopDropPreview.endsAt)}
+                  </span>
+                  <strong>{desktopDropPreview.item.title}</strong>
+                  <small>
+                    {desktopDropPreview.valid
+                      ? "Release to move"
+                      : desktopDropPreview.reason}
+                  </small>
+                </div>
+              )}
+              {mobileMovePreview &&
+                dayItems.some((item) => item.id === mobileMovePreview.id) &&
+                (() => {
+                  const original = dayItems.find(
+                    (item) => item.id === mobileMovePreview.id,
+                  );
+                  if (!original) return null;
+                  const geometry = itemGeometry(original, rowHeight);
+                  return (
+                    <div
+                      className="mobile-move-origin"
+                      style={{ top: geometry.top, height: geometry.height }}
+                      aria-hidden="true"
+                    >
+                      <span>Original</span>
+                    </div>
+                  );
+                })()}
               {ranges.map((item) => {
                 const start = new Date(item.windowStart!);
                 const end = new Date(item.windowEnd!);
@@ -4746,7 +7444,13 @@ function TimeCalendar({
                         startsAt: resizing.startsAt,
                         endsAt: resizing.endsAt,
                       }
-                    : item;
+                    : mobileMovePreview?.id === item.id
+                      ? {
+                          ...item,
+                          startsAt: mobileMovePreview.startsAt,
+                          endsAt: mobileMovePreview.endsAt,
+                        }
+                      : item;
                 const { top, height } = itemGeometry(previewItem, rowHeight);
                 const placement = layout.get(item.id) ?? { lane: 0, lanes: 1 };
                 const width = 100 / placement.lanes;
@@ -4754,72 +7458,114 @@ function TimeCalendar({
                   <article
                     className={`calendar-block ${
                       resizing?.id === item.id ? "is-resizing" : ""
+                    } ${
+                      mobileMovePreview?.id === item.id ? "is-mobile-moving" : ""
+                    } ${
+                      desktopMovePreview?.item.id === item.id
+                        ? "is-drag-origin"
+                        : ""
                     } kind-${item.kind} energy-${item.energyType} flex-${item.flexibility} priority-${item.priority} ${urgencyClass(
                       item,
                     )} ${
                       proposalOrigins.has(item.id) ? "proposal-origin" : ""
                     }`}
                     key={item.id}
-                    draggable={item.flexibility !== "fixed"}
-                    onDragStart={(event) => onDragStart(event, item)}
-                    onDragEnd={onDragEnd}
-                    onClick={() => onOpenItem(item)}
+                    onPointerDown={(event) => beginDesktopMove(event, item)}
+                    onPointerMove={moveDesktopEvent}
+                    onPointerUp={finishDesktopMove}
+                    onPointerCancel={cancelDesktopMove}
+                    onClick={(event) => {
+                      if (
+                        performance.now() < suppressMobileMoveClickUntil.current ||
+                        performance.now() < suppressDesktopMoveClickUntil.current
+                      ) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        return;
+                      }
+                      onOpenItem(item);
+                    }}
+                    onTouchStart={(event) => beginMobileMove(event, item, key)}
+                    onTouchMove={moveMobileEvent}
+                    onTouchEnd={finishMobileMove}
+                    onTouchCancel={() => clearMobileMove()}
                     style={
                       {
                         top,
                         height,
                         left: `calc(${placement.lane * width}% + 3px)`,
                         right: "auto",
-                        width: `calc(${width}% - 6px)`,
-                        viewTransitionName: `calendar-item-${item.id}`,
-                      } as CSSProperties
+                      width: `calc(${width}% - 6px)`,
+                      viewTransitionName: `calendar-item-${item.id}`,
+                      ...classColorStyle(item, subjects),
+                    } as CSSProperties
                     }
                   >
-                    <button
-                      className="resize-handle resize-handle-start"
-                      type="button"
-                      draggable={false}
-                      aria-label={`Extend or shorten the start of ${item.title}`}
-                      onDragStart={(event) => event.preventDefault()}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                      }}
-                      onPointerDown={(event) =>
-                        onResize(event, item, rowHeight, "start")
-                      }
-                    />
+                    {!compact && (
+                      <button
+                        className="resize-handle resize-handle-start"
+                        type="button"
+                        draggable={false}
+                        aria-label={`Extend or shorten the start of ${item.title}`}
+                        onDragStart={(event) => event.preventDefault()}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                        onPointerDown={(event) =>
+                          onResize(event, item, rowHeight, "start")
+                        }
+                      />
+                    )}
                     <div>
                       {item.flexibility === "fixed" ? (
                         <Lock size={10} />
+                      ) : compact ? (
+                        <CalendarClock size={10} />
                       ) : (
                         <GripVertical size={10} />
                       )}
                       <time>{formatTime(item.startsAt)}</time>
                     </div>
                     <strong>{item.title}</strong>
+                    {isImportedTimetableItem(item) && timetableRoomForItem(item) && (
+                      <span className="calendar-class-room">
+                        Room {timetableRoomForItem(item)}
+                      </span>
+                    )}
+                    {mobileMovePreview?.id === item.id && (
+                      <span className="mobile-move-time-badge">
+                        {formatTime(previewItem.startsAt)}–
+                        {formatTime(previewItem.endsAt)}
+                      </span>
+                    )}
                     <small>
-                      {energyLabels[item.energyType]}
-                      {item.constraints.length
-                        ? ` · ${item.constraints.length} constraint${
-                            item.constraints.length === 1 ? "" : "s"
-                          }`
-                        : ""}
+                      {isImportedTimetableItem(item)
+                        ? item.description || "Click to edit this period"
+                        : `${energyLabels[item.energyType]}${
+                            item.constraints.length
+                              ? ` · ${item.constraints.length} constraint${
+                                  item.constraints.length === 1 ? "" : "s"
+                                }`
+                              : ""
+                          }`}
                     </small>
-                    <button
-                      className="resize-handle resize-handle-end"
-                      type="button"
-                      draggable={false}
-                      aria-label={`Extend or shorten the end of ${item.title}`}
-                      onDragStart={(event) => event.preventDefault()}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                      }}
-                      onPointerDown={(event) =>
-                        onResize(event, item, rowHeight, "end")
-                      }
-                    />
+                    {!compact && (
+                      <button
+                        className="resize-handle resize-handle-end"
+                        type="button"
+                        draggable={false}
+                        aria-label={`Extend or shorten the end of ${item.title}`}
+                        onDragStart={(event) => event.preventDefault()}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                        onPointerDown={(event) =>
+                          onResize(event, item, rowHeight, "end")
+                        }
+                      />
+                    )}
                   </article>
                 );
               })}
@@ -4843,13 +7589,21 @@ function TimeCalendar({
             </div>
           );
         })}
-        <NowLine days={days} rowHeight={rowHeight} />
+        <NowLine days={days} rowHeight={rowHeight} axisWidth={axisWidth} />
       </div>
     </section>
   );
 }
 
-function NowLine({ days, rowHeight }: { days: Date[]; rowHeight: number }) {
+function NowLine({
+  days,
+  rowHeight,
+  axisWidth = 52,
+}: {
+  days: Date[];
+  rowHeight: number;
+  axisWidth?: number;
+}) {
   const now = new Date();
   const dayIndex = days.findIndex((day) => dateKey(day) === dateKey(now));
   if (dayIndex < 0) {
@@ -4861,8 +7615,8 @@ function NowLine({ days, rowHeight }: { days: Date[]; rowHeight: number }) {
       className="now-line"
       style={{
         top,
-        left: `calc(52px + (100% - 52px) * ${dayIndex} / ${days.length})`,
-        width: `calc((100% - 52px) / ${days.length})`,
+        left: `calc(${axisWidth}px + (100% - ${axisWidth}px) * ${dayIndex} / ${days.length})`,
+        width: `calc((100% - ${axisWidth}px) / ${days.length})`,
       }}
     >
       <i />
@@ -4875,11 +7629,13 @@ function OverviewCalendar({
   anchor,
   months,
   items,
+  subjects,
   onSelectDay,
 }: {
   anchor: Date;
   months: number;
   items: CalendarItem[];
+  subjects: Subject[];
   onSelectDay: (day: string) => void;
 }) {
   const firstMonth = new Date(anchor.getFullYear(), anchor.getMonth(), 1, 12);
@@ -4898,15 +7654,60 @@ function OverviewCalendar({
           0,
         ).getDate();
         const leading = (month.getDay() + 6) % 7;
+        const monthItems = items.filter((item) => {
+          const inMonth = (value: string | null) => {
+            if (!value) return false;
+            const date = new Date(value);
+            return (
+              date.getFullYear() === month.getFullYear() &&
+              date.getMonth() === month.getMonth()
+            );
+          };
+          const monthStart = new Date(
+            month.getFullYear(),
+            month.getMonth(),
+            1,
+          );
+          const monthEnd = new Date(
+            month.getFullYear(),
+            month.getMonth() + 1,
+            1,
+          );
+          const overlapsMonth = Boolean(
+            item.startsAt &&
+              item.endsAt &&
+              new Date(item.startsAt) < monthEnd &&
+              new Date(item.endsAt) > monthStart,
+          );
+          return overlapsMonth || inMonth(item.deadline);
+        });
+        const monthDeadlines = monthItems.filter((item) => {
+          if (!item.deadline) return false;
+          const deadline = new Date(item.deadline);
+          return (
+            deadline.getFullYear() === month.getFullYear() &&
+            deadline.getMonth() === month.getMonth()
+          );
+        }).length;
         return (
           <article className="month-card" key={dateKey(month)}>
             <header>
-              <h2>
-                {formatDate(month, {
-                  month: "long",
-                  year: months === 1 ? "numeric" : undefined,
-                })}
-              </h2>
+              <div>
+                <h2>
+                  {formatDate(month, {
+                    month: "long",
+                    year: months === 1 ? "numeric" : undefined,
+                  })}
+                </h2>
+                <span>
+                  {monthItems.length} planned
+                  {monthDeadlines ? ` · ${monthDeadlines} due` : ""}
+                </span>
+              </div>
+              <div className="month-load-key" aria-label="Daily load key">
+                <i />
+                <span>load</span>
+              </div>
             </header>
             <div className="month-weekdays">
               {"MTWTFSS".split("").map((day, index) => (
@@ -4928,7 +7729,8 @@ function OverviewCalendar({
                 const dayItems = items.filter(
                   (item) =>
                     (item.startsAt &&
-                      dateKey(new Date(item.startsAt)) === key) ||
+                      item.endsAt &&
+                      itemOverlapsDay(item, key)) ||
                     (item.deadline && dateKey(new Date(item.deadline)) === key),
                 );
                 const capacity = capacityForDay(items, key);
@@ -4940,18 +7742,63 @@ function OverviewCalendar({
                     type="button"
                     key={key}
                     onClick={() => onSelectDay(key)}
+                    aria-label={`${formatDate(date, {
+                      weekday: "long",
+                      day: "numeric",
+                      month: "long",
+                    })}, ${dayItems.length} calendar items, ${capacity.load}% load`}
                   >
-                    <strong>{index + 1}</strong>
-                    <div>
-                      {dayItems.slice(0, months === 1 ? 3 : 2).map((item) => (
-                        <i
-                          className={`energy-${item.energyType}`}
-                          key={`${item.id}-${item.deadline ? "deadline" : "item"}`}
-                          title={item.title}
-                        />
-                      ))}
+                    <div className="month-day-heading">
+                      <strong>{index + 1}</strong>
+                      {capacity.load > 0 && <span>{capacity.load}%</span>}
                     </div>
-                    {dayItems.some((item) => item.deadline) && <em />}
+                    {months === 1 ? (
+                      <div className="month-event-list">
+                        {dayItems.slice(0, 3).map((item) => (
+                          <span
+                            className={`month-event energy-${item.energyType} ${item.deadline ? "has-deadline" : ""}`}
+                            key={`${item.id}-${item.deadline ? "deadline" : "item"}`}
+                            style={classColorStyle(item, subjects)}
+                          >
+                            <i />
+                            <time>
+                              {item.deadline && !itemOverlapsDay(item, key)
+                                ? "Due"
+                                : isCalendarSpanItem(item)
+                                  ? "Span"
+                                  : item.startsAt
+                                    ? formatTime(item.startsAt)
+                                    : "Due"}
+                            </time>
+                            <em>
+                              {item.title}
+                              {isImportedTimetableItem(item) &&
+                                timetableRoomForItem(item) && (
+                                  <small>Room {timetableRoomForItem(item)}</small>
+                                )}
+                            </em>
+                          </span>
+                        ))}
+                        {dayItems.length > 3 && (
+                          <small>+{dayItems.length - 3} more</small>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="semester-density">
+                        <span style={{ width: `${Math.max(4, capacity.load)}%` }} />
+                        <div>
+                          {dayItems.slice(0, 4).map((item) => (
+                            <i
+                              className={`energy-${item.energyType}`}
+                              key={`${item.id}-${item.deadline ? "deadline" : "item"}`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {dayItems.some((item) => item.deadline) && (
+                      <span className="month-deadline-mark" />
+                    )}
                   </button>
                 );
               })}

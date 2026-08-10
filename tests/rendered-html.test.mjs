@@ -33,9 +33,10 @@ test("server-renders the Syllabi calendar", async () => {
   assert.match(html, /Unscheduled/);
   assert.match(html, /Create or transform/);
   assert.match(html, /Temporal zoom/);
-  assert.match(html, /next 5/);
-  assert.match(html, /Your next five/);
-  assert.match(html, /Add homework or change your schedule/);
+  assert.match(html, /Attention home/);
+  assert.match(html, /Tell Syllabi what you need/);
+  assert.match(html, /This time can stay free/);
+  assert.match(html, /Intentions/);
   assert.match(html, /Tasks and intentions wait here/);
   assert.doesNotMatch(html, /Calculus problem set/);
   assert.doesNotMatch(html, /Review electric fields/);

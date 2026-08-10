@@ -106,6 +106,7 @@ function availableGaps(
         now,
         due,
         { energyType },
+        school.calendarItems,
       ).map((range) => ({ start: range.start, end: range.end })),
     );
   }
@@ -211,6 +212,7 @@ export function planAssignment(
         school.classes,
         school.classExceptions,
         school.settings,
+        school.calendarItems,
       );
       const bFit = studySlotSuitability(
         b.cursor,
@@ -223,6 +225,7 @@ export function planAssignment(
         school.classes,
         school.classExceptions,
         school.settings,
+        school.calendarItems,
       );
       if (aFit.suitable !== bFit.suitable) return aFit.suitable ? -1 : 1;
       if (
@@ -274,6 +277,7 @@ export function planAssignment(
         school.classes,
         school.classExceptions,
         school.settings,
+        school.calendarItems,
       );
       if (!suitability.suitable) continue;
     }

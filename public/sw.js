@@ -1,5 +1,5 @@
-const CACHE = "syllabi-flex-shell-v4";
-const SHELL = ["/", "/manifest.webmanifest", "/favicon.svg"];
+const CACHE = "syllabi-mobile-shell-v5";
+const SHELL = ["/", "/manifest.webmanifest", "/favicon.svg", "/apple-touch-icon.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));

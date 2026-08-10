@@ -89,6 +89,7 @@ function input(overrides = {}) {
     currentLocation: "school",
     currentEnergy: "low",
     computerAvailable: false,
+    learningSignals: [],
     ...overrides,
   };
 }
@@ -271,4 +272,55 @@ test("an assignment minimum overrides a shorter focus template", () => {
   );
 
   assert.equal(result.recommendations[0].durationMinutes, 60);
+});
+
+test("turns repeated too-easy feedback into an optional deeper direction", () => {
+  const result = recommendNow(
+    input({
+      items: [
+        makeItem({
+          title: "Next class",
+          kind: "event",
+          flexibility: "fixed",
+          startsAt: "2026-08-03T10:40:00.000Z",
+          endsAt: "2026-08-03T11:30:00.000Z",
+          status: "scheduled",
+        }),
+      ],
+      assignments: [],
+      assessments: [],
+      subjects: [{ id: "chemistry", name: "Chemistry" }],
+      currentEnergy: "high",
+      learningSignals: [
+        { id: "s1", sourceType: "subject", sourceId: "chemistry", sourceTitle: "Chemistry", subjectId: "chemistry", challengeLevel: "too_easy", note: "", createdAt: "2026-08-02T12:00:00.000Z" },
+        { id: "s2", sourceType: "assignment", sourceId: "a2", sourceTitle: "Rates worksheet", subjectId: "chemistry", challengeLevel: "too_easy", note: "", createdAt: "2026-08-01T12:00:00.000Z" },
+      ],
+    }),
+  );
+
+  assert.equal(result.recommendations[0].source, "exploration");
+  assert.equal(result.recommendations[0].durationMinutes, 15);
+  assert.match(result.recommendations[0].reasons[0], /too easy 2 times/);
+});
+
+test("leaves a gap free when no option clears the usefulness threshold", () => {
+  const result = recommendNow(
+    input({
+      items: [],
+      assessments: [],
+      assignments: [
+        assignment({
+          dueAt: null,
+          priority: "low",
+          workType: "problem_solving",
+          requiredEnergy: "high",
+        }),
+      ],
+      currentEnergy: "low",
+    }),
+  );
+
+  assert.equal(result.recommendations.length, 0);
+  assert.equal(result.freeTimeIsValid, true);
+  assert.match(result.freeTimeReason, /Nothing is urgent/);
 });
