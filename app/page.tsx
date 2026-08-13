@@ -2208,6 +2208,16 @@ export default function Home() {
     setDraftItem(editableItem);
   }
 
+  function renameItem(item: CalendarItem, title: string) {
+    const nextTitle = title.trim();
+    if (!nextTitle || nextTitle === item.title) return;
+    updateItem(
+      { ...item, title: nextTitle },
+      `Rename “${item.title}” to “${nextTitle}”`,
+    );
+    setNotice(`Renamed to “${nextTitle}”.`);
+  }
+
   function openNewEvent(
     day = selectedDay,
     hour?: number,
@@ -4539,6 +4549,7 @@ export default function Home() {
             onDrop={onCalendarDrop}
             onDragOver={onCalendarDragOver}
             onOpenItem={openItem}
+            onRenameItem={renameItem}
             onResize={beginResize}
             onCreateAt={openNewEvent}
             onCreateSpan={openNewSpan}
@@ -6416,6 +6427,78 @@ function MobileAgenda({
   );
 }
 
+function InlineItemTitle({
+  item,
+  onRename,
+}: {
+  item: CalendarItem;
+  onRename: (item: CalendarItem, title: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(item.title);
+
+  useEffect(() => setTitle(item.title), [item.title]);
+
+  function finish() {
+    const nextTitle = title.trim();
+    if (nextTitle) onRename(item, nextTitle);
+    else setTitle(item.title);
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <input
+        className="inline-item-title-input"
+        value={title}
+        autoFocus
+        aria-label={`Rename ${item.title}`}
+        onChange={(event) => setTitle(event.target.value)}
+        onPointerDown={(event) => event.stopPropagation()}
+        onTouchStart={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+        onBlur={finish}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            event.currentTarget.blur();
+          }
+          if (event.key === "Escape") {
+            event.preventDefault();
+            setTitle(item.title);
+            setEditing(false);
+          }
+        }}
+      />
+    );
+  }
+
+  return (
+    <strong
+      className="inline-item-title"
+      role="button"
+      tabIndex={0}
+      title="Click to rename"
+      onPointerDown={(event) => event.stopPropagation()}
+      onTouchStart={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setEditing(true);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          event.stopPropagation();
+          setEditing(true);
+        }
+      }}
+    >
+      {item.title}
+    </strong>
+  );
+}
+
 function TimeCalendar({
   days,
   items,
@@ -6430,6 +6513,7 @@ function TimeCalendar({
   onDrop,
   onDragOver,
   onOpenItem,
+  onRenameItem,
   onResize,
   onCreateAt,
   onCreateSpan,
@@ -6459,6 +6543,7 @@ function TimeCalendar({
     minute: number,
   ) => void;
   onOpenItem: (item: CalendarItem) => void;
+  onRenameItem: (item: CalendarItem, title: string) => void;
   onResize: (
     event: ReactPointerEvent,
     item: CalendarItem,
@@ -7152,7 +7237,7 @@ function TimeCalendar({
                 ) : (
                   <Sparkles size={10} />
                 )}
-                <strong>{item.title}</strong>
+                <InlineItemTitle item={item} onRename={onRenameItem} />
                 <small>{formatSpan(item)}</small>
               </button>
             );
@@ -7566,7 +7651,7 @@ function TimeCalendar({
                       )}
                       <time>{formatTime(item.startsAt)}</time>
                     </div>
-                    <strong>{item.title}</strong>
+                    <InlineItemTitle item={item} onRename={onRenameItem} />
                     {isImportedTimetableItem(item) && timetableRoomForItem(item) && (
                       <span className="calendar-class-room">
                         Room {timetableRoomForItem(item)}

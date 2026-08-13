@@ -3349,6 +3349,109 @@ kbd {
   }
 }
 
+/* Editable temporal controls and lightweight calendar renaming. */
+.temporal-trigger {
+  grid-template-columns: 16px minmax(0, 1fr) 25px;
+  padding-right: 5px;
+}
+
+.temporal-trigger > input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.temporal-trigger > input::-webkit-calendar-picker-indicator {
+  display: none;
+}
+
+.temporal-trigger > input:disabled {
+  cursor: not-allowed;
+}
+
+.temporal-picker-button {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  place-items: center;
+  color: #817a9f;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+}
+
+.temporal-picker-button:hover {
+  color: #5548a7;
+  background: #e2e1e9;
+}
+
+.temporal-clear {
+  right: 31px;
+}
+
+.temporal-field:has(.temporal-clear) .temporal-trigger > input {
+  padding-right: 22px;
+}
+
+.inline-item-title {
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 3px;
+  cursor: text;
+  outline: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inline-item-title:hover,
+.inline-item-title:focus-visible {
+  background: rgb(255 255 255 / 42%);
+  box-shadow: 0 0 0 2px rgb(255 255 255 / 42%);
+}
+
+.inline-item-title-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: 22px;
+  padding: 1px 4px;
+  color: inherit;
+  background: rgb(255 255 255 / 86%);
+  border: 1px solid color-mix(in srgb, currentcolor 35%, transparent);
+  border-radius: 5px;
+  outline: 2px solid rgb(104 89 200 / 18%);
+  font: inherit;
+  font-weight: 650;
+}
+
+.multi-day-item .inline-item-title-input {
+  height: 20px;
+  font-size: 8px;
+}
+
+@media (max-width: 780px) {
+  .temporal-trigger {
+    min-height: 44px;
+  }
+
+  .temporal-trigger > input {
+    font-size: 16px;
+  }
+
+  .temporal-picker-button {
+    width: 30px;
+    height: 30px;
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .inbox-item,
   .calendar-block,

@@ -51,12 +51,6 @@ function parts(value: string, mode: TemporalMode) {
   return { date: date.slice(0, 10), time: time.slice(0, 5) };
 }
 
-function displayDate(value: string) {
-  const [year, month, day] = value.split("-").map(Number);
-  if (!year || !month || !day) return "";
-  return `${day} ${MONTHS[month - 1].slice(0, 3)} ${year}`;
-}
-
 function joinValue(mode: TemporalMode, date: string, time: string) {
   if (mode === "date") return date;
   if (mode === "time") return time;
@@ -87,7 +81,7 @@ export function TemporalField({
   const [viewMonth, setViewMonth] = useState("");
   const [popoverStyle, setPopoverStyle] = useState<CSSProperties>({});
   const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
   const current = parts(value, mode);
   const selectedTime = current.time || "09:00";
   const [selectedHour, selectedMinute] = selectedTime.split(":").map(Number);
@@ -196,35 +190,42 @@ export function TemporalField({
     onChange(joinValue(mode, current.date || todayKey(), time));
   }
 
-  const label =
-    mode === "date"
-      ? displayDate(current.date)
-      : mode === "time"
-        ? current.time
-        : current.date
-          ? `${displayDate(current.date)} · ${current.time || "09:00"}`
-          : "";
+  const inputType = mode === "datetime" ? "datetime-local" : mode;
+  const inputPlaceholder =
+    placeholder || (mode === "time" ? "Choose time" : "Choose date");
 
   return (
     <div
       className={`temporal-field ${open ? "is-open" : ""} ${className}`.trim()}
       ref={rootRef}
     >
-      <button
+      <div
         className="temporal-trigger"
         ref={triggerRef}
-        type="button"
-        onClick={showPicker}
-        disabled={disabled}
-        aria-expanded={open}
-        aria-label={ariaLabel}
         data-required={required || undefined}
       >
         {mode === "time" ? <Clock3 size={13} /> : <CalendarDays size={13} />}
-        <span className={label ? "" : "placeholder"}>
-          {label || placeholder || (mode === "time" ? "Choose time" : "Choose date")}
-        </span>
-      </button>
+        <input
+          type={inputType}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          disabled={disabled}
+          required={required}
+          step={mode === "date" ? undefined : minuteStep * 60}
+          aria-label={ariaLabel}
+          placeholder={inputPlaceholder}
+        />
+        <button
+          className="temporal-picker-button"
+          type="button"
+          onClick={showPicker}
+          disabled={disabled}
+          aria-expanded={open}
+          aria-label={`${ariaLabel || inputPlaceholder} picker`}
+        >
+          <ChevronRight size={12} />
+        </button>
+      </div>
       {value && !required && (
         <button
           className="temporal-clear"
