@@ -2932,6 +2932,129 @@ kbd {
   }
 }
 
+/* One calm temporal control: natural-language input plus the existing picker. */
+.temporal-trigger,
+.item-schedule-row .temporal-trigger,
+.class-schedule-card .temporal-trigger {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  min-height: 42px;
+  padding: 0 11px;
+  gap: 8px;
+  background: #eef0eb !important;
+  border: 1px solid transparent !important;
+  border-radius: 10px !important;
+}
+
+.temporal-field.is-open .temporal-trigger,
+.temporal-trigger:focus-within {
+  background: #f8f8f5 !important;
+  border-color: #afa7d6 !important;
+  box-shadow: 0 0 0 3px rgb(111 94 203 / 7%);
+}
+
+.temporal-trigger > input,
+.item-inspector .temporal-trigger > input,
+.school-field .temporal-trigger > input {
+  width: 100% !important;
+  min-width: 0;
+  height: 40px !important;
+  padding: 0 !important;
+  color: #3f4045 !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: 0;
+  font-family: inherit;
+  font-size: 10px !important;
+  font-weight: 590;
+}
+
+.temporal-trigger > input::placeholder {
+  color: #9a9c96;
+  font-weight: 470;
+}
+
+.temporal-trigger > input[aria-invalid="true"] {
+  color: #a44759 !important;
+}
+
+.temporal-picker-button {
+  display: none;
+}
+
+.temporal-clear {
+  top: 9px;
+  right: 7px;
+}
+
+.temporal-field:has(.temporal-clear) .temporal-trigger {
+  padding-right: 34px;
+}
+
+.temporal-field:has(.temporal-clear) .temporal-trigger > input {
+  padding-right: 0 !important;
+}
+
+.temporal-language-preview {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  padding: 9px 12px;
+  gap: 7px;
+  background: #f1f0f6;
+  border-bottom: 1px solid #dedde6;
+}
+
+.temporal-language-preview span {
+  color: #8a8792;
+  font-size: 7px;
+  font-weight: 650;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.temporal-language-preview strong {
+  margin-left: auto;
+  color: #51499a;
+  font-size: 9px;
+  font-weight: 650;
+  text-align: right;
+}
+
+.temporal-language-preview.is-invalid {
+  background: #f7eeee;
+  border-bottom-color: #ead6da;
+}
+
+.temporal-language-preview.is-invalid strong {
+  color: #a44759;
+}
+
+.temporal-popover {
+  overflow: hidden auto;
+}
+
+@media (max-width: 780px) {
+  .temporal-trigger,
+  .item-schedule-row .temporal-trigger,
+  .class-schedule-card .temporal-trigger {
+    min-height: 46px;
+  }
+
+  .temporal-trigger > input,
+  .item-inspector .temporal-trigger > input,
+  .school-field .temporal-trigger > input {
+    height: 44px !important;
+    font-size: 16px !important;
+  }
+
+  .temporal-language-preview {
+    min-height: 54px;
+  }
+}
+
 /* Calm editors: the common path stays short; planning metadata is disclosed on demand. */
 .item-inspector {
   width: min(520px, 100%);
@@ -10258,5 +10381,81 @@ body {
 
   .block-paths.block-path-carousel {
     grid-auto-columns: calc(100% - 18px);
+  }
+}
+
+/* Final temporal-field layer: overrides legacy form styling kept for other inputs. */
+.temporal-trigger,
+.item-schedule-row .temporal-trigger,
+.class-schedule-card .temporal-trigger {
+  grid-template-columns: 18px minmax(0, 1fr) !important;
+  min-height: 42px;
+  padding: 0 11px !important;
+  gap: 8px;
+  background: #eef0eb !important;
+  border: 1px solid transparent !important;
+  border-radius: 10px !important;
+}
+
+.temporal-field.is-open .temporal-trigger,
+.temporal-trigger:focus-within {
+  background: #f8f8f5 !important;
+  border-color: #afa7d6 !important;
+  box-shadow: 0 0 0 3px rgb(111 94 203 / 7%);
+}
+
+.temporal-trigger > input,
+.item-inspector .temporal-trigger > input:not(.item-title-input),
+.school-field .temporal-trigger > input {
+  width: 100% !important;
+  min-width: 0;
+  height: 40px !important;
+  padding: 0 !important;
+  color: #3f4045 !important;
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: 0;
+  font-family: inherit;
+  font-size: 10px !important;
+  font-weight: 590;
+}
+
+.temporal-trigger > input::placeholder {
+  color: #9a9c96;
+  font-weight: 470;
+}
+
+.temporal-trigger > input[aria-invalid="true"] {
+  color: #a44759 !important;
+}
+
+.temporal-picker-button {
+  display: none !important;
+}
+
+.temporal-clear {
+  top: 9px;
+  right: 7px;
+}
+
+.temporal-field:has(.temporal-clear) .temporal-trigger {
+  padding-right: 34px !important;
+}
+
+@media (max-width: 780px) {
+  .temporal-trigger,
+  .item-schedule-row .temporal-trigger,
+  .class-schedule-card .temporal-trigger {
+    min-height: 46px;
+  }
+
+  .temporal-trigger > input,
+  .item-inspector .temporal-trigger > input:not(.item-title-input),
+  .school-field .temporal-trigger > input {
+    height: 44px !important;
+    font-size: 16px !important;
   }
 }

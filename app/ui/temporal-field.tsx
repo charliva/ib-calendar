@@ -13,6 +13,10 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  formatTemporalText,
+  parseTemporalText,
+} from "@/lib/temporal-parser";
 
 type TemporalMode = "date" | "time" | "datetime";
 
@@ -80,9 +84,13 @@ export function TemporalField({
   const [open, setOpen] = useState(false);
   const [viewMonth, setViewMonth] = useState("");
   const [popoverStyle, setPopoverStyle] = useState<CSSProperties>({});
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(() => formatTemporalText(value, mode));
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
-  const current = parts(value, mode);
+  const parsedText = parseTemporalText(text, mode, new Date(), value);
+  const previewValue = parsedText ?? value;
+  const current = parts(previewValue, mode);
   const selectedTime = current.time || "09:00";
   const [selectedHour, selectedMinute] = selectedTime.split(":").map(Number);
 
@@ -108,6 +116,10 @@ export function TemporalField({
       window.removeEventListener("scroll", closeOnViewportChange, true);
     };
   }, [open]);
+
+  useEffect(() => {
+    if (!editing) setText(formatTemporalText(value, mode));
+  }, [editing, mode, value]);
 
   const monthSource =
     viewMonth || current.date.slice(0, 7) || todayKey().slice(0, 7);
@@ -150,7 +162,7 @@ export function TemporalField({
         const inInspector = Boolean(rootRef.current?.closest(".item-inspector"));
         const width = Math.min(inInspector ? 278 : 318, window.innerWidth - 20);
         const estimatedHeight =
-          mode === "datetime" ? 370 : mode === "date" ? 285 : 125;
+          mode === "datetime" ? 420 : mode === "date" ? 335 : 175;
         const below = rect.bottom + 6;
         const top =
           below + estimatedHeight <= window.innerHeight - 10
@@ -169,8 +181,16 @@ export function TemporalField({
           width,
         });
       }
-      return !currentOpen;
+      return true;
     });
+  }
+
+  function commitText() {
+    const parsed = parseTemporalText(text, mode, new Date(), value);
+    if (parsed === null) return false;
+    onChange(parsed);
+    setText(formatTemporalText(parsed, mode));
+    return true;
   }
 
   function moveMonth(amount: number) {
@@ -181,18 +201,26 @@ export function TemporalField({
   }
 
   function chooseDate(date: string) {
-    onChange(joinValue(mode, date, selectedTime));
+    const next = joinValue(mode, date, selectedTime);
+    onChange(next);
+    setText(formatTemporalText(next, mode));
     if (mode === "date") setOpen(false);
   }
 
   function chooseTime(hour: number, minute: number) {
     const time = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-    onChange(joinValue(mode, current.date || todayKey(), time));
+    const next = joinValue(mode, current.date || todayKey(), time);
+    onChange(next);
+    setText(formatTemporalText(next, mode));
   }
 
-  const inputType = mode === "datetime" ? "datetime-local" : mode;
   const inputPlaceholder =
-    placeholder || (mode === "time" ? "Choose time" : "Choose date");
+    placeholder ||
+    (mode === "time"
+      ? "e.g. 2 pm"
+      : mode === "date"
+        ? "e.g. next Saturday"
+        : "e.g. next Saturday at 2 pm");
 
   return (
     <div
@@ -206,32 +234,48 @@ export function TemporalField({
       >
         {mode === "time" ? <Clock3 size={13} /> : <CalendarDays size={13} />}
         <input
-          type={inputType}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
+          type="text"
+          value={text}
+          onChange={(event) => setText(event.target.value)}
           disabled={disabled}
           required={required}
-          step={mode === "date" ? undefined : minuteStep * 60}
           aria-label={ariaLabel}
           placeholder={inputPlaceholder}
-        />
-        <button
-          className="temporal-picker-button"
-          type="button"
-          onClick={showPicker}
-          disabled={disabled}
           aria-expanded={open}
-          aria-label={`${ariaLabel || inputPlaceholder} picker`}
-        >
-          <ChevronRight size={12} />
-        </button>
+          aria-invalid={text.trim() !== "" && parsedText === null}
+          onFocus={(event) => {
+            setEditing(true);
+            showPicker();
+            event.currentTarget.select();
+          }}
+          onClick={showPicker}
+          onBlur={() => {
+            commitText();
+            setEditing(false);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              if (commitText()) setOpen(false);
+            }
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setText(formatTemporalText(value, mode));
+              setOpen(false);
+              event.currentTarget.blur();
+            }
+          }}
+        />
       </div>
       {value && !required && (
         <button
           className="temporal-clear"
           type="button"
           aria-label="Clear"
-          onClick={() => onChange("")}
+          onClick={() => {
+            setText("");
+            onChange("");
+          }}
         >
           <X size={11} />
         </button>
@@ -244,6 +288,18 @@ export function TemporalField({
           aria-label={ariaLabel || "Choose date and time"}
           style={popoverStyle}
         >
+          <div
+            className={`temporal-language-preview ${
+              text.trim() && parsedText === null ? "is-invalid" : ""
+            }`}
+          >
+            <span>{parsedText === null ? "Couldn’t understand" : "Interpreted as"}</span>
+            <strong>
+              {parsedText === null
+                ? "Try ‘next Saturday at 2 pm’"
+                : formatTemporalText(parsedText, mode) || "No date selected"}
+            </strong>
+          </div>
           {mode !== "time" && (
             <section className="temporal-calendar">
               <header>
