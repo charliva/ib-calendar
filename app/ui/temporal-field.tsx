@@ -118,7 +118,12 @@ export function TemporalField({
   }, [open]);
 
   useEffect(() => {
-    if (!editing) setText(formatTemporalText(value, mode));
+    if (editing) return;
+    const sync = window.setTimeout(
+      () => setText(formatTemporalText(value, mode)),
+      0,
+    );
+    return () => window.clearTimeout(sync);
   }, [editing, mode, value]);
 
   const monthSource =
@@ -241,7 +246,6 @@ export function TemporalField({
           required={required}
           aria-label={ariaLabel}
           placeholder={inputPlaceholder}
-          aria-expanded={open}
           aria-invalid={text.trim() !== "" && parsedText === null}
           onFocus={(event) => {
             setEditing(true);

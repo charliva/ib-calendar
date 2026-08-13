@@ -3,6 +3,7 @@
 import type { User } from "@supabase/supabase-js";
 import { assignmentProgress, planAssignment } from "@/lib/assignment-planner";
 import { planRevisionRunway, planSpacedReviews } from "@/lib/revision-planner";
+import { getJapaneseCalendarDetails } from "@/lib/japanese-calendar";
 import {
   energyTypeForWorkType,
   type FreePeriod,
@@ -390,19 +391,6 @@ function formatSpan(item: CalendarItem) {
     day: "numeric",
     year: sameYear ? undefined : "numeric",
   })}`;
-}
-
-function formatDurationLabel(item: CalendarItem) {
-  const minutes = durationMinutes(item);
-  if (minutes >= 24 * 60 && minutes % (24 * 60) === 0) {
-    const days = minutes / (24 * 60);
-    return `${days} day${days === 1 ? "" : "s"}`;
-  }
-  if (minutes >= 60 && minutes % 60 === 0) {
-    const hours = minutes / 60;
-    return `${hours} hour${hours === 1 ? "" : "s"}`;
-  }
-  return `${minutes} min`;
 }
 
 function itemWithDuration(item: CalendarItem, minutes: number) {
@@ -6496,6 +6484,7 @@ function MobileAgenda({
     .filter((item) => item.status === "inbox" && !possible.includes(item))
     .slice(0, 4);
   const capacity = capacityForDay(items, selectedDay);
+  const selectedJapaneseDate = getJapaneseCalendarDetails(selectedDate);
 
   return (
     <section className="mobile-agenda">
@@ -6540,6 +6529,12 @@ function MobileAgenda({
               day: "numeric",
             })}
           </h2>
+          <div className="mobile-cultural-date">
+            <small>{selectedJapaneseDate.era}</small>
+            <span className={`rokuyo-tag tone-${selectedJapaneseDate.tone}`}>
+              {selectedJapaneseDate.rokuyo}
+            </span>
+          </div>
         </div>
         <span>
           {capacity.total ? `${capacity.total} min planned` : "Open day"}
@@ -6648,8 +6643,6 @@ function InlineItemTitle({
 }) {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(item.title);
-
-  useEffect(() => setTitle(item.title), [item.title]);
 
   function finish() {
     const nextTitle = title.trim();
@@ -7037,7 +7030,7 @@ function TimeCalendar({
     if (!gesture.active || !preview) return;
     event.preventDefault();
     event.stopPropagation();
-    suppressDesktopMoveClickUntil.current = performance.now() + 500;
+    suppressDesktopMoveClickUntil.current = event.timeStamp + 500;
     const start = new Date(preview.startsAt);
     onMoveAt(
       gesture.item,
@@ -7233,7 +7226,7 @@ function TimeCalendar({
     setMobileMovePreview(null);
     if (!gesture.activated) return;
     event.preventDefault();
-    suppressMobileMoveClickUntil.current = performance.now() + 500;
+    suppressMobileMoveClickUntil.current = event.timeStamp + 500;
     onMoveAt(
       gesture.item,
       gesture.day,
@@ -7362,6 +7355,7 @@ function TimeCalendar({
         {days.map((day) => {
           const key = dateKey(day);
           const capacity = capacityForDay(items, key);
+          const japaneseDate = getJapaneseCalendarDetails(day);
           return (
             <button
               className={`${key === selectedDay ? "selected" : ""} ${
@@ -7370,9 +7364,20 @@ function TimeCalendar({
               type="button"
               key={key}
               onClick={() => onSelectDay(key)}
+              aria-label={`${formatDate(day, {
+                weekday: "long",
+                month: "long",
+                day: "numeric",
+              })}, ${japaneseDate.era}, ${japaneseDate.rokuyo}`}
             >
               <span>{formatDate(day, { weekday: "short" })}</span>
               <strong>{day.getDate()}</strong>
+              <span className="day-cultural-meta">
+                <small>{japaneseDate.era}</small>
+                <b className={`rokuyo-tag tone-${japaneseDate.tone}`}>
+                  {japaneseDate.rokuyo}
+                </b>
+              </span>
               <i>
                 <b style={{ width: `${capacity.load}%` }} />
               </i>
@@ -7426,7 +7431,7 @@ function TimeCalendar({
             const continuesAfter = new Date(item.endsAt!) > visibleEnd;
             return (
               <button
-                className={`multi-day-item kind-${item.kind} energy-${item.energyType} ${
+                className={`multi-day-item kind-${item.kind} energy-${item.energyType} flex-${item.flexibility} ${
                   proposed ? "proposal-target" : ""
                 } ${continuesBefore ? "continues-before" : ""} ${
                   continuesAfter ? "continues-after" : ""
@@ -7442,6 +7447,7 @@ function TimeCalendar({
                 style={{
                   gridColumn: `${first + 2} / ${last + 3}`,
                   gridRow: row + 2,
+                  ...classColorStyle(item, subjects),
                 }}
               >
                 {item.flexibility === "fixed" ? (
@@ -7449,7 +7455,11 @@ function TimeCalendar({
                 ) : (
                   <Sparkles size={10} />
                 )}
-                <InlineItemTitle item={item} onRename={onRenameItem} />
+                <InlineItemTitle
+                  key={item.title}
+                  item={item}
+                  onRename={onRenameItem}
+                />
                 <small>{formatSpan(item)}</small>
               </button>
             );
@@ -7463,7 +7473,7 @@ function TimeCalendar({
         }}
       >
         <div className="time-axis">
-          {hours.map((hour) => (
+          {hours.filter((hour) => hour % 3 === 0).map((hour) => (
             <time
               className={isInactiveHour(hour) ? "inactive" : ""}
               key={hour}
@@ -7583,7 +7593,7 @@ function TimeCalendar({
               {hours.map((hour) => {
                 return (
                   <button
-                    className={`time-slot ${
+                    className={`time-slot ${hour % 3 === 0 ? "major-hour" : ""} ${
                       isInactiveHour(hour) ? "inactive" : ""
                     }`}
                     type="button"
@@ -7812,8 +7822,8 @@ function TimeCalendar({
                     onPointerCancel={cancelDesktopMove}
                     onClick={(event) => {
                       if (
-                        performance.now() < suppressMobileMoveClickUntil.current ||
-                        performance.now() < suppressDesktopMoveClickUntil.current
+                        event.timeStamp < suppressMobileMoveClickUntil.current ||
+                        event.timeStamp < suppressDesktopMoveClickUntil.current
                       ) {
                         event.preventDefault();
                         event.stopPropagation();
@@ -7827,8 +7837,8 @@ function TimeCalendar({
                     onTouchCancel={() => clearMobileMove()}
                     style={
                       {
-                        top,
-                        height,
+                        top: top + 2,
+                        height: Math.max(24, height - 4),
                         left: `calc(${placement.lane * width}% + 3px)`,
                         right: "auto",
                       width: `calc(${width}% - 6px)`,
@@ -7863,7 +7873,11 @@ function TimeCalendar({
                       )}
                       <time>{formatTime(item.startsAt)}</time>
                     </div>
-                    <InlineItemTitle item={item} onRename={onRenameItem} />
+                    <InlineItemTitle
+                      key={item.title}
+                      item={item}
+                      onRename={onRenameItem}
+                    />
                     {isImportedTimetableItem(item) && timetableRoomForItem(item) && (
                       <span className="calendar-class-room">
                         Room {timetableRoomForItem(item)}
@@ -7911,7 +7925,7 @@ function TimeCalendar({
                   <article
                     className={`calendar-block proposal-target kind-${item.kind} energy-${item.energyType} flex-${item.flexibility}`}
                     key={`proposal-${item.id}`}
-                    style={{ top, height }}
+                    style={{ top: top + 2, height: Math.max(24, height - 4) }}
                   >
                     <div>
                       <Layers3 size={10} />
@@ -8092,7 +8106,7 @@ function OverviewCalendar({
                       <div className="month-event-list">
                         {dayItems.slice(0, 3).map((item) => (
                           <span
-                            className={`month-event energy-${item.energyType} ${item.deadline ? "has-deadline" : ""}`}
+                            className={`month-event energy-${item.energyType} flex-${item.flexibility} ${item.deadline ? "has-deadline" : ""}`}
                             key={`${item.id}-${item.deadline ? "deadline" : "item"}`}
                             style={classColorStyle(item, subjects)}
                           >
