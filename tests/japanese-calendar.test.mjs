@@ -26,7 +26,12 @@ test("normalizes leap lunar months before calculating Rokuyo", () => {
 test("returns the era, Rokuyo, and visual tone for a Gregorian date", () => {
   assert.deepEqual(getJapaneseCalendarDetails(localDate(2026, 8, 13)), {
     era: "令和8年",
+    eraRomanization: "Reiwa",
+    eraMeaning: "The current imperial era, which began in 2019.",
+    eraYear: "8",
     rokuyo: "先勝",
+    rokuyoRomanization: "Senshō",
+    rokuyoMeaning: "Traditionally favorable in the morning and quieter after noon.",
     tone: "neutral",
   });
 });

@@ -6461,6 +6461,7 @@ function MobileAgenda({
   onOpenItem: (item: CalendarItem) => void;
   onQuickCapture: () => void;
 }) {
+  const [showCulturalDetails, setShowCulturalDetails] = useState(false);
   const selectedDate = dateFromKey(selectedDay);
   const scheduled = items
     .filter(
@@ -6529,16 +6530,28 @@ function MobileAgenda({
               day: "numeric",
             })}
           </h2>
-          <div className="mobile-cultural-date">
+          <button
+            className="mobile-cultural-date"
+            type="button"
+            aria-expanded={showCulturalDetails}
+            onClick={() => setShowCulturalDetails((current) => !current)}
+          >
             <small>{selectedJapaneseDate.era}</small>
             <span className={`rokuyo-tag tone-${selectedJapaneseDate.tone}`}>
               {selectedJapaneseDate.rokuyo}
             </span>
-          </div>
+            <span className="cultural-date-hint">What does this mean?</span>
+          </button>
         </div>
         <span>
           {capacity.total ? `${capacity.total} min planned` : "Open day"}
         </span>
+        {showCulturalDetails && (
+          <JapaneseDateExplanation
+            date={selectedDate}
+            onClose={() => setShowCulturalDetails(false)}
+          />
+        )}
       </header>
 
       <div className="agenda-list">
@@ -6704,6 +6717,67 @@ function InlineItemTitle({
   );
 }
 
+function JapaneseDateExplanation({
+  date,
+  onClose,
+}: {
+  date: Date;
+  onClose: () => void;
+}) {
+  const details = getJapaneseCalendarDetails(date);
+  return (
+    <aside
+      className="japanese-date-popover"
+      role="dialog"
+      aria-label={`Japanese calendar details for ${formatDate(date, {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+      })}`}
+    >
+      <header>
+        <div>
+          <span>Japanese calendar</span>
+          <h3>
+            {formatDate(date, {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+            })}
+          </h3>
+        </div>
+        <button type="button" onClick={onClose} aria-label="Close explanation">
+          <X size={14} />
+        </button>
+      </header>
+      <dl>
+        <div>
+          <dt>Era</dt>
+          <dd>
+            <strong>{details.era}</strong>
+            <span>
+              {details.eraRomanization} {details.eraYear}
+            </span>
+            <small>{details.eraMeaning}</small>
+          </dd>
+        </div>
+        <div>
+          <dt>Rokuyō</dt>
+          <dd>
+            <strong>{details.rokuyo}</strong>
+            <span>{details.rokuyoRomanization}</span>
+            <small>{details.rokuyoMeaning}</small>
+          </dd>
+        </div>
+      </dl>
+      <p>
+        Rokuyō is a traditional six-day fortune cycle. It is shown as cultural
+        context, not as advice for planning your day.
+      </p>
+    </aside>
+  );
+}
+
 function TimeCalendar({
   days,
   items,
@@ -6771,6 +6845,7 @@ function TimeCalendar({
   compact?: boolean;
 }) {
   const hours = DAY_HOURS;
+  const [explainingDay, setExplainingDay] = useState<string | null>(null);
   const [creationRange, setCreationRange] = useState<{
     day: string;
     startMinute: number;
@@ -6838,6 +6913,7 @@ function TimeCalendar({
     anchorIndex: number;
   } | null>(null);
   const calendarRef = useRef<HTMLElement>(null);
+  const dayHeadRef = useRef<HTMLDivElement>(null);
   const autoScrolledDayRef = useRef<string | null>(null);
   const axisWidth = compact ? 44 : 52;
   const bodyHeight = hours.reduce(
@@ -6865,6 +6941,24 @@ function TimeCalendar({
       isCalendarSpanItem(item) &&
       days.some((day) => itemOverlapsDay(item, dateKey(day))),
   );
+
+  useEffect(() => {
+    if (!explainingDay) return;
+    function closeOnOutsidePointer(event: PointerEvent) {
+      if (!dayHeadRef.current?.contains(event.target as Node)) {
+        setExplainingDay(null);
+      }
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setExplainingDay(null);
+    }
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [explainingDay]);
 
   useEffect(() => {
     if (!compact || days.length !== 1) return;
@@ -7346,7 +7440,8 @@ function TimeCalendar({
       style={{ "--row-height": `${rowHeight}px` } as CSSProperties}
     >
       <div
-        className="day-head"
+        className={`day-head ${explainingDay ? "has-date-popover" : ""}`}
+        ref={dayHeadRef}
         style={{
           gridTemplateColumns: `${axisWidth}px repeat(${days.length}, minmax(${compact ? 0 : 110}px, 1fr))`,
         }}
@@ -7363,7 +7458,11 @@ function TimeCalendar({
               }`}
               type="button"
               key={key}
-              onClick={() => onSelectDay(key)}
+              aria-expanded={explainingDay === key}
+              onClick={() => {
+                onSelectDay(key);
+                setExplainingDay((current) => (current === key ? null : key));
+              }}
               aria-label={`${formatDate(day, {
                 weekday: "long",
                 month: "long",
@@ -7384,6 +7483,12 @@ function TimeCalendar({
             </button>
           );
         })}
+        {explainingDay && (
+          <JapaneseDateExplanation
+            date={dateFromKey(explainingDay)}
+            onClose={() => setExplainingDay(null)}
+          />
+        )}
       </div>
       <div
         className="multi-day-strip"
@@ -7798,6 +7903,7 @@ function TimeCalendar({
                         }
                       : item;
                 const { top, height } = itemGeometry(previewItem, rowHeight);
+                const displayHeight = Math.max(24, height - 4);
                 const placement = layout.get(item.id) ?? { lane: 0, lanes: 1 };
                 const width = 100 / placement.lanes;
                 return (
@@ -7816,6 +7922,14 @@ function TimeCalendar({
                       proposalOrigins.has(item.id) ? "proposal-origin" : ""
                     }`}
                     key={item.id}
+                    data-density={
+                      displayHeight < 40
+                        ? "micro"
+                        : displayHeight < 68
+                          ? "compact"
+                          : "roomy"
+                    }
+                    data-lanes={Math.min(3, placement.lanes)}
                     onPointerDown={(event) => beginDesktopMove(event, item)}
                     onPointerMove={moveDesktopEvent}
                     onPointerUp={finishDesktopMove}
@@ -7838,7 +7952,7 @@ function TimeCalendar({
                     style={
                       {
                         top: top + 2,
-                        height: Math.max(24, height - 4),
+                        height: displayHeight,
                         left: `calc(${placement.lane * width}% + 3px)`,
                         right: "auto",
                       width: `calc(${width}% - 6px)`,
