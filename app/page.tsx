@@ -193,6 +193,15 @@ import {
 type Zoom = "school" | "upcoming" | "day" | "week" | "month" | "semester";
 type PaletteMode = "command" | "filter" | "upload";
 type CommandResponse = Parameters<typeof proposalFromCommandResponse>[0];
+type CommandTurn = { role: "user" | "assistant"; text: string };
+type ClarificationResponse = {
+  kind: "clarification";
+  message: string;
+  questions: Array<{
+    field: "subject" | "date" | "time" | "location" | "other";
+    label: string;
+  }>;
+};
 type ExtractionCandidate = TimetableExtractionCandidate;
 type ExtractionResponse = {
   title: string;
@@ -518,6 +527,28 @@ function isCommandResponse(value: unknown): value is CommandResponse {
   );
 }
 
+function isClarificationResponse(
+  value: unknown,
+): value is ClarificationResponse {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    candidate.kind === "clarification" &&
+    typeof candidate.message === "string" &&
+    Array.isArray(candidate.questions) &&
+    candidate.questions.length > 0 &&
+    candidate.questions.every((question) => {
+      if (!question || typeof question !== "object") return false;
+      const entry = question as Record<string, unknown>;
+      return (
+        ["subject", "date", "time", "location", "other"].includes(
+          String(entry.field),
+        ) && typeof entry.label === "string"
+      );
+    })
+  );
+}
+
 function isExtractionResponse(value: unknown): value is ExtractionResponse {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
@@ -611,6 +642,9 @@ function commandItem(item: CalendarItem) {
     splittable: item.splittable,
     flexibility: item.flexibility,
     constraints: item.constraints,
+    description: item.description,
+    room: item.room,
+    subjectId: item.subjectId,
     assignmentId: item.assignmentId,
     homeworkCaptureId: item.homeworkCaptureId,
     taskContext: item.taskContext,
@@ -960,6 +994,12 @@ export default function Home() {
   const [paletteMode, setPaletteMode] = useState<PaletteMode>("command");
   const [commandText, setCommandText] = useState("");
   const [commandBusy, setCommandBusy] = useState(false);
+  const [commandConversation, setCommandConversation] = useState<CommandTurn[]>(
+    [],
+  );
+  const [commandQuestions, setCommandQuestions] = useState<
+    ClarificationResponse["questions"]
+  >([]);
   const [timetableImportBusy, setTimetableImportBusy] = useState(false);
   const [filterText, setFilterText] = useState("");
   const [proposal, setProposal] = useState<CalendarProposal | null>(null);
@@ -1879,21 +1919,24 @@ export default function Home() {
       setPaletteOpen(false);
       return;
     }
+    const continuingConversation = commandConversation.length > 0;
     const homework = parseHomework(clean, subjects, new Date());
-    if (looksLikeHomeworkCommand(clean, homework)) {
+    if (!continuingConversation && looksLikeHomeworkCommand(clean, homework)) {
       captureHomework(clean);
       setPaletteOpen(false);
       setCommandText("");
       return;
     }
-    if (isAttentionQuestion(clean)) {
+    if (!continuingConversation && isAttentionQuestion(clean)) {
       setZoom("upcoming");
       setPaletteOpen(false);
       setCommandText("");
       setNotice("Your attention home has been refreshed for the time and energy you have now.");
       return;
     }
-    const intentionDraft = intentionFromCommand(clean);
+    const intentionDraft = continuingConversation
+      ? null
+      : intentionFromCommand(clean);
     if (intentionDraft) {
       setIntentionSeed(intentionDraft);
       setIntentionsOpen(true);
@@ -1902,6 +1945,7 @@ export default function Home() {
       return;
     }
     setCommandBusy(true);
+    let keepConversationOpen = false;
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 7_500);
     try {
@@ -1919,15 +1963,49 @@ export default function Home() {
         body: JSON.stringify({
           command: clean,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          items: relevantCommandItems(clean, items).map(commandItem),
+          items: relevantCommandItems(
+            [...commandConversation.map((turn) => turn.text), clean].join(" "),
+            items,
+          ).map(commandItem),
+          subjects: subjects.map((subject) => ({
+            id: subject.id,
+            name: subject.name,
+            shortName: subject.shortName,
+            teacher: subject.teacher,
+            room: subject.room,
+          })),
+          classes: classes.map((lesson) => ({
+            subjectId: lesson.subjectId,
+            weekday: lesson.weekday,
+            startTime: lesson.startTime,
+            endTime: lesson.endTime,
+            teacher: lesson.teacher,
+            room: lesson.room,
+          })),
+          conversation: commandConversation,
         }),
       });
       if (!response.ok) throw new Error("AI command unavailable");
       const raw: unknown = await response.json();
+      if (isClarificationResponse(raw)) {
+        keepConversationOpen = true;
+        setCommandConversation((current) => [
+          ...current,
+          { role: "user", text: clean },
+          { role: "assistant", text: raw.message },
+        ].slice(-8) as CommandTurn[]);
+        setCommandQuestions(raw.questions);
+        setCommandText("");
+        setPaletteMode("command");
+        setPaletteOpen(true);
+        return;
+      }
       if (!isCommandResponse(raw)) {
         throw new Error("AI returned an invalid calendar proposal");
       }
       setProposal(proposalFromCommandResponse(raw, items));
+      setCommandConversation([]);
+      setCommandQuestions([]);
     } catch {
       if (/^(?:add|create|schedule|new)\b/i.test(clean) && !/(?:move|delete|remove|cancel)\b/i.test(clean)) {
         setProposal(simpleFallbackProposal(clean));
@@ -1937,8 +2015,10 @@ export default function Home() {
     } finally {
       window.clearTimeout(timeoutId);
       setCommandBusy(false);
-      setPaletteOpen(false);
-      setCommandText("");
+      if (!keepConversationOpen) {
+        setPaletteOpen(false);
+        setCommandText("");
+      }
     }
   }
 
@@ -4925,6 +5005,43 @@ export default function Home() {
               </div>
             ) : (
               <form onSubmit={submitCommand}>
+                {paletteMode === "command" && commandConversation.length > 0 && (
+                  <section
+                    className="command-conversation"
+                    aria-label="Command conversation"
+                  >
+                    <header>
+                      <span>One thing at a time</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCommandConversation([]);
+                          setCommandQuestions([]);
+                          setCommandText("");
+                        }}
+                      >
+                        Start over
+                      </button>
+                    </header>
+                    <div className="command-turns" aria-live="polite">
+                      {commandConversation.slice(-4).map((turn, index) => (
+                        <p
+                          className={turn.role}
+                          key={`${turn.role}-${index}-${turn.text}`}
+                        >
+                          {turn.text}
+                        </p>
+                      ))}
+                    </div>
+                    {commandQuestions.length > 0 && (
+                      <div className="command-question-pills">
+                        {commandQuestions.map((question) => (
+                          <span key={question.field}>{question.label}</span>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                )}
                 <div className="palette-input">
                   {paletteMode === "command" ? (
                     <Sparkles size={18} />
@@ -4938,6 +5055,8 @@ export default function Home() {
                     placeholder={
                       paletteMode === "filter"
                         ? "deep focus, task, chemistry…"
+                        : commandConversation.length > 0
+                          ? "Answer naturally…"
                         : "Chemistry pages 52–57 Thursday"
                     }
                     aria-label="Calendar command"
@@ -4953,7 +5072,9 @@ export default function Home() {
                         : "Preview"}
                   </button>
                 </div>
-                {paletteMode === "command" && commandIsHomework ? (
+                {paletteMode === "command" &&
+                commandConversation.length === 0 &&
+                commandIsHomework ? (
                   <div
                     className="parsed-intent homework-intent"
                     aria-label="Parsed homework"
@@ -4984,7 +5105,9 @@ export default function Home() {
                       </i>
                     </div>
                   </div>
-                ) : paletteMode === "command" && commandPreview ? (
+                ) : paletteMode === "command" &&
+                  commandConversation.length === 0 &&
+                  commandPreview ? (
                   <div className="parsed-intent" aria-label="Parsed command">
                     <span>Parsed intent</span>
                     <div>
@@ -5004,7 +5127,7 @@ export default function Home() {
                 ) : null}
               </form>
             )}
-            {paletteMode === "command" && (
+            {paletteMode === "command" && commandConversation.length === 0 && (
               <div className="command-examples">
                 {[
                   "Chemistry pages 52–57 Thursday",

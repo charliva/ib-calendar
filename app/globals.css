@@ -4516,6 +4516,81 @@ body {
   border-color: #6859c9;
 }
 
+.command-conversation {
+  padding: 14px 17px 4px;
+  border-bottom: 1px solid #e0e2dc;
+}
+
+.command-conversation > header {
+  display: flex;
+  min-height: 25px;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.command-conversation > header > span {
+  color: #858780;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.command-conversation > header button {
+  padding: 0;
+  color: #858780;
+  background: transparent;
+  border: 0;
+  font-size: 8px;
+}
+
+.command-conversation > header button:hover {
+  color: #50439d;
+}
+
+.command-turns {
+  display: grid;
+  gap: 6px;
+}
+
+.command-turns p {
+  width: fit-content;
+  max-width: min(88%, 520px);
+  margin: 0;
+  padding: 8px 10px;
+  color: #4c4d52;
+  background: #e9ebe6;
+  border-radius: 10px 10px 10px 3px;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.command-turns p.user {
+  justify-self: end;
+  color: #f7f5ff;
+  background: #6a5bc1;
+  border-radius: 10px 10px 3px;
+}
+
+.command-question-pills {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 10px 0 7px;
+  gap: 5px;
+}
+
+.command-question-pills span {
+  padding: 5px 7px;
+  color: #696b65;
+  background: #f7f7f4;
+  border: 1px solid #d8dbd4;
+  border-radius: 99px;
+  font-size: 8px;
+  font-weight: 590;
+}
+
 .parsed-intent {
   display: grid;
   grid-template-columns: 82px 1fr;
