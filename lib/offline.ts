@@ -4,6 +4,7 @@ import type { Intention } from "@/lib/intentions";
 import type { Exploration, LearningSignal } from "@/lib/study-intelligence";
 import type { BlockChoice } from "@/lib/block-choices";
 import type { SchoolState } from "@/lib/school";
+import { mergePendingMutations, mutationIdentity } from "@/lib/sync";
 
 export type OfflineState = SchoolState & {
   items: CalendarItem[];
@@ -71,7 +72,27 @@ export async function getOfflineState(): Promise<OfflineState | null> {
 export async function queueMutation(mutation: PendingMutation) {
   const database = await dbPromise;
   if (!database) return;
-  await database.add("calendar-mutations", mutation);
+  const transaction = database.transaction(
+    "calendar-mutations",
+    "readwrite",
+  );
+  const store = transaction.objectStore("calendar-mutations");
+  const existing = (await store.getAll()).filter(
+    (candidate) =>
+      candidate.ownerKey === mutation.ownerKey &&
+      mutationIdentity(candidate) === mutationIdentity(mutation),
+  );
+  const previous = existing.at(-1);
+  const compacted = previous
+    ? mergePendingMutations(previous, mutation)
+    : mutation;
+  await Promise.all(
+    existing
+      .filter((candidate) => candidate.id !== undefined)
+      .map((candidate) => store.delete(candidate.id!)),
+  );
+  await store.add({ ...compacted, id: undefined });
+  await transaction.done;
 }
 
 export async function getPendingMutations(

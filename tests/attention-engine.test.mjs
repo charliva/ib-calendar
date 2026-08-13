@@ -130,6 +130,7 @@ test("presents midnight-bounded calendar items as all-day events", () => {
 test("offers a fitting intention without manufacturing calendar events", () => {
   const intention = makeIntention({
     title: "Read for an hour",
+    horizonStart: "2026-08-10",
     cadence: "daily",
     targetMinutes: 60,
     preferredSessionMinutes: 30,

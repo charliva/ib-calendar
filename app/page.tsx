@@ -185,6 +185,10 @@ import {
   WORK_TYPE_LABELS,
 } from "@/lib/school";
 import { createClient } from "@/lib/supabase/client";
+import {
+  compactPendingMutations,
+  prepareMutation,
+} from "@/lib/sync";
 
 type Zoom = "school" | "upcoming" | "day" | "week" | "month" | "semester";
 type PaletteMode = "command" | "filter" | "upload";
@@ -948,6 +952,7 @@ export default function Home() {
   const [isOnline, setIsOnline] = useState(true);
   const [hydrated, setHydrated] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [syncTick, setSyncTick] = useState(0);
   const [zoom, setZoom] = useState<Zoom>("upcoming");
   const [anchorDate, setAnchorDate] = useState(() => dateKey(new Date()));
   const [selectedDay, setSelectedDay] = useState(() => dateKey(new Date()));
@@ -1014,16 +1019,21 @@ export default function Home() {
   const calendarSwipeLastRef = useRef<SwipePoint | null>(null);
   const suppressSwipeClickUntilRef = useRef(0);
   const weekWheelRef = useRef({ totalX: 0, lastAt: 0, lockedUntil: 0 });
+  const writeRevisionRef = useRef(0);
 
   const flushPending = useCallback(async (ownerKey: string) => {
-    const pending = await getPendingMutations(ownerKey);
+    const queued = await getPendingMutations(ownerKey);
+    const { mutations: pending, supersededIds } =
+      compactPendingMutations(queued);
+    await Promise.all(supersededIds.map(removePendingMutation));
     const failures: string[] = [];
     for (const mutation of pending) {
       try {
         let query;
-        const payload = safeMutationPayload(mutation);
+        const prepared = prepareMutation(mutation, ownerKey);
+        const payload = safeMutationPayload(prepared);
         if (mutation.action === "insert") query = supabase.from(mutation.table).insert(payload ?? {});
-        else if (mutation.action === "upsert") query = supabase.from(mutation.table).upsert(payload ?? {}, { onConflict: "id" });
+        else if (mutation.action === "upsert") query = supabase.from(mutation.table).upsert(payload ?? {}, { onConflict: prepared.onConflict });
         else if (mutation.action === "update") query = supabase.from(mutation.table).update(payload ?? {}).eq("id", mutation.recordId);
         else query = supabase.from(mutation.table).delete().eq("id", mutation.recordId);
         const { error } = await query;
@@ -1055,6 +1065,7 @@ export default function Home() {
 
   const loadCloud = useCallback(
     async (activeUser: User) => {
+      const writeRevisionAtStart = writeRevisionRef.current;
       setSyncing(true);
       const [
         itemResult,
@@ -1165,6 +1176,12 @@ export default function Home() {
       if (error) {
         setSyncing(false);
         throw error;
+      }
+      // A local edit made while this snapshot was loading is newer than the
+      // snapshot. Realtime (or the focus retry) will request a fresh one.
+      if (writeRevisionAtStart !== writeRevisionRef.current) {
+        setSyncing(false);
+        return;
       }
       setItems(
         (itemResult.data ?? []).map((row) =>
@@ -1354,7 +1371,7 @@ export default function Home() {
       .then((failures) => {
         if (cancelled) return;
         if (failures.length) {
-          setNotice(`Sync paused for ${failures.length} change${failures.length === 1 ? "" : "s"}. Your local work is safe.`);
+          setNotice(`${failures.length} change${failures.length === 1 ? " is" : "s are"} waiting to sync. Retrying automatically.`);
           setSyncing(false);
           return;
         }
@@ -1363,7 +1380,7 @@ export default function Home() {
       .catch((error) => {
         if (!cancelled) {
           setNotice(
-            `Sync paused: ${syncErrorMessage(error)}`,
+            `Cloud sync will retry automatically: ${syncErrorMessage(error)}`,
           );
           setSyncing(false);
         }
@@ -1371,7 +1388,56 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [flushPending, hydrated, isOnline, loadCloud, user]);
+  }, [flushPending, hydrated, isOnline, loadCloud, syncTick, user]);
+
+  useEffect(() => {
+    if (!hydrated || !user) return;
+    const requestSync = () => {
+      if (navigator.onLine) setSyncTick((current) => current + 1);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") requestSync();
+    };
+    const timer = window.setInterval(requestSync, 15_000);
+    window.addEventListener("focus", requestSync);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", requestSync);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [hydrated, user]);
+
+  useEffect(() => {
+    if (!hydrated || !isOnline || !user) return;
+    let refreshTimer: number | undefined;
+    const channel = supabase
+      .channel(`device-sync:${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public" },
+        () => {
+          window.clearTimeout(refreshTimer);
+          refreshTimer = window.setTimeout(
+            () => setSyncTick((current) => current + 1),
+            250,
+          );
+        },
+      )
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          window.clearTimeout(refreshTimer);
+          refreshTimer = window.setTimeout(
+            () => setSyncTick((current) => current + 1),
+            1_000,
+          );
+        }
+      });
+    return () => {
+      window.clearTimeout(refreshTimer);
+      void supabase.removeChannel(channel);
+    };
+  }, [hydrated, isOnline, supabase, user]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -1422,30 +1488,36 @@ export default function Home() {
   });
 
   const persistMutation = useCallback(async (mutation: PendingMutation) => {
+    writeRevisionRef.current += 1;
     const scopedMutation = { ...mutation, ownerKey: user?.id ?? "local" };
     if (user && isOnline) {
+      setSyncing(true);
       let query;
-      if (scopedMutation.action === "insert") {
-        query = supabase.from(scopedMutation.table).insert(scopedMutation.payload ?? {});
-      } else if (scopedMutation.action === "upsert") {
+      const prepared = prepareMutation(scopedMutation, user.id);
+      const payload = safeMutationPayload(prepared);
+      if (prepared.action === "insert") {
+        query = supabase.from(prepared.table).insert(payload ?? {});
+      } else if (prepared.action === "upsert") {
         query = supabase
-          .from(scopedMutation.table)
-          .upsert(scopedMutation.payload ?? {}, { onConflict: "id" });
-      } else if (scopedMutation.action === "update") {
+          .from(prepared.table)
+          .upsert(payload ?? {}, { onConflict: prepared.onConflict });
+      } else if (prepared.action === "update") {
         query = supabase
-          .from(scopedMutation.table)
-          .update(scopedMutation.payload ?? {})
-          .eq("id", scopedMutation.recordId);
+          .from(prepared.table)
+          .update(payload ?? {})
+          .eq("id", prepared.recordId);
       } else {
         query = supabase
-          .from(scopedMutation.table)
+          .from(prepared.table)
           .delete()
-          .eq("id", scopedMutation.recordId);
+          .eq("id", prepared.recordId);
       }
       const { error } = await query;
+      setSyncing(false);
       if (!error) return true;
     }
     await queueMutation(scopedMutation);
+    setSyncing(false);
     return false;
   }, [isOnline, supabase, user]);
 
@@ -2812,6 +2884,22 @@ export default function Home() {
       }
     }
     setNotice(`Converted “${capture.title}” to an assignment.`);
+  }
+
+  async function completeHomeworkCapture(capture: HomeworkCapture) {
+    if (capture.scheduledCalendarItemId) {
+      const scheduled = items.find(
+        (item) => item.id === capture.scheduledCalendarItemId,
+      );
+      if (scheduled && scheduled.status !== "completed") {
+        updateItem(
+          { ...scheduled, status: "completed" },
+          `Complete homework “${capture.title}”`,
+        );
+      }
+    }
+    await saveHomeworkCapture({ ...capture, status: "completed" });
+    setNotice(`Completed “${capture.title}”.`);
   }
 
   function deleteHomeworkCapture(capture: HomeworkCapture) {
@@ -4313,6 +4401,7 @@ export default function Home() {
         onClose={() => setHomeworkOpen(false)}
         onCapture={captureHomework}
         onConvert={convertHomeworkToAssignment}
+        onComplete={completeHomeworkCapture}
         onDelete={deleteHomeworkCapture}
         onDragState={(id) => setDraggingItemId(id ? `homework:${id}` : null)}
         onOpenWeek={() => {

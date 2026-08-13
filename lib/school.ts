@@ -28,6 +28,7 @@ export type HomeworkCaptureStatus =
   | "captured"
   | "scheduled"
   | "converted"
+  | "completed"
   | "archived";
 
 export type SchoolDaySettings = {

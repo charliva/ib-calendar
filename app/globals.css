@@ -2813,14 +2813,33 @@ kbd {
   font-weight: 610;
 }
 
-.capture-actions button:last-child {
+.capture-actions .capture-convert,
+.capture-actions .capture-delete {
   width: 24px;
   padding: 0;
+}
+
+.capture-actions .capture-convert {
+  min-height: 20px;
+  color: #7165b7;
+  background: transparent;
+}
+
+.capture-actions .capture-convert:hover {
+  background: #e7e4f4;
+}
+
+.capture-actions .capture-done {
+  color: #39745e;
+  background: #dfeee7;
+}
+
+.capture-actions .capture-delete {
   color: #999b95;
   background: transparent;
 }
 
-.capture-actions button:last-child:hover {
+.capture-actions .capture-delete:hover {
   color: #a44e61;
   background: #f0e3e6;
 }

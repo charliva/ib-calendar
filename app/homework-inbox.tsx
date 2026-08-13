@@ -39,6 +39,7 @@ type Props = {
     },
   ) => void;
   onConvert: (capture: HomeworkCapture) => void;
+  onComplete: (capture: HomeworkCapture) => void;
   onDelete: (capture: HomeworkCapture) => void;
   onDragState: (id: string | null) => void;
   onOpenWeek: () => void;
@@ -63,6 +64,7 @@ export function HomeworkInbox({
   onClose,
   onCapture,
   onConvert,
+  onComplete,
   onDelete,
   onDragState,
   onOpenWeek,
@@ -303,13 +305,24 @@ export function HomeworkInbox({
                 </div>
                 <div className="capture-actions">
                   <button
+                    className="capture-done"
                     type="button"
-                    title="Convert to assignment"
-                    onClick={() => onConvert(capture)}
+                    title="Mark homework done"
+                    onClick={() => onComplete(capture)}
                   >
-                    <ArrowRight size={12} /> Assignment
+                    <Check size={12} /> Done
                   </button>
                   <button
+                    className="capture-convert"
+                    type="button"
+                    title="Move to assignments"
+                    aria-label={`Move ${capture.title} to assignments`}
+                    onClick={() => onConvert(capture)}
+                  >
+                    <ArrowRight size={12} />
+                  </button>
+                  <button
+                    className="capture-delete"
                     type="button"
                     title="Delete capture"
                     onClick={() => onDelete(capture)}
