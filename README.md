@@ -42,14 +42,16 @@ without installing another provider package—for example,
 ## Invitations and email codes
 
 Signed-in users can copy a single-use, seven-day invitation URL or enter a
-friend's address to create an unconfirmed account and send a verification code.
+friend's address to create a passwordless account and send a verification code.
 Normal email sign-in does not create accounts, so new accounts must come through
 an invitation. Invitation creation is limited to 10 per user in 24 hours.
 
 In the hosted Supabase dashboard, turn off **Allow new users to sign up** under
 Authentication settings after confirming your owner account already exists. The
-server-only invitation route creates the unconfirmed account before requesting
-its OTP, so invited users can still finish signup while public signup stays off.
+server-only invitation route creates a confirmed passwordless account before
+requesting its OTP, so invited users can still finish signup while public signup
+stays off. The recipient still needs the emailed code before Supabase issues a
+session.
 
 Apply `supabase/migrations/20260810190834_add_invitations.sql`, add the
 server-only `SUPABASE_SECRET_KEY` to the deployment, and configure a production

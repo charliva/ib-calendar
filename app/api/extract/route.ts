@@ -91,17 +91,15 @@ export async function POST(request: Request) {
     );
   }
 
-  const parsed = requestSchema.safeParse(await request.json());
+  const body = await request.json().catch(() => null);
+  const parsed = requestSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json({ error: "Invalid or oversized document" }, { status: 400 });
   }
 
   const { filename, mediaType, data, timezone, mode, weekStart, subjects } =
     parsed.data;
-  const model =
-    process.env.AI_GATEWAY_VISION_MODEL ??
-    process.env.AI_GATEWAY_MODEL ??
-    "google/gemini-3-flash";
+  const model = process.env.AI_GATEWAY_VISION_MODEL ?? "google/gemini-3-flash";
   const content: UserContent = [
     {
       type: "text",
@@ -120,26 +118,27 @@ export async function POST(request: Request) {
     { type: "file", data, mediaType, filename },
   ];
 
-  const { output } = await generateText({
-    model: gateway(model),
-    maxRetries: 0,
-    maxOutputTokens: mode === "school_timetable" ? 7_000 : 3_200,
-    timeout: { totalMs: 20_000 },
-    providerOptions: {
-      gateway: { sort: "ttft" },
-      ...(model.startsWith("openai/")
-        ? { openai: { reasoningEffort: "none" } }
-        : {}),
-    },
-    output: Output.object({
-      schema: extractionSchema,
-      name: "calendar_document_extraction",
-      description:
-        "Calendar items proposed from a document, with source evidence.",
-    }),
-    instructions:
-      mode === "school_timetable"
-        ? `Read this as a school timetable screenshot for the week beginning ${weekStart} in ${timezone}.
+  try {
+    const { output } = await generateText({
+      model: gateway(model),
+      maxRetries: 1,
+      maxOutputTokens: mode === "school_timetable" ? 7_000 : 3_200,
+      timeout: { totalMs: 30_000 },
+      providerOptions: {
+        gateway: { sort: "ttft" },
+        ...(model.startsWith("openai/")
+          ? { openai: { reasoningEffort: "none" } }
+          : {}),
+      },
+      output: Output.object({
+        schema: extractionSchema,
+        name: "calendar_document_extraction",
+        description:
+          "Calendar items proposed from a document, with source evidence.",
+      }),
+      instructions:
+        mode === "school_timetable"
+          ? `Read this as a school timetable screenshot for the week beginning ${weekStart} in ${timezone}.
 Return one separate scheduled event for every visible lesson block, including simultaneous or unusually placed lessons.
 Map weekday columns to exact dates inside that selected Monday-to-Sunday week. Use visible dates when present.
 Each lesson must have exact startsAt and endsAt values with the correct explicit UTC offset for ${timezone}.
@@ -164,8 +163,25 @@ Return ISO 8601 date-times with explicit offsets when a time is known.
 Every item needs a short evidence explanation.
 Set rawLabel, itemType, subjectConfidence, subjectName, subjectShortName, teacher, and room to null unless the document clearly describes a school class.
 The application will show a diff and require approval.`,
-    messages: [{ role: "user", content }],
-  });
+      messages: [{ role: "user", content }],
+    });
 
-  return Response.json(output);
+    const validated = extractionSchema.safeParse(output);
+    if (!validated.success) {
+      return Response.json(
+        {
+          error:
+            "The timetable reader returned incomplete lesson objects. Please try the screenshot again.",
+        },
+        { status: 502 },
+      );
+    }
+    return Response.json(validated.data);
+  } catch (error) {
+    console.error("Timetable extraction failed", error);
+    return Response.json(
+      { error: "The timetable reader could not process that image. Try a PNG or JPEG under 5 MB." },
+      { status: 502 },
+    );
+  }
 }

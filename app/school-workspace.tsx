@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import {
   type CSSProperties,
+  type DragEvent,
   type FormEvent,
   useEffect,
   useMemo,
@@ -284,6 +285,8 @@ export function SchoolWorkspace(props: Props) {
   const [schoolDayDraft, setSchoolDayDraft] =
     useState<SchoolDaySettings | null>(null);
   const timetableInputRef = useRef<HTMLInputElement>(null);
+  const timetableDropDepth = useRef(0);
+  const [timetableDragActive, setTimetableDragActive] = useState(false);
 
   useEffect(() => {
     if (weekAnchor) return;
@@ -488,6 +491,32 @@ export function SchoolWorkspace(props: Props) {
       new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime(),
   );
 
+  function importDroppedTimetable(file: File | undefined) {
+    if (!file || !weekAnchor || props.timetableImportBusy) return;
+    props.onImportTimetable(file, weekAnchor);
+  }
+
+  function enterTimetableDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+    timetableDropDepth.current += 1;
+    setTimetableDragActive(true);
+  }
+
+  function leaveTimetableDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    timetableDropDepth.current = Math.max(0, timetableDropDepth.current - 1);
+    if (timetableDropDepth.current === 0) setTimetableDragActive(false);
+  }
+
+  function dropTimetable(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    timetableDropDepth.current = 0;
+    setTimetableDragActive(false);
+    importDroppedTimetable(event.dataTransfer.files?.[0]);
+  }
+
   return (
     <section className="school-workspace">
       <header className="school-hero">
@@ -613,12 +642,42 @@ export function SchoolWorkspace(props: Props) {
                 </button>
               </div>
 
-              <div className="timetable-import-note">
+              <div
+                className={`timetable-import-note timetable-drop-zone ${
+                  timetableDragActive ? "is-dragging" : ""
+                }`}
+                role="button"
+                tabIndex={0}
+                aria-label="Drop a timetable screenshot here or choose one"
+                aria-disabled={!weekAnchor || props.timetableImportBusy}
+                onClick={() =>
+                  !props.timetableImportBusy && timetableInputRef.current?.click()
+                }
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    if (!props.timetableImportBusy) {
+                      timetableInputRef.current?.click();
+                    }
+                  }
+                }}
+                onDragEnter={enterTimetableDrop}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "copy";
+                }}
+                onDragLeave={leaveTimetableDrop}
+                onDrop={dropTimetable}
+              >
                 <ImageUp size={15} />
                 <span>
-                  <strong>Each week can be different.</strong> Open the week you
-                  want, import its screenshot, then review every detected lesson
-                  before applying it.
+                  <strong>
+                    {timetableDragActive
+                      ? "Drop to read this timetable"
+                      : "Drop a screenshot here"}
+                  </strong>{" "}
+                  Open the week you want, then drop or choose its screenshot.
+                  You will review every detected lesson before applying it.
                 </span>
                 {importedWeekLessons.length > 0 && (
                   <small>{importedWeekLessons.length} imported this week</small>
@@ -1435,123 +1494,149 @@ export function SchoolWorkspace(props: Props) {
             )}
 
             {editor === "class" && classDraft && (
-              <form onSubmit={saveClass}>
-                <SubjectSelect
-                  subjects={subjects}
-                  value={classDraft.subjectId}
-                  onChange={(subjectId) =>
-                    setClassDraft({ ...classDraft, subjectId })
-                  }
-                />
-                <FormField label="Day">
-                  <select
-                    value={classDraft.weekday}
-                    onChange={(event) =>
-                      setClassDraft({
-                        ...classDraft,
-                        weekday: Number(event.target.value),
-                        weekPattern: "every",
-                      })
+              <form className="school-class-form" onSubmit={saveClass}>
+                <section className="class-subject-field">
+                  <SubjectSelect
+                    subjects={subjects}
+                    value={classDraft.subjectId}
+                    onChange={(subjectId) =>
+                      setClassDraft({ ...classDraft, subjectId })
                     }
-                  >
-                    {weekdays.map((day, index) => (
-                      <option value={index + 1} key={day}>
-                        {day}
-                      </option>
-                    ))}
-                  </select>
-                </FormField>
-                <div className="form-pair">
-                  <FormField label="Starts">
-                    <TemporalField
-                      required
-                      mode="time"
-                      value={classDraft.startTime}
-                      onChange={(value) =>
-                        setClassDraft({
-                          ...classDraft,
-                          startTime: value,
-                        })
-                      }
-                      ariaLabel="Choose lesson start time"
-                    />
-                  </FormField>
-                  <FormField label="Ends">
-                    <TemporalField
-                      required
-                      mode="time"
-                      value={classDraft.endTime}
-                      onChange={(value) =>
-                        setClassDraft({
-                          ...classDraft,
-                          endTime: value,
-                        })
-                      }
-                      ariaLabel="Choose lesson end time"
-                    />
-                  </FormField>
-                </div>
-                <div className="form-pair">
-                  <FormField label="Room override">
-                    <input
-                      value={classDraft.room}
+                  />
+                </section>
+                <section className="class-schedule-card">
+                  <header>
+                    <Clock3 size={16} />
+                    <div>
+                      <strong>Weekly time</strong>
+                      <small>
+                        {weekdays[classDraft.weekday - 1]} · {classDraft.startTime}–
+                        {classDraft.endTime}
+                      </small>
+                    </div>
+                  </header>
+                  <FormField label="Day">
+                    <select
+                      value={classDraft.weekday}
                       onChange={(event) =>
                         setClassDraft({
                           ...classDraft,
-                          room: event.target.value,
+                          weekday: Number(event.target.value),
+                          weekPattern: "every",
                         })
                       }
-                      placeholder={
-                        subjectFor(classDraft.subjectId)?.room || "Use subject"
-                      }
-                    />
+                    >
+                      {weekdays.map((day, index) => (
+                        <option value={index + 1} key={day}>
+                          {day}
+                        </option>
+                      ))}
+                    </select>
                   </FormField>
-                  <FormField label="Teacher override">
-                    <input
-                      value={classDraft.teacher}
-                      onChange={(event) =>
-                        setClassDraft({
-                          ...classDraft,
-                          teacher: event.target.value,
-                        })
-                      }
-                      placeholder={
-                        subjectFor(classDraft.subjectId)?.teacher ||
-                        "Use subject"
-                      }
-                    />
-                  </FormField>
-                </div>
-                <div className="form-pair">
-                  <FormField label="From">
-                    <TemporalField
-                      required
-                      mode="date"
-                      value={classDraft.validFrom}
-                      onChange={(value) =>
-                        setClassDraft({
-                          ...classDraft,
-                          validFrom: value,
-                        })
-                      }
-                      ariaLabel="Choose first date"
-                    />
-                  </FormField>
-                  <FormField label="Until">
-                    <TemporalField
-                      mode="date"
-                      value={classDraft.validUntil ?? ""}
-                      onChange={(value) =>
-                        setClassDraft({
-                          ...classDraft,
-                          validUntil: value || null,
-                        })
-                      }
-                      placeholder="No end date"
-                      ariaLabel="Choose last date"
-                    />
-                  </FormField>
-                </div>
+                  <div className="form-pair class-time-pair">
+                    <FormField label="Starts">
+                      <TemporalField
+                        required
+                        mode="time"
+                        value={classDraft.startTime}
+                        onChange={(value) =>
+                          setClassDraft({
+                            ...classDraft,
+                            startTime: value,
+                          })
+                        }
+                        ariaLabel="Choose lesson start time"
+                      />
+                    </FormField>
+                    <FormField label="Ends">
+                      <TemporalField
+                        required
+                        mode="time"
+                        value={classDraft.endTime}
+                        onChange={(value) =>
+                          setClassDraft({
+                            ...classDraft,
+                            endTime: value,
+                          })
+                        }
+                        ariaLabel="Choose lesson end time"
+                      />
+                    </FormField>
+                  </div>
+                </section>
+                <details className="school-editor-details">
+                  <summary>
+                    <span>Class details</span>
+                    <small>Room and teacher</small>
+                  </summary>
+                  <div className="form-pair">
+                    <FormField label="Room">
+                      <input
+                        value={classDraft.room}
+                        onChange={(event) =>
+                          setClassDraft({
+                            ...classDraft,
+                            room: event.target.value,
+                          })
+                        }
+                        placeholder={
+                          subjectFor(classDraft.subjectId)?.room || "Use subject"
+                        }
+                      />
+                    </FormField>
+                    <FormField label="Teacher">
+                      <input
+                        value={classDraft.teacher}
+                        onChange={(event) =>
+                          setClassDraft({
+                            ...classDraft,
+                            teacher: event.target.value,
+                          })
+                        }
+                        placeholder={
+                          subjectFor(classDraft.subjectId)?.teacher ||
+                          "Use subject"
+                        }
+                      />
+                    </FormField>
+                  </div>
+                </details>
+                <details className="school-editor-details">
+                  <summary>
+                    <span>Repeats</span>
+                    <small>Every week from {classDraft.validFrom}</small>
+                  </summary>
+                  <div className="form-pair">
+                    <FormField label="First week">
+                      <TemporalField
+                        required
+                        mode="date"
+                        value={classDraft.validFrom}
+                        onChange={(value) =>
+                          setClassDraft({
+                            ...classDraft,
+                            validFrom: value,
+                          })
+                        }
+                        ariaLabel="Choose first date"
+                      />
+                    </FormField>
+                    <FormField label="Last week">
+                      <TemporalField
+                        mode="date"
+                        value={classDraft.validUntil ?? ""}
+                        onChange={(value) =>
+                          setClassDraft({
+                            ...classDraft,
+                            validUntil: value || null,
+                          })
+                        }
+                        placeholder="No end date"
+                        ariaLabel="Choose last date"
+                      />
+                    </FormField>
+                  </div>
+                </details>
                 <EditorFooter onCancel={closeEditor} />
               </form>
             )}

@@ -76,6 +76,17 @@ test("keeps screenshot rooms on individual class occurrences", () => {
   );
 });
 
+test("tolerates legacy imported items without newer room or constraint fields", () => {
+  const legacyItem = {
+    kind: "event",
+    source: "document",
+    description: "Room KE103",
+  };
+
+  assert.equal(isImportedTimetableItem(legacyItem), false);
+  assert.equal(timetableRoomForItem(legacyItem), "");
+});
+
 test("drops duplicates, fuzzy entries, and lessons outside the selected week", () => {
   const valid = {
     kind: "event",

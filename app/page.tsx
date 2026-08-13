@@ -533,6 +533,19 @@ function isExtractionResponse(value: unknown): value is ExtractionResponse {
   );
 }
 
+function documentMediaType(file: File) {
+  if (file.type) return file.type;
+  const extension = file.name.split(".").at(-1)?.toLowerCase();
+  if (extension === "png") return "image/png";
+  if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
+  if (extension === "webp") return "image/webp";
+  if (extension === "heic" || extension === "heif") return "image/heic";
+  if (extension === "pdf") return "application/pdf";
+  if (extension === "csv") return "text/csv";
+  if (extension === "txt") return "text/plain";
+  return "application/octet-stream";
+}
+
 function isDeeperResponse(
   value: unknown,
 ): value is Pick<Exploration, "framing" | "directions"> {
@@ -1866,7 +1879,8 @@ export default function Home() {
   ) {
     if (!file) return;
     const timetableMode = options.mode === "school_timetable";
-    if (timetableMode && !file.type.startsWith("image/")) {
+    const mediaType = documentMediaType(file);
+    if (timetableMode && !mediaType.startsWith("image/")) {
       setNotice("Choose an image screenshot for the weekly timetable import.");
       return;
     }
@@ -1881,7 +1895,14 @@ export default function Home() {
       if (!sessionData.session?.access_token) throw new Error("Sign in to use document extraction");
       const data = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
+        reader.onload = () => {
+          const result = String(reader.result);
+          resolve(
+            result.startsWith("data:;base64,")
+              ? result.replace("data:;base64,", `data:${mediaType};base64,`)
+              : result,
+          );
+        };
         reader.onerror = () => reject(reader.error);
         reader.readAsDataURL(file);
       });
@@ -1893,23 +1914,30 @@ export default function Home() {
         },
         body: JSON.stringify({
           filename: file.name,
-          mediaType: file.type || "application/pdf",
+          mediaType,
           data,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           mode: options.mode ?? "calendar_document",
           weekStart: options.weekStart,
           subjects: timetableMode
             ? subjects.map((subject) => ({
-                name: subject.name,
-                shortName: subject.shortName,
-                teacher: subject.teacher,
-                room: subject.room,
+                name: subject.name ?? "",
+                shortName: subject.shortName ?? "",
+                teacher: subject.teacher ?? "",
+                room: subject.room ?? "",
               }))
             : [],
         }),
       });
-      if (!response.ok) throw new Error("Extraction failed");
-      const raw: unknown = await response.json();
+      const raw: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message =
+          raw && typeof raw === "object" && "error" in raw &&
+          typeof raw.error === "string"
+            ? raw.error
+            : "Extraction failed";
+        throw new Error(message);
+      }
       if (!isExtractionResponse(raw)) {
         throw new Error("AI returned an invalid document proposal");
       }
@@ -1990,10 +2018,12 @@ export default function Home() {
       });
       setTimetableSubjectProposal(null);
       setPaletteOpen(false);
-    } catch {
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "";
       setNotice(
         timetableMode
-          ? "I couldn’t find exact lessons in that screenshot. Check the selected week and try a clearer full timetable image."
+          ? reason ||
+              "I couldn’t find exact lessons in that screenshot. Check the selected week and try a clearer full timetable image."
           : "I couldn’t read that file. Try a clear image, text file, or PDF.",
       );
     } finally {
@@ -3712,6 +3742,11 @@ export default function Home() {
     new Date(draftItem.endsAt) <= new Date(draftItem.startsAt)
       ? "End must be after start."
       : null;
+  const draftDurationOptions = draftItem
+    ? Array.from(
+        new Set([15, 30, 45, 60, 90, 120, durationMinutes(draftItem)]),
+      ).sort((a, b) => a - b)
+    : [];
 
   function moveAnchor(amount: number) {
     const next =
@@ -5295,96 +5330,77 @@ export default function Home() {
                   : "What needs doing?"
               }
             />
-            <div className="quick-item-row item-time-range">
-              <label>
-                <span>When</span>
-                <TemporalField
-                  mode="datetime"
-                  value={toLocalInput(draftItem.startsAt)}
-                  onChange={(value) => {
-                    const startsAt = fromLocalInput(value);
-                    const minutes = durationMinutes(draftItem);
-                    setDraftItem({
-                      ...draftItem,
-                      startsAt,
-                      endsAt: startsAt
-                        ? new Date(
-                            new Date(startsAt).getTime() + minutes * 60_000,
-                          ).toISOString()
-                        : null,
-                      status: startsAt ? "scheduled" : "inbox",
-                    });
-                  }}
-                  ariaLabel="Choose start date and time"
-                />
-              </label>
-              <label>
-                <span>Ends</span>
-                <TemporalField
-                  mode="datetime"
-                  value={toLocalInput(draftItem.endsAt)}
-                  onChange={(value) => {
-                    const endsAt = fromLocalInput(value);
-                    const minutes =
-                      draftItem.startsAt && endsAt
-                        ? Math.max(
-                            5,
-                            Math.round(
-                              (new Date(endsAt).getTime() -
-                                new Date(draftItem.startsAt).getTime()) /
-                                60_000,
-                            ),
-                          )
-                        : draftItem.durationMin;
-                    setDraftItem({
-                      ...draftItem,
-                      endsAt,
-                      durationMin: minutes,
-                      durationMax: minutes,
-                    });
-                  }}
-                  ariaLabel="Choose end date and time"
-                />
-              </label>
-            </div>
-            {!isImportedTimetableItem(draftItem) && draftItem.startsAt && (
-              <div className="timing-presets" aria-label="Quick duration">
-                <span>{formatDurationLabel(draftItem)}</span>
+            <section className="item-schedule-card">
+              <header className="item-section-heading">
+                <CalendarClock size={16} />
+                <div>
+                  <strong>Schedule</strong>
+                  <small>
+                    {draftItem.startsAt
+                      ? formatProposalTiming(draftItem)
+                      : "Leave unscheduled to keep it in your inbox"}
+                  </small>
+                </div>
+              </header>
+              <div className="item-schedule-row">
+                <label className="item-start-field">
+                  <span>Starts</span>
+                  <TemporalField
+                    mode="datetime"
+                    value={toLocalInput(draftItem.startsAt)}
+                    onChange={(value) => {
+                      const startsAt = fromLocalInput(value);
+                      const minutes = durationMinutes(draftItem);
+                      setDraftItem({
+                        ...draftItem,
+                        startsAt,
+                        endsAt: startsAt
+                          ? new Date(
+                              new Date(startsAt).getTime() + minutes * 60_000,
+                            ).toISOString()
+                          : null,
+                        status: startsAt ? "scheduled" : "inbox",
+                      });
+                    }}
+                    ariaLabel="Choose start date and time"
+                  />
+                </label>
+                <label className="item-duration-field">
+                  <span>Duration</span>
+                  <select
+                    value={durationMinutes(draftItem)}
+                    disabled={!draftItem.startsAt || isAllDayItem(draftItem)}
+                    onChange={(event) =>
+                      setDraftItem(
+                        itemWithDuration(draftItem, Number(event.target.value)),
+                      )
+                    }
+                  >
+                    {draftDurationOptions.map((minutes) => (
+                      <option value={minutes} key={minutes}>
+                        {minutes < 60
+                          ? `${minutes} min`
+                          : minutes % 60 === 0
+                            ? `${minutes / 60} ${minutes === 60 ? "hour" : "hours"}`
+                            : `${Math.floor(minutes / 60)} hr ${minutes % 60} min`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {!isImportedTimetableItem(draftItem) && draftItem.startsAt && (
                 <button
-                  type="button"
-                  onClick={() => setDraftItem(itemWithDuration(draftItem, 30))}
-                >
-                  30 min
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDraftItem(itemWithDuration(draftItem, 60))}
-                >
-                  1 hour
-                </button>
-                <button
-                  className={isAllDayItem(draftItem) ? "active" : ""}
+                  className={`item-all-day-toggle ${
+                    isAllDayItem(draftItem) ? "active" : ""
+                  }`}
                   type="button"
                   aria-pressed={isAllDayItem(draftItem)}
                   onClick={() => setDraftItem(toggleAllDayItem(draftItem))}
                 >
-                  All day
+                  <span aria-hidden="true" /> All day
                 </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setDraftItem(
-                      itemWithDuration(
-                        draftItem,
-                        durationMinutes(draftItem) + 24 * 60,
-                      ),
-                    )
-                  }
-                >
-                  +1 day
-                </button>
-              </div>
-            )}
+              )}
+            </section>
             {draftTimingError && (
               <p className="item-timing-error" role="alert">
                 {draftTimingError}
@@ -5430,16 +5446,52 @@ export default function Home() {
             )}
             <details className="item-more">
               <summary>
-                <span>
-                  {isImportedTimetableItem(draftItem)
-                    ? "Advanced calendar rules"
-                    : "More options"}
-                </span>
-                <small>
-                  {energyLabels[draftItem.energyType]} · {draftItem.priority}
-                </small>
+                <span>Details</span>
+                <small>Notes, exact time & planning</small>
               </summary>
+              {!isImportedTimetableItem(draftItem) && (
+                <textarea
+                  className="item-detail-notes"
+                  value={draftItem.description}
+                  onChange={(event) =>
+                    setDraftItem({
+                      ...draftItem,
+                      description: event.target.value,
+                    })
+                  }
+                  placeholder="Add notes (optional)"
+                  aria-label="Item notes"
+                />
+              )}
               <div className="compact-options-grid">
+                <label>
+                  <span>Exact end</span>
+                  <TemporalField
+                    mode="datetime"
+                    value={toLocalInput(draftItem.endsAt)}
+                    onChange={(value) => {
+                      const endsAt = fromLocalInput(value);
+                      const minutes =
+                        draftItem.startsAt && endsAt
+                          ? Math.max(
+                              5,
+                              Math.round(
+                                (new Date(endsAt).getTime() -
+                                  new Date(draftItem.startsAt).getTime()) /
+                                  60_000,
+                              ),
+                            )
+                          : draftItem.durationMin;
+                      setDraftItem({
+                        ...draftItem,
+                        endsAt,
+                        durationMin: minutes,
+                        durationMax: minutes,
+                      });
+                    }}
+                    ariaLabel="Choose exact end date and time"
+                  />
+                </label>
                 <label>
                   <span>Energy</span>
                   <select
@@ -5560,19 +5612,6 @@ export default function Home() {
                   placeholder="after school, before deadline"
                 />
               </label>
-              {!isImportedTimetableItem(draftItem) && (
-                <textarea
-                  value={draftItem.description}
-                  onChange={(event) =>
-                    setDraftItem({
-                      ...draftItem,
-                      description: event.target.value,
-                    })
-                  }
-                  placeholder="Notes or context"
-                  aria-label="Item description"
-                />
-              )}
               {draftItem.kind === "task" && (
                 <>
                   <label className="constraint-field">

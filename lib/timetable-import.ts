@@ -209,16 +209,20 @@ export function isImportedTimetableItem(item: CalendarItem) {
   return (
     item.kind === "event" &&
     item.source === "document" &&
+    Array.isArray(item.constraints) &&
     item.constraints.includes(TIMETABLE_IMPORT_MARKER)
   );
 }
 
 export function timetableRoomForItem(item: CalendarItem) {
-  const explicitRoom = item.room.trim();
+  const explicitRoom = typeof item.room === "string" ? item.room.trim() : "";
   if (explicitRoom) return explicitRoom;
   if (!isImportedTimetableItem(item)) return "";
 
-  const roomText = [item.description, ...item.constraints].join(" ");
+  const roomText = [
+    typeof item.description === "string" ? item.description : "",
+    ...(Array.isArray(item.constraints) ? item.constraints : []),
+  ].join(" ");
   const labeledRoom = roomText.match(
     /\broom\s*(?:is\s+|[:#-]\s*)?([a-z]{1,8}\s?\d{1,4}[a-z]?)\b/i,
   );
