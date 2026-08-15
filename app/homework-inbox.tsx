@@ -115,11 +115,9 @@ export function HomeworkInbox({
     <aside className={`homework-dock ${open ? "is-open" : ""}`}>
       <header>
         <div>
-          <span className="micro-label">Fast student capture</span>
           <h1>Homework</h1>
         </div>
         <div className="homework-header-actions">
-          <kbd>⇧⌘H</kbd>
           <button type="button" onClick={onClose} aria-label="Close homework">
             <X size={16} />
           </button>
@@ -203,7 +201,7 @@ export function HomeworkInbox({
                     )
                   }
                 >
-                  −
+                  -
                 </button>
                 <strong>
                   {estimateOverride ?? preview.estimatedMinutes} min
@@ -310,7 +308,7 @@ export function HomeworkInbox({
                     title="Mark homework done"
                     onClick={() => onComplete(capture)}
                   >
-                    <Check size={12} /> Done
+                    <Check size={12} />
                   </button>
                   <button
                     className="capture-convert"
