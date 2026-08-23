@@ -14,15 +14,20 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@radix-ui/react-popover": "1.1.23",
     "@supabase/ssr": "0.12.4",
     "@supabase/supabase-js": "2.111.0",
     "ai": "7.0.42",
+    "clsx": "2.1.1",
+    "date-fns": "4.4.0",
     "idb": "8.0.3",
     "lucide-react": "1.28.0",
     "lunar-javascript": "1.7.7",
     "next": "16.2.12",
     "react": "19.2.8",
+    "react-day-picker": "10.0.1",
     "react-dom": "19.2.8",
+    "tailwind-merge": "3.6.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

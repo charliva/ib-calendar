@@ -8187,7 +8187,7 @@ body {
 }
 
 .free-period-panel article > div,
-.free-period-panel article > button {
+.free-period-suggestions > button {
   display: grid;
   gap: 2px;
 }
@@ -8197,7 +8197,12 @@ body {
   font-size: 10px;
 }
 
-.free-period-panel article > button {
+.free-period-suggestions {
+  display: grid;
+  gap: 6px !important;
+}
+
+.free-period-suggestions > button {
   padding: 8px;
   border: 1px dashed color-mix(in srgb, var(--accent) 50%, var(--line));
   border-radius: 7px;
@@ -8206,7 +8211,7 @@ body {
   text-align: left;
 }
 
-.free-period-panel article > button > span {
+.free-period-suggestions > button > span {
   color: var(--accent);
   font-size: 9px;
   font-weight: 700;
@@ -10566,6 +10571,92 @@ body {
 .calendar-toolbar,
 .day-head {
   background: rgb(255 253 248 / 94%);
+}
+
+/* shadcn/ui input date picker composition */
+.shadcn-date-field .temporal-trigger {
+  grid-template-columns: 18px minmax(0, 1fr) !important;
+}
+
+.shadcn-date-trigger {
+  display: grid;
+  width: 18px;
+  height: 40px;
+  padding: 0;
+  place-items: center;
+  color: #7669c7;
+  background: transparent;
+  border: 0;
+}
+
+.shadcn-date-trigger:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
+.shadcn-date-field .temporal-trigger > input[type="time"]::-webkit-calendar-picker-indicator {
+  opacity: .55;
+}
+
+.shadcn-date-popover {
+  overflow: hidden;
+  border-color: #ccd0c8;
+  border-radius: 11px;
+  background: rgb(252 252 249 / 98%);
+  box-shadow: 0 22px 58px rgb(35 35 42 / 19%), 0 3px 10px rgb(35 35 42 / 8%);
+}
+
+.shadcn-nlp-preview {
+  display: grid;
+  padding: 11px 13px 10px;
+  gap: 3px;
+  background: #f4f3fa;
+  border-bottom: 1px solid #e1dfea;
+}
+
+.shadcn-nlp-preview span {
+  color: #817b91;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.shadcn-nlp-preview strong {
+  color: #4f466f;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.shadcn-nlp-preview.is-invalid {
+  background: #fff2f3;
+  border-bottom-color: #f0d7dc;
+}
+
+.shadcn-nlp-preview.is-invalid strong {
+  color: #9a4052;
+}
+
+.shadcn-date-time {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  padding: 10px 12px 12px;
+  gap: 12px;
+  border-top: 1px solid #e1e3de;
+}
+
+.shadcn-date-time label {
+  color: #6f716b;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.shadcn-date-time input {
+  height: 34px;
+  background: #f4f5f1;
+  border-color: #d7dad3;
+  font-size: 12px;
 }
 
 .date-navigation h2,

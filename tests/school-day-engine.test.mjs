@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { planAssignment } from "../lib/assignment-planner.ts";
+import { makeItem } from "../lib/calendar-engine.ts";
 import { normalizeTimetableLessons } from "../lib/timetable-import.ts";
 import {
   detectFreePeriods,
   energyForTime,
   protectedSchoolRanges,
+  recommendForFreePeriod,
+  recommendationsForFreePeriod,
   studySlotSuitability,
   suggestAssignmentForFreePeriod,
 } from "../lib/school-day-engine.ts";
@@ -193,6 +196,78 @@ test("free-period suggestions reject incompatible contexts and computers", () =>
       settings,
     )?.id,
     baseAssignment.id,
+  );
+});
+
+test("free-period recommendations include unscheduled calendar events", () => {
+  const period = detectFreePeriods(
+    classes,
+    [],
+    settings,
+    new Date("2026-07-31T08:00:00+02:00"),
+    new Date("2026-07-31T08:00:00+02:00"),
+  )[0];
+  const event = makeItem({
+    id: "student-council",
+    kind: "event",
+    title: "Plan student council event",
+    durationMin: 25,
+    durationMax: 40,
+    priority: "high",
+    taskContext: "school",
+    status: "inbox",
+  });
+
+  const recommendation = recommendForFreePeriod(
+    period,
+    [{ ...baseAssignment, priority: "medium" }],
+    [event],
+    settings,
+  );
+
+  assert.equal(recommendation?.sourceType, "calendar_item");
+  assert.equal(recommendation?.sourceId, event.id);
+  assert.equal(recommendation?.durationMinutes, 25);
+});
+
+test("free periods expose several ranked calendar previews", () => {
+  const period = detectFreePeriods(
+    classes,
+    [],
+    settings,
+    new Date("2026-07-31T08:00:00+02:00"),
+    new Date("2026-07-31T08:00:00+02:00"),
+  )[0];
+  const items = [
+    makeItem({
+      id: "club-planning",
+      kind: "event",
+      title: "Plan club meeting",
+      priority: "high",
+      durationMin: 20,
+      taskContext: "school",
+    }),
+    makeItem({
+      id: "library-return",
+      kind: "task",
+      title: "Return library books",
+      priority: "low",
+      durationMin: 10,
+      taskContext: "school",
+    }),
+  ];
+
+  const recommendations = recommendationsForFreePeriod(
+    period,
+    [baseAssignment],
+    items,
+    settings,
+  );
+
+  assert.equal(recommendations.length, 3);
+  assert.deepEqual(
+    recommendations.map((entry) => entry.sourceId),
+    ["club-planning", baseAssignment.id, "library-return"],
   );
 });
 

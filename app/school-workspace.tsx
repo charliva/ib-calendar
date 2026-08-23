@@ -47,8 +47,9 @@ import {
 } from "@/lib/revision-planner";
 import {
   detectFreePeriods,
-  suggestAssignmentForFreePeriod,
+  recommendationsForFreePeriod,
   type FreePeriod,
+  type FreePeriodRecommendation,
 } from "@/lib/school-day-engine";
 import { WORK_TYPE_LABELS } from "@/lib/school";
 import {
@@ -101,7 +102,10 @@ type Props = {
   onAddAssignmentSession: (assignment: Assignment) => void;
   onOpenAssignmentSession: (session: CalendarItem) => void;
   onToggleAssignmentSession: (session: CalendarItem) => void;
-  onUseFreePeriod: (assignment: Assignment, period: FreePeriod) => void;
+  onUseFreePeriod: (
+    recommendation: FreePeriodRecommendation,
+    period: FreePeriod,
+  ) => void;
   onSaveAssessment: (assessment: Assessment) => void;
   onDeleteAssessment: (assessment: Assessment) => void;
   onPlanRevision: (assessment: Assessment) => void;
@@ -869,18 +873,12 @@ export function SchoolWorkspace(props: Props) {
                   </header>
                   <div>
                     {freePeriods.map((period) => {
-                      const suggestion = suggestAssignmentForFreePeriod(
+                      const suggestions = recommendationsForFreePeriod(
                         period,
                         assignments,
+                        props.assignmentSessions,
                         props.schoolDaySettings,
                       );
-                      const minutes = suggestion
-                        ? Math.min(
-                            period.durationMinutes,
-                            suggestion.maxSessionMinutes,
-                            Math.max(suggestion.minSessionMinutes, 25),
-                          )
-                        : 0;
                       return (
                         <article key={period.start.toISOString()}>
                           <div>
@@ -902,17 +900,31 @@ export function SchoolWorkspace(props: Props) {
                               Free period · {period.durationMinutes} min
                             </small>
                           </div>
-                          {suggestion ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                props.onUseFreePeriod(suggestion, period)
-                              }
-                            >
-                              <span>Suggested</span>
-                              <strong>{suggestion.title}</strong>
-                              <small>{minutes} min</small>
-                            </button>
+                          {suggestions.length ? (
+                            <div className="free-period-suggestions">
+                              {suggestions.map((suggestion, index) => (
+                                <button
+                                  type="button"
+                                  key={`${suggestion.sourceType}:${suggestion.sourceId}`}
+                                  onClick={() =>
+                                    props.onUseFreePeriod(suggestion, period)
+                                  }
+                                >
+                                  <span>
+                                    {index === 0
+                                      ? "Best fit · preview on calendar"
+                                      : "Preview on calendar"}
+                                  </span>
+                                  <strong>{suggestion.title}</strong>
+                                  <small>
+                                    {suggestion.durationMinutes} min ·{" "}
+                                    {suggestion.sourceType === "calendar_item"
+                                      ? "calendar"
+                                      : "assignment"}
+                                  </small>
+                                </button>
+                              ))}
+                            </div>
                           ) : (
                             <span className="free-period-no-fit">
                               No context-compatible task

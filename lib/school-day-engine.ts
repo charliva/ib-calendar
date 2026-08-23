@@ -504,3 +504,117 @@ export function suggestAssignmentForFreePeriod(
       );
     })[0];
 }
+
+export type FreePeriodRecommendation =
+  | {
+      sourceType: "assignment";
+      sourceId: string;
+      title: string;
+      durationMinutes: number;
+      assignment: Assignment;
+      item: null;
+    }
+  | {
+      sourceType: "calendar_item";
+      sourceId: string;
+      title: string;
+      durationMinutes: number;
+      assignment: null;
+      item: CalendarItem;
+    };
+
+function deadlineTime(value: string | null) {
+  return value ? new Date(value).getTime() : Number.POSITIVE_INFINITY;
+}
+
+/** Rank both schoolwork and unscheduled calendar items for a verified gap. */
+export function recommendationsForFreePeriod(
+  period: FreePeriod,
+  assignments: Assignment[],
+  items: CalendarItem[],
+  settings: SchoolDaySettings,
+  limit = 3,
+): FreePeriodRecommendation[] {
+  const assignmentCandidates: FreePeriodRecommendation[] = assignments
+    .filter(
+      (assignment) =>
+        !["completed", "submitted", "archived"].includes(assignment.status) &&
+        assignment.minSessionMinutes <= period.durationMinutes &&
+        (assignment.taskContext === "school" ||
+          assignment.taskContext === "anywhere") &&
+        (!assignment.computerRequired || settings.schoolComputerAccess) &&
+        (!assignment.dueAt || new Date(assignment.dueAt) > period.start),
+    )
+    .map((assignment) => ({
+      sourceType: "assignment" as const,
+      sourceId: assignment.id,
+      title: assignment.title,
+      durationMinutes: Math.min(
+        period.durationMinutes,
+        assignment.maxSessionMinutes,
+        Math.max(assignment.minSessionMinutes, 25),
+      ),
+      assignment,
+      item: null,
+    }));
+
+  const itemCandidates: FreePeriodRecommendation[] = items
+    .filter(
+      (item) =>
+        item.status === "inbox" &&
+        item.flexibility !== "fixed" &&
+        !item.assignmentId &&
+        !item.assessmentId &&
+        item.durationMin <= period.durationMinutes &&
+        (item.taskContext === "school" ||
+          item.taskContext === "anywhere") &&
+        (!item.computerRequired || settings.schoolComputerAccess) &&
+        (!item.deadline || new Date(item.deadline) > period.start) &&
+        (!item.windowStart || new Date(item.windowStart) <= period.start) &&
+        (!item.windowEnd || new Date(item.windowEnd) >= period.end),
+    )
+    .map((item) => ({
+      sourceType: "calendar_item" as const,
+      sourceId: item.id,
+      title: item.title,
+      durationMinutes: Math.min(
+        period.durationMinutes,
+        item.durationMax,
+        Math.max(item.durationMin, 25),
+      ),
+      assignment: null,
+      item,
+    }));
+
+  const priorityRank = { high: 0, medium: 1, low: 2 };
+  return [...assignmentCandidates, ...itemCandidates]
+    .sort((a, b) => {
+      const aPriority = a.assignment?.priority ?? a.item?.priority ?? "medium";
+      const bPriority = b.assignment?.priority ?? b.item?.priority ?? "medium";
+      const priority = priorityRank[aPriority] - priorityRank[bPriority];
+      if (priority) return priority;
+      const aDeadline = a.assignment?.dueAt ?? a.item?.deadline ?? null;
+      const bDeadline = b.assignment?.dueAt ?? b.item?.deadline ?? null;
+      const deadline = deadlineTime(aDeadline) - deadlineTime(bDeadline);
+      if (deadline) return deadline;
+      // Prefer a concrete calendar item when urgency is otherwise tied.
+      if (a.sourceType === b.sourceType) return 0;
+      return a.sourceType === "calendar_item" ? -1 : 1;
+    })
+    .slice(0, Math.max(0, limit));
+}
+
+export function recommendForFreePeriod(
+  period: FreePeriod,
+  assignments: Assignment[],
+  items: CalendarItem[],
+  settings: SchoolDaySettings,
+): FreePeriodRecommendation | null {
+  return recommendationsForFreePeriod(
+    period,
+    assignments,
+    items,
+    settings,
+    1,
+  )[0] ?? null;
+}
