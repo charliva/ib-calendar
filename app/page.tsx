@@ -67,6 +67,7 @@ import {
   urgencyClass,
 } from "@/app/calendar-format";
 import { AttentionHome } from "@/app/attention-home";
+import { AccessGate } from "@/app/access-gate";
 import { CalendarFallback } from "@/app/calendar-ui";
 import { LearningControls } from "@/app/learning-controls";
 import { TemporalField } from "@/app/ui/temporal-field";
@@ -386,6 +387,11 @@ function defaultViewState(): LastViewState {
     visibleMinute: 0,
   };
 }
+
+const GATE_EMAILS = (process.env.NEXT_PUBLIC_ACCESS_GATE_EMAILS ?? "")
+  .split(",")
+  .map((entry) => entry.trim().toLowerCase())
+  .filter(Boolean);
 
 function isCommandResponse(value: unknown): value is CommandResponse {
   if (!value || typeof value !== "object") return false;
@@ -878,6 +884,7 @@ function restoreProposal(
 
 export default function Home() {
   const supabase = useMemo(() => createClient(), []);
+  const [gateDenied, setGateDenied] = useState(false);
   const [items, setItems] = useState<CalendarItem[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -897,6 +904,10 @@ export default function Home() {
   );
   const [undoStack, setUndoStack] = useState<HistoryEntry[]>([]);
   const [user, setUser] = useState<User | null>(null);
+  const gateActive = GATE_EMAILS.length > 0;
+  const gateAllowed =
+    !gateActive ||
+    Boolean(user && GATE_EMAILS.includes((user.email ?? "").toLowerCase()));
   const [isOnline, setIsOnline] = useState(true);
   const [hydrated, setHydrated] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -1387,12 +1398,33 @@ export default function Home() {
         }
       });
     supabase.auth.getSession().then(({ data }) => {
-      if (alive) setUser(data.session?.user ?? null);
+      if (!alive) return;
+      const email = (data.session?.user?.email ?? "").toLowerCase();
+      if (GATE_EMAILS.length > 0 && email && !GATE_EMAILS.includes(email)) {
+        setGateDenied(true);
+        void supabase.auth.signOut();
+        setUser(null);
+        return;
+      }
+      setUser(data.session?.user ?? null);
     });
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (!alive) return;
+      const email = (session?.user?.email ?? "").toLowerCase();
+      if (
+        GATE_EMAILS.length > 0 &&
+        event === "SIGNED_IN" &&
+        email &&
+        !GATE_EMAILS.includes(email)
+      ) {
+        setGateDenied(true);
+        void supabase.auth.signOut();
+        setUser(null);
+        setAccountOpen(false);
+        return;
+      }
       setUser(session?.user ?? null);
       setAccountOpen(false);
     });
@@ -4326,6 +4358,10 @@ export default function Home() {
     gesture.totalX = 0;
     gesture.lockedUntil = current + 650;
     moveAnchor(direction);
+  }
+
+  if (!gateAllowed) {
+    return <AccessGate denied={gateDenied} />;
   }
 
   return (
