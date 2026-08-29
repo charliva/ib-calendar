@@ -20,15 +20,11 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  Cloud,
-  CloudOff,
   Command,
   FileUp,
   Focus,
   GraduationCap,
-  GripVertical,
   History,
-  Inbox,
   Layers3,
   Lock,
   Move,
@@ -40,7 +36,6 @@ import {
   X,
 } from "lucide-react";
 import {
-  type CSSProperties,
   type DragEvent,
   type FormEvent,
   type PointerEvent as ReactPointerEvent,
@@ -58,7 +53,6 @@ import {
   formatProposalTiming,
   formatSpan,
   formatTime,
-  urgencyClass,
 } from "@/app/calendar-format";
 import {
   isAttentionQuestion,
@@ -88,6 +82,7 @@ import {
 import { AccountPanel } from "@/components/calendar/AccountPanel";
 import { CalendarRail } from "@/components/calendar/CalendarRail";
 import { MobileActionSheets } from "@/components/calendar/MobileActionSheets";
+import { TaskDock } from "@/components/calendar/TaskDock";
 import {
   rowToItem,
   safeMutationPayload,
@@ -4079,157 +4074,23 @@ export default function Home() {
         }}
       />
 
-      <aside
-        className={`task-dock ${inboxOpen ? "is-open" : ""}`}
-        onDragOver={(event) => event.preventDefault()}
+      <TaskDock
+        open={inboxOpen}
+        items={inboxItems}
+        draggingItemId={draggingItemId}
+        filterText={filterText}
+        syncing={syncing}
+        isOnline={isOnline}
+        signedIn={Boolean(user)}
+        userEmail={user?.email}
         onDrop={onInboxDrop}
-      >
-        <header>
-          <div>
-            <span className="micro-label">Flexible work</span>
-            <h1>Syllabi</h1>
-          </div>
-          <div className="panel-actions">
-            <button
-              type="button"
-              aria-label="Create calendar item"
-              onClick={() => {
-                setPaletteMode("command");
-                setPaletteOpen(true);
-              }}
-            >
-              <Plus size={17} />
-            </button>
-            <button
-              type="button"
-              aria-label="Close flexible work"
-              onClick={() => setInboxOpen(false)}
-            >
-              <X size={16} />
-            </button>
-          </div>
-        </header>
-
-        <button
-          className="command-trigger"
-          type="button"
-          onClick={() => setPaletteOpen(true)}
-        >
-          <Search size={15} />
-          <span>Create or transform…</span>
-          <kbd>⌘K</kbd>
-        </button>
-
-        {filterText && (
-          <div className="active-filter">
-            <Search size={12} />
-            <span>{filterText}</span>
-            <button
-              type="button"
-              onClick={() => setFilterText("")}
-              aria-label="Clear filter"
-            >
-              <X size={12} />
-            </button>
-          </div>
-        )}
-
-        <section className="dock-section">
-          <div className="dock-title">
-            <span>
-              <Inbox size={13} /> Unscheduled
-            </span>
-            <strong>{inboxItems.length}</strong>
-          </div>
-          <div className="inbox-list">
-            {inboxItems.length === 0 ? (
-              <div className="dock-empty">
-                <GripVertical size={18} />
-                <p>Tasks and intentions wait here until you give them time.</p>
-              </div>
-            ) : (
-              inboxItems.map((item) => (
-                <article
-                  className={`inbox-item energy-${item.energyType} kind-${item.kind} flex-${item.flexibility} priority-${item.priority} ${urgencyClass(item)} ${
-                    draggingItemId === item.id ? "is-dragging" : ""
-                  }`}
-                  key={item.id}
-                  draggable={item.flexibility !== "fixed"}
-                  onDragStart={(event) => onDragStart(event, item)}
-                  onDragEnd={endDrag}
-                  onClick={() => openItem(item)}
-                  style={
-                    {
-                      viewTransitionName: `calendar-item-${item.id}`,
-                    } as CSSProperties
-                  }
-                >
-                  <GripVertical size={14} />
-                  <div>
-                    <span>
-                      {kindLabels[item.kind]} · {item.durationMin}
-                      {item.durationMax !== item.durationMin
-                        ? `–${item.durationMax}`
-                        : ""}{" "}
-                      min
-                    </span>
-                    <h3>{item.title}</h3>
-                    {item.windowStart && (
-                      <small>
-                        Window {formatTime(item.windowStart)}–
-                        {formatTime(item.windowEnd)}
-                      </small>
-                    )}
-                  </div>
-                  {item.deadline && (
-                    <time>
-                      {formatDate(new Date(item.deadline), {
-                        weekday: "short",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </time>
-                  )}
-                </article>
-              ))
-            )}
-          </div>
-        </section>
-
-        <section className="dock-section intentions">
-          <div className="dock-title">
-            <span>
-              <Sparkles size={13} /> Possibility ranges
-            </span>
-          </div>
-          {items.filter(
-            (item) =>
-              item.status === "inbox" && item.windowStart && item.windowEnd,
-          ).length === 0 ? (
-            <p className="quiet-copy">
-              Try “Study chemistry after school for ~45 min.”
-            </p>
-          ) : (
-            <p className="quiet-copy">
-              Dashed ranges on the calendar show where flexible work can fit.
-            </p>
-          )}
-        </section>
-
-        <footer className="dock-sync">
-          {isOnline && user ? <Cloud size={14} /> : <CloudOff size={14} />}
-          <span>
-            <strong>
-              {syncing
-                ? "Syncing…"
-                : user && isOnline
-                  ? "Synced"
-                  : "Local first"}
-            </strong>
-            <small>{user ? user.email : "Sign in for every device"}</small>
-          </span>
-        </footer>
-      </aside>
+        onDragStart={onDragStart}
+        onDragEnd={endDrag}
+        onOpenItem={openItem}
+        onOpenCommand={() => setPaletteOpen(true)}
+        onClose={() => setInboxOpen(false)}
+        onFilterChange={setFilterText}
+      />
 
       {homeworkOpen && (
         <Suspense fallback={null}>
