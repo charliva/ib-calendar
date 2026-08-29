@@ -11397,3 +11397,310 @@ button.mobile-cultural-date {
   color: #494b50 !important;
   text-decoration: underline;
 }
+
+/* --- Weekly Review --- */
+.weekly-review-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px 96px;
+  background: rgb(21 20 25 / 46%);
+  backdrop-filter: blur(6px);
+}
+
+.weekly-review-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 100%);
+  max-height: min(80dvh, 640px);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--paper);
+  box-shadow: 0 24px 64px rgb(21 20 25 / 18%);
+}
+
+.weekly-review-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--panel);
+}
+
+.weekly-review-header h2 {
+  margin-top: 2px;
+  font-size: 19px;
+  font-weight: 750;
+  letter-spacing: -.04em;
+}
+
+.weekly-review-header p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.weekly-review-header button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.weekly-review-header button:hover {
+  background: #fff;
+  border-color: #cfcac0;
+}
+
+.weekly-review-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.weekly-review-empty {
+  display: grid;
+  place-items: center;
+  min-height: 160px;
+  padding: 32px 24px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.review-progress {
+  padding: 10px 22px;
+  color: var(--muted);
+  border-top: 1px solid var(--line-soft);
+  font-size: 10px;
+  font-family: var(--font-mono), monospace;
+}
+
+.receipt-list {
+  background: #fffefa;
+}
+
+.receipt-row {
+  position: relative;
+  padding: 14px 18px 14px 22px;
+  border-bottom: 1px solid #f0eee8;
+  cursor: pointer;
+  transition: background .15s ease;
+}
+
+.receipt-row::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  content: "";
+  background: var(--subject, var(--muted));
+  opacity: .72;
+}
+
+.receipt-row:hover { background: #fbfaf7; }
+.receipt-row.open { background: #f8f6f1; }
+
+.receipt-meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.receipt-title b {
+  display: block;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 710;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.receipt-meta-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 3px;
+  color: var(--muted);
+  font-family: var(--font-mono), monospace;
+  font-size: 9px;
+  line-height: 1;
+}
+
+.receipt-meta-line span + span::before {
+  margin-right: 7px;
+  content: "/";
+  color: #c9c5bc;
+}
+
+.receipt-meta-line .subject-label {
+  color: var(--ink);
+  font-weight: 740;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.receipt-right {
+  flex: 0 0 auto;
+}
+
+.receipt-unrated {
+  display: inline-grid;
+  place-items: center;
+  min-width: 54px;
+  padding: 4px 8px;
+  border: 1px dashed #c9c5bc;
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 720;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.stamp {
+  display: inline-grid;
+  place-items: center;
+  min-width: 54px;
+  padding: 4px 8px;
+  border: 1.5px solid currentColor;
+  border-radius: 5px;
+  transform: rotate(-2deg);
+  font-size: 9px;
+  font-weight: 820;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.stamp.too_easy { color: #265973; }
+.stamp.good_challenge { color: #254b3c; }
+.stamp.difficult { color: #70431f; }
+.stamp.not_understood { color: #7d3542; }
+
+.receipt-rating {
+  display: flex;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.receipt-rating .chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #faf9f5;
+  color: #46433e;
+  font-size: 10px;
+  font-weight: 660;
+  cursor: pointer;
+  transition: background .15s ease;
+}
+
+.receipt-rating .chip:hover { background: #f0ede6; }
+.receipt-rating .chip.on { border-color: transparent; background: #e1eee5; color: #183b2d; }
+.receipt-rating .chip.on.too_easy { background: #e0edf6; color: #265973; }
+.receipt-rating .chip.on.good_challenge { background: #e1eee5; color: #183b2d; }
+.receipt-rating .chip.on.difficult { background: #fbe7d9; color: #70431f; }
+.receipt-rating .chip.on.not_understood { background: #f6e0e4; color: #7d3542; }
+
+.plan-rows {
+  display: grid;
+  gap: 8px;
+  padding: 18px 22px;
+}
+
+.plan-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 13px;
+  border: 1px solid #e2ded7;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.plan-row b { display: block; font-size: 12px; }
+.plan-row span { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; }
+.plan-row .duration {
+  color: var(--ink);
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* --- Bottom dock --- */
+.bottom-dock {
+  position: fixed;
+  bottom: max(14px, calc(env(safe-area-inset-bottom) + 10px));
+  left: 50%;
+  z-index: 220;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(520px, calc(100% - 28px));
+  transform: translateX(-50%);
+}
+
+.bottom-dock button {
+  min-height: 48px;
+  border: 0;
+  background: var(--ink);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity .15s ease, transform .15s ease;
+}
+
+.bottom-dock button:hover { opacity: .92; }
+.bottom-dock button:active { transform: scale(.99); }
+.bottom-dock button:disabled { opacity: .42; cursor: not-allowed; }
+
+.bottom-dock .dock-primary {
+  flex: 1;
+  border-radius: 9px;
+}
+
+.bottom-dock .dock-back {
+  display: grid;
+  flex: 0 0 52px;
+  width: 52px;
+  place-items: center;
+  border-radius: 9px;
+}
+
+/* Phone-like: pill dock */
+@media (max-width: 600px) {
+  .weekly-review-overlay { padding: 16px 12px 88px; }
+  .weekly-review-panel { border-radius: 14px; }
+  .weekly-review-header { padding: 16px 16px 14px; }
+  .bottom-dock .dock-primary { border-radius: 999px; }
+  .bottom-dock .dock-back { border-radius: 999px; }
+  .bottom-dock { width: calc(100% - 28px); }
+  .receipt-row { padding: 12px 14px 12px 18px; }
+  .receipt-title b { font-size: 11px; }
+  .review-progress { padding: 8px 16px; }
+  .plan-rows { padding: 14px 16px; }
+}
+
+@media (min-width: 601px) and (max-width: 880px) {
+  .bottom-dock { width: calc(100% - 56px); }
+}

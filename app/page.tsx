@@ -18,6 +18,7 @@ import {
   BookOpen,
   CalendarPlus,
   CalendarClock,
+  ClipboardCheck,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -71,6 +72,9 @@ import { AccessGate } from "@/app/access-gate";
 import { CalendarFallback } from "@/app/calendar-ui";
 import { LearningControls } from "@/app/learning-controls";
 import { TemporalField } from "@/app/ui/temporal-field";
+const WeeklyReview = lazy(() =>
+  import("@/app/weekly-review").then((mod) => ({ default: mod.WeeklyReview })),
+);
 const NowPanel = lazy(() =>
   import("@/app/now-panel").then((mod) => ({ default: mod.NowPanel })),
 );
@@ -943,6 +947,7 @@ export default function Home() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [homeworkOpen, setHomeworkOpen] = useState(false);
+  const [weeklyReviewOpen, setWeeklyReviewOpen] = useState(false);
   const [intentionsOpen, setIntentionsOpen] = useState(false);
   const [intentionSeed, setIntentionSeed] = useState<Partial<Intention> | null>(
     null,
@@ -4443,6 +4448,19 @@ export default function Home() {
           </button>
           <button
             type="button"
+            aria-label="Weekly review"
+            onClick={() => {
+              setWeeklyReviewOpen(true);
+              setInboxOpen(false);
+              setHomeworkOpen(false);
+              setHudOpen(false);
+            }}
+          >
+            <ClipboardCheck size={18} />
+            <small className="rail-label">Review</small>
+          </button>
+          <button
+            type="button"
             aria-label="Command palette"
             onClick={() => {
               setPaletteOpen(true);
@@ -4671,6 +4689,20 @@ export default function Home() {
               <span>
                 <strong>Homework</strong>
                 <small>{activeHomework.length} waiting</small>
+              </span>
+              <ChevronRight size={17} />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMobileMenuOpen(false);
+                setWeeklyReviewOpen(true);
+              }}
+            >
+              <ClipboardCheck size={19} />
+              <span>
+                <strong>Weekly review</strong>
+                <small>Rate this week and plan study</small>
               </span>
               <ChevronRight size={17} />
             </button>
@@ -4928,6 +4960,54 @@ export default function Home() {
               setHudOpen(false);
               transitionState(() => setZoom("week"));
             }}
+          />
+        </Suspense>
+      )}
+
+      {weeklyReviewOpen && (
+        <Suspense fallback={null}>
+          <WeeklyReview
+            items={items}
+            subjects={subjects}
+            learningSignals={learningSignals}
+            onChallenge={(sourceId, value) => {
+              const item = items.find((i) => i.id === sourceId);
+              const subject = subjects.find((s) => s.id === item?.subjectId);
+              recordChallenge(
+                {
+                  type: "calendar_item",
+                  id: sourceId,
+                  title: item?.title ?? "Untitled",
+                  subjectId: item?.subjectId ?? null,
+                  subjectName: subject?.name ?? null,
+                },
+                value,
+              );
+            }}
+            onSavePlan={(planItems) => {
+              for (const plan of planItems) {
+                const item = makeItem({
+                  title: `${plan.title} - review session`,
+                  kind: "task",
+                  subjectId: plan.subjectId,
+                  durationMin: plan.durationMin,
+                  energyType: "deep_focus",
+                  workType: "problem_solving",
+                  flexibility: "flexible",
+                  status: "inbox",
+                  source: "command",
+                });
+                setItems((current) => [...current, item]);
+                persistMutation({
+                  table: "calendar_items",
+                  action: "insert",
+                  recordId: item.id,
+                  payload: itemToRow(item),
+                }).catch(() => undefined);
+              }
+              setNotice("Study plan saved to inbox.");
+            }}
+            onClose={() => setWeeklyReviewOpen(false)}
           />
         </Suspense>
       )}
