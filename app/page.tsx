@@ -15,10 +15,8 @@ import {
 import {
   Activity,
   ArrowDownToLine,
-  BookOpen,
   CalendarPlus,
   CalendarClock,
-  ClipboardCheck,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -39,7 +37,6 @@ import {
   Sparkles,
   Trash2,
   Undo2,
-  UserRound,
   X,
 } from "lucide-react";
 import {
@@ -90,6 +87,7 @@ import {
 } from "@/lib/ai/timetable-parser";
 import { AccountPanel } from "@/components/calendar/AccountPanel";
 import { CalendarRail } from "@/components/calendar/CalendarRail";
+import { MobileActionSheets } from "@/components/calendar/MobileActionSheets";
 import {
   rowToItem,
   safeMutationPayload,
@@ -4024,211 +4022,62 @@ export default function Home() {
         </button>
       </nav>
 
-      {(mobileCreateOpen || mobileMenuOpen) && (
-        <button
-          className="mobile-sheet-scrim"
-          type="button"
-          aria-label="Close mobile menu"
-          onClick={() => {
-            setMobileCreateOpen(false);
-            setMobileMenuOpen(false);
-          }}
-        />
-      )}
-
-      {mobileCreateOpen && (
-        <aside
-          className="mobile-action-sheet mobile-create-sheet"
-          aria-label="Add something"
-        >
-          <header>
-            <span className="micro-label">Quick capture</span>
-            <h2>What are you adding?</h2>
-          </header>
-          <div>
-            <button
-              type="button"
-              onClick={() => {
-                setMobileCreateOpen(false);
-                setPaletteMode("command");
-                setPaletteOpen(true);
-              }}
-            >
-              <Command size={19} />
-              <span>
-                <strong>Describe it</strong>
-                <small>Use natural language for anything</small>
-              </span>
-              <ChevronRight size={17} />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMobileCreateOpen(false);
-                openNewEvent();
-              }}
-            >
-              <CalendarPlus size={19} />
-              <span>
-                <strong>Calendar event</strong>
-                <small>Choose a date, time, or all day</small>
-              </span>
-              <ChevronRight size={17} />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMobileCreateOpen(false);
-                openNewTask();
-              }}
-            >
-              <Inbox size={19} />
-              <span>
-                <strong>Flexible task</strong>
-                <small>Keep it unscheduled until it fits</small>
-              </span>
-              <ChevronRight size={17} />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMobileCreateOpen(false);
-                setHomeworkOpen(true);
-              }}
-            >
-              <BookOpen size={19} />
-              <span>
-                <strong>Homework</strong>
-                <small>Capture it quickly during class</small>
-              </span>
-              <ChevronRight size={17} />
-            </button>
-          </div>
-        </aside>
-      )}
-
-      {mobileMenuOpen && (
-        <aside
-          className="mobile-action-sheet mobile-more-sheet"
-          aria-label="More tools"
-        >
-          <header>
-            <span className="micro-label">Syllabi</span>
-            <h2>More tools</h2>
-          </header>
-          <div>
-            <button
-              type="button"
-              onClick={() => {
-                setMobileMenuOpen(false);
-                setHomeworkOpen(true);
-              }}
-            >
-              <BookOpen size={19} />
-              <span>
-                <strong>Homework</strong>
-                <small>{activeHomework.length} waiting</small>
-              </span>
-              <ChevronRight size={17} />
-            </button>
-            {weeklyReviewAvailable && (
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  setWeeklyReviewOpen(true);
-                }}
-              >
-                <ClipboardCheck size={19} />
-                <span>
-                  <strong>Weekly review</strong>
-                  <small>Rate this week and plan study</small>
-                </span>
-                <ChevronRight size={17} />
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                setMobileMenuOpen(false);
-                setInboxOpen(true);
-              }}
-            >
-              <Inbox size={19} />
-              <span>
-                <strong>Flexible work</strong>
-                <small>{inboxItems.length} unscheduled</small>
-              </span>
-              <ChevronRight size={17} />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMobileMenuOpen(false);
-                setHudOpen(true);
-                setHistoryOpen(false);
-              }}
-            >
-              <Activity size={19} />
-              <span>
-                <strong>Now & next</strong>
-                <small>See the shape of today</small>
-              </span>
-              <ChevronRight size={17} />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMobileMenuOpen(false);
-                setHudOpen(true);
-                setHistoryOpen(true);
-              }}
-            >
-              <History size={19} />
-              <span>
-                <strong>History</strong>
-                <small>Review recent calendar changes</small>
-              </span>
-              <ChevronRight size={17} />
-            </button>
-            <button
-              type="button"
-              disabled={undoStack.length === 0}
-              onClick={() => {
-                setMobileMenuOpen(false);
-                undoLast();
-              }}
-            >
-              <Undo2 size={19} />
-              <span>
-                <strong>Undo last change</strong>
-                <small>
-                  {undoStack.length
-                    ? "Restore the previous calendar state"
-                    : "Nothing to undo"}
-                </small>
-              </span>
-              <ChevronRight size={17} />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMobileMenuOpen(false);
-                setAccountOpen(true);
-              }}
-            >
-              <UserRound size={19} />
-              <span>
-                <strong>Account & sync</strong>
-                <small>
-                  {user ? "Calendar synced" : "Sign in on this device"}
-                </small>
-              </span>
-              <ChevronRight size={17} />
-            </button>
-          </div>
-        </aside>
-      )}
+      <MobileActionSheets
+        createOpen={mobileCreateOpen}
+        menuOpen={mobileMenuOpen}
+        weeklyReviewAvailable={weeklyReviewAvailable}
+        activeHomeworkCount={activeHomework.length}
+        inboxCount={inboxItems.length}
+        undoCount={undoStack.length}
+        signedIn={Boolean(user)}
+        onClose={() => {
+          setMobileCreateOpen(false);
+          setMobileMenuOpen(false);
+        }}
+        onOpenCommand={() => {
+          setMobileCreateOpen(false);
+          setPaletteMode("command");
+          setPaletteOpen(true);
+        }}
+        onNewEvent={() => {
+          setMobileCreateOpen(false);
+          openNewEvent();
+        }}
+        onNewTask={() => {
+          setMobileCreateOpen(false);
+          openNewTask();
+        }}
+        onOpenHomework={() => {
+          setMobileCreateOpen(false);
+          setHomeworkOpen(true);
+        }}
+        onWeeklyReview={() => {
+          setMobileMenuOpen(false);
+          setWeeklyReviewOpen(true);
+        }}
+        onOpenInbox={() => {
+          setMobileMenuOpen(false);
+          setInboxOpen(true);
+        }}
+        onOpenHud={() => {
+          setMobileMenuOpen(false);
+          setHudOpen(true);
+          setHistoryOpen(false);
+        }}
+        onOpenHistory={() => {
+          setMobileMenuOpen(false);
+          setHudOpen(true);
+          setHistoryOpen(true);
+        }}
+        onUndo={() => {
+          setMobileMenuOpen(false);
+          undoLast();
+        }}
+        onOpenAccount={() => {
+          setMobileMenuOpen(false);
+          setAccountOpen(true);
+        }}
+      />
 
       <aside
         className={`task-dock ${inboxOpen ? "is-open" : ""}`}
