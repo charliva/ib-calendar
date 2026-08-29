@@ -178,12 +178,15 @@ import {
   type TimetableExtractionCandidate,
 } from "@/lib/timetable-import";
 import {
+  getLastViewState,
   getOfflineState,
   getPendingMutations,
   queueMutation,
   removePendingMutation,
+  saveLastViewState,
   saveOfflineState,
   updatePendingMutation,
+  type LastViewState,
   type PendingMutation,
 } from "@/lib/offline";
 import { calendarSwipeDirection, type SwipePoint } from "@/lib/week-swipe";
@@ -356,6 +359,32 @@ function transitionState(update: () => void) {
     return;
   }
   update();
+}
+
+function isRestorableZoom(value: string): value is Zoom {
+  return ["school", "upcoming", "day", "week", "month", "semester"].includes(
+    value,
+  );
+}
+
+function defaultViewState(): LastViewState {
+  const today = dateKey(new Date());
+  return {
+    zoom: "upcoming",
+    anchorDate: today,
+    selectedDay: today,
+    nowOpen: false,
+    inboxOpen: false,
+    homeworkOpen: false,
+    intentionsOpen: false,
+    hudOpen: false,
+    historyOpen: false,
+    scrollTop: 0,
+    viewportHeight: 0,
+    visibleDay: today,
+    visibleHour: 6,
+    visibleMinute: 0,
+  };
 }
 
 function isCommandResponse(value: unknown): value is CommandResponse {
@@ -944,7 +973,88 @@ export default function Home() {
     startsAt: string;
     endsAt: string;
   } | null>(null);
+  const [viewRestored, setViewRestored] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const calendarStageRef = useRef<HTMLElement | null>(null);
+  const deviceViewRef = useRef<LastViewState | null>(null);
+  const restoredViewRef = useRef<LastViewState | null>(null);
+  const viewSaveTimerRef = useRef<number | null>(null);
+  const reconciledUserKeyRef = useRef<string | null>(null);
+
+  const currentViewState = useCallback((): LastViewState => {
+    const stage = calendarStageRef.current;
+    const scrollTop = stage?.scrollTop ?? 0;
+    const viewportHeight = stage?.clientHeight ?? 0;
+    const rowHeight = zoom === "day" ? 72 : 52;
+    const visiblePosition = Math.max(0, scrollTop / rowHeight);
+    return {
+      zoom,
+      anchorDate,
+      selectedDay,
+      nowOpen,
+      inboxOpen,
+      homeworkOpen,
+      intentionsOpen,
+      hudOpen,
+      historyOpen,
+      ownerKey: user?.id ?? "local",
+      scrollTop,
+      viewportHeight,
+      visibleDay: zoom === "day" || zoom === "week" ? selectedDay : anchorDate,
+      visibleHour: Math.min(23, Math.floor(visiblePosition)),
+      visibleMinute:
+        Math.min(45, Math.round((visiblePosition % 1) * 4) * 15),
+    };
+  }, [
+    anchorDate,
+    historyOpen,
+    homeworkOpen,
+    hudOpen,
+    inboxOpen,
+    intentionsOpen,
+    nowOpen,
+    selectedDay,
+    user,
+    zoom,
+  ]);
+
+  const applyViewState = useCallback((state: LastViewState | null) => {
+    const next = state ?? defaultViewState();
+    if (isRestorableZoom(next.zoom)) setZoom(next.zoom);
+    setAnchorDate(next.anchorDate);
+    setSelectedDay(next.selectedDay);
+    setNowOpen(next.nowOpen);
+    setInboxOpen(next.inboxOpen);
+    setHomeworkOpen(next.homeworkOpen);
+    setIntentionsOpen(next.intentionsOpen);
+    setHudOpen(next.hudOpen);
+    setHistoryOpen(next.historyOpen);
+  }, []);
+
+  const applyRestoredScroll = useCallback((state: LastViewState | null) => {
+    if (!state) return;
+    const rowHeight = state.zoom === "day" ? 72 : 52;
+    const anchorTop =
+      (state.visibleHour ?? 6) * rowHeight +
+      ((state.visibleMinute ?? 0) / 60) * rowHeight;
+    const exactTop = state.scrollTop ?? anchorTop;
+    const preferAnchor =
+      !state.viewportHeight ||
+      Math.abs((calendarStageRef.current?.clientHeight ?? 0) - state.viewportHeight) > 160;
+    const targetTop = preferAnchor ? anchorTop : exactTop;
+    let attempts = 0;
+    const attempt = () => {
+      const stage = calendarStageRef.current;
+      if (!stage) return;
+      if (stage.scrollHeight <= targetTop + 80 && attempts < 5) {
+        attempts += 1;
+        requestAnimationFrame(attempt);
+        return;
+      }
+      stage.scrollTo({ top: targetTop });
+    };
+    requestAnimationFrame(attempt);
+  }, []);
   const resizeGestureActive = useRef(false);
   const polishedBlocksRef = useRef(new Set<string>());
   const calendarSwipeStartRef = useRef<SwipePoint | null>(null);
@@ -1242,7 +1352,7 @@ export default function Home() {
   useEffect(() => {
     let alive = true;
     getOfflineState()
-      .then((stored) => {
+      .then(async (stored) => {
         if (!alive || !stored) return;
         setItems(
           stored.items.map((item) => normalizeItemTiming(makeItem(item))),
@@ -1263,9 +1373,18 @@ export default function Home() {
             stored.schoolDaySettings ?? DEFAULT_SCHOOL_DAY_SETTINGS,
           ),
         );
+        const deviceView = await getLastViewState("device-last-view");
+        if (!alive) return;
+        deviceViewRef.current = deviceView;
+        applyViewState(deviceView);
+        restoredViewRef.current = deviceView;
+        applyRestoredScroll(deviceView);
       })
       .finally(() => {
-        if (alive) setHydrated(true);
+        if (alive) {
+          setHydrated(true);
+          setViewRestored(true);
+        }
       });
     supabase.auth.getSession().then(({ data }) => {
       if (alive) setUser(data.session?.user ?? null);
@@ -1281,7 +1400,100 @@ export default function Home() {
       alive = false;
       subscription.unsubscribe();
     };
-  }, [supabase]);
+  }, [applyRestoredScroll, applyViewState, supabase]);
+
+  useEffect(() => {
+    if (!hydrated || !viewRestored || !user) return;
+    let cancelled = false;
+    const ownerViewKey = `owner:${user.id}:last-view`;
+    getLastViewState(ownerViewKey)
+      .then((ownerView) => {
+        if (cancelled) return;
+        const deviceView = deviceViewRef.current;
+        if (ownerView) {
+          const reconciled = { ...ownerView, ownerKey: user.id };
+          deviceViewRef.current = reconciled;
+          restoredViewRef.current = reconciled;
+          applyViewState(reconciled);
+          applyRestoredScroll(reconciled);
+        } else if (
+          !deviceView ||
+          deviceView.ownerKey === "local" ||
+          !deviceView.ownerKey
+        ) {
+          const promoted = {
+            ...(deviceView ?? defaultViewState()),
+            ownerKey: user.id,
+          };
+          deviceViewRef.current = promoted;
+          restoredViewRef.current = promoted;
+          applyViewState(promoted);
+          applyRestoredScroll(promoted);
+          void saveLastViewState("device-last-view", promoted);
+          void saveLastViewState(ownerViewKey, promoted);
+        } else {
+          const reset = { ...defaultViewState(), ownerKey: user.id };
+          deviceViewRef.current = reset;
+          restoredViewRef.current = reset;
+          applyViewState(reset);
+          applyRestoredScroll(reset);
+          void saveLastViewState("device-last-view", reset);
+          void saveLastViewState(ownerViewKey, reset);
+        }
+        reconciledUserKeyRef.current = user.id;
+      })
+      .catch(() => {
+        reconciledUserKeyRef.current = user.id;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    applyRestoredScroll,
+    applyViewState,
+    hydrated,
+    user,
+    viewRestored,
+  ]);
+
+  const scheduleViewSave = useCallback(() => {
+    if (!viewRestored) return;
+    if (viewSaveTimerRef.current !== null) {
+      window.clearTimeout(viewSaveTimerRef.current);
+    }
+    viewSaveTimerRef.current = window.setTimeout(() => {
+      if (user && reconciledUserKeyRef.current !== user.id) return;
+      const state = currentViewState();
+      void saveLastViewState("device-last-view", state);
+      if (user && reconciledUserKeyRef.current === user.id) {
+        void saveLastViewState(`owner:${user.id}:last-view`, state);
+      }
+    }, 400);
+  }, [
+    currentViewState,
+    user,
+    viewRestored,
+  ]);
+
+  useEffect(() => {
+    scheduleViewSave();
+  }, [scheduleViewSave]);
+
+  useEffect(() => {
+    const stage = calendarStageRef.current;
+    if (!stage) return;
+    stage.addEventListener("scroll", scheduleViewSave, { passive: true });
+    return () => stage.removeEventListener("scroll", scheduleViewSave);
+  }, [scheduleViewSave]);
+
+  useEffect(
+    () => () => {
+      if (viewSaveTimerRef.current !== null) {
+        window.clearTimeout(viewSaveTimerRef.current);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!hydrated) return;
@@ -4685,6 +4897,7 @@ export default function Home() {
       )}
 
       <section
+        ref={calendarStageRef}
         className={`calendar-stage zoom-${zoom}`}
         onPointerDown={onCalendarPointerDown}
         onPointerMove={onCalendarPointerMove}

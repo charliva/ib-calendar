@@ -40,6 +40,24 @@ export type PendingMutation = {
   lastError?: string;
 };
 
+export type LastViewState = {
+  zoom: string;
+  anchorDate: string;
+  selectedDay: string;
+  nowOpen: boolean;
+  inboxOpen: boolean;
+  homeworkOpen: boolean;
+  intentionsOpen: boolean;
+  hudOpen: boolean;
+  historyOpen: boolean;
+  ownerKey?: string;
+  scrollTop?: number;
+  viewportHeight?: number;
+  visibleDay?: string;
+  visibleHour?: number;
+  visibleMinute?: number;
+};
+
 const dbPromise =
   typeof window === "undefined"
     ? null
@@ -67,6 +85,23 @@ export async function getOfflineState(): Promise<OfflineState | null> {
   const database = await dbPromise;
   if (!database) return null;
   return (await database.get("calendar-state", "current")) ?? null;
+}
+
+export async function saveLastViewState(
+  key: string,
+  state: LastViewState,
+) {
+  const database = await dbPromise;
+  if (!database) return;
+  await database.put("calendar-state", state, key);
+}
+
+export async function getLastViewState(
+  key: string,
+): Promise<LastViewState | null> {
+  const database = await dbPromise;
+  if (!database) return null;
+  return ((await database.get("calendar-state", key)) as LastViewState) ?? null;
 }
 
 export async function queueMutation(mutation: PendingMutation) {
