@@ -28,3 +28,14 @@ The repository uses a single-context domain-docs layout. See `docs/agents/domain
   - `alpha` receives small, focused commits.
   - `beta` receives medium, feature-complete commits.
   - `main` (production) receives only large, validated release commits.
+
+## Vercel deployment commands
+
+- Branch deploys are **not** automatic for `alpha`/`beta`; only `main`
+  auto-deploys from GitHub. After pushing a branch, run the deploy manually:
+  - `alpha`: `git push origin alpha && vercel deploy --yes`
+  - `beta`: `git push origin beta && vercel deploy --yes`
+- Run deploys from the branch being deployed (`git checkout alpha` first, etc.).
+  `vercel deploy --yes` deploys the current working tree as a preview.
+- Never run `vercel deploy --prod` or `vercel --prod` unless the user
+  explicitly asks for a production deploy.
