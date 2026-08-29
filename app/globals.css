@@ -2446,6 +2446,10 @@ kbd {
 
 .learning-controls.is-compact {
   grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
   margin: 8px 0 2px;
   padding: 6px;
   background: transparent;
@@ -2454,7 +2458,10 @@ kbd {
 .learning-controls.is-compact .learning-controls-label { display: none; }
 .learning-controls.is-compact .challenge-dial button span { display: none; }
 .learning-controls.is-compact .challenge-dial { max-width: 150px; }
-.learning-controls.is-compact .go-deeper-button { padding-block: 6px; }
+.learning-controls.is-compact .go-deeper-button {
+  margin-left: auto;
+  padding-block: 6px;
+}
 
 .intention-list article { flex-wrap: wrap; }
 .intention-list article > .learning-controls { flex-basis: 100%; }
