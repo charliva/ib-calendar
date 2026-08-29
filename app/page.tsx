@@ -132,6 +132,7 @@ import {
   type LearningSignal,
   type LearningSource,
 } from "@/lib/study-intelligence";
+import { isWeeklyReviewAvailable } from "@/lib/weekly-review";
 import {
   addDays,
   applyProposal,
@@ -384,6 +385,8 @@ function defaultViewState(): LastViewState {
     intentionsOpen: false,
     hudOpen: false,
     historyOpen: false,
+    weeklyReviewOpen: false,
+    weeklyReviewPromptWeek: null,
     scrollTop: 0,
     viewportHeight: 0,
     visibleDay: today,
@@ -948,6 +951,8 @@ export default function Home() {
   const [inboxOpen, setInboxOpen] = useState(false);
   const [homeworkOpen, setHomeworkOpen] = useState(false);
   const [weeklyReviewOpen, setWeeklyReviewOpen] = useState(false);
+  const [completedReviewWeeks, setCompletedReviewWeeks] = useState<string[]>([]);
+  const [weeklyReviewPromptWeek, setWeeklyReviewPromptWeek] = useState<string | null>(null);
   const [intentionsOpen, setIntentionsOpen] = useState(false);
   const [intentionSeed, setIntentionSeed] = useState<Partial<Intention> | null>(
     null,
@@ -997,6 +1002,34 @@ export default function Home() {
   const viewSaveTimerRef = useRef<number | null>(null);
   const reconciledUserKeyRef = useRef<string | null>(null);
 
+  const currentWeekKey = useMemo(
+    () => dateKey(startOfWeek(clockNow)),
+    [clockNow],
+  );
+  const weeklyReviewAvailable = useMemo(
+    () =>
+      hydrated &&
+      isWeeklyReviewAvailable({
+        now: clockNow,
+        items,
+        classes,
+        classExceptions,
+        assignments,
+        assessments,
+        completedReviewWeeks,
+      }),
+    [
+      assessments,
+      assignments,
+      clockNow,
+      completedReviewWeeks,
+      hydrated,
+      classExceptions,
+      classes,
+      items,
+    ],
+  );
+
   const currentViewState = useCallback((): LastViewState => {
     const stage = calendarStageRef.current;
     const scrollTop = stage?.scrollTop ?? 0;
@@ -1013,6 +1046,8 @@ export default function Home() {
       intentionsOpen,
       hudOpen,
       historyOpen,
+      weeklyReviewOpen,
+      weeklyReviewPromptWeek,
       ownerKey: user?.id ?? "local",
       scrollTop,
       viewportHeight,
@@ -1025,6 +1060,8 @@ export default function Home() {
     anchorDate,
     historyOpen,
     homeworkOpen,
+    weeklyReviewOpen,
+    weeklyReviewPromptWeek,
     hudOpen,
     inboxOpen,
     intentionsOpen,
@@ -1045,6 +1082,8 @@ export default function Home() {
     setIntentionsOpen(next.intentionsOpen);
     setHudOpen(next.hudOpen);
     setHistoryOpen(next.historyOpen);
+    setWeeklyReviewOpen(Boolean(next.weeklyReviewOpen));
+    setWeeklyReviewPromptWeek(next.weeklyReviewPromptWeek ?? null);
   }, []);
 
   const applyRestoredScroll = useCallback((state: LastViewState | null) => {
@@ -1383,6 +1422,7 @@ export default function Home() {
         setLearningSignals(stored.learningSignals ?? []);
         setExplorations(stored.explorations ?? []);
         setBlockChoices(stored.blockChoices ?? []);
+        setCompletedReviewWeeks(stored.completedReviewWeeks ?? []);
         setHomeworkCaptures(stored.homeworkCaptures ?? []);
         setSchoolDaySettings(
           normalizeSchoolDaySettings(
@@ -1517,6 +1557,20 @@ export default function Home() {
   }, [scheduleViewSave]);
 
   useEffect(() => {
+    if (
+      !weeklyReviewAvailable ||
+      weeklyReviewPromptWeek === currentWeekKey
+    ) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setWeeklyReviewPromptWeek(currentWeekKey);
+      setWeeklyReviewOpen(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [currentWeekKey, weeklyReviewAvailable, weeklyReviewPromptWeek]);
+
+  useEffect(() => {
     const stage = calendarStageRef.current;
     if (!stage) return;
     stage.addEventListener("scroll", scheduleViewSave, { passive: true });
@@ -1546,6 +1600,7 @@ export default function Home() {
       learningSignals,
       explorations,
       blockChoices,
+      completedReviewWeeks,
       homeworkCaptures,
       schoolDaySettings,
       ownerKey: user?.id ?? "local",
@@ -1556,6 +1611,7 @@ export default function Home() {
     blockChoices,
     classExceptions,
     classes,
+    completedReviewWeeks,
     history,
     homeworkCaptures,
     hydrated,
@@ -3505,6 +3561,8 @@ export default function Home() {
     setHomeworkCaptures([]);
     setSchoolDaySettings(DEFAULT_SCHOOL_DAY_SETTINGS);
     setUndoStack([]);
+    setCompletedReviewWeeks([]);
+    setWeeklyReviewPromptWeek(null);
     await saveOfflineState({
       items: [],
       history: [],
@@ -3518,6 +3576,7 @@ export default function Home() {
       explorations: [],
       blockChoices: [],
       homeworkCaptures: [],
+      completedReviewWeeks: [],
       schoolDaySettings: DEFAULT_SCHOOL_DAY_SETTINGS,
       ownerKey: "local",
     });
@@ -4446,19 +4505,22 @@ export default function Home() {
             {inboxItems.length > 0 && <span>{inboxItems.length}</span>}
             <small className="rail-label">Flexible work</small>
           </button>
-          <button
-            type="button"
-            aria-label="Weekly review"
-            onClick={() => {
-              setWeeklyReviewOpen(true);
-              setInboxOpen(false);
-              setHomeworkOpen(false);
-              setHudOpen(false);
-            }}
-          >
-            <ClipboardCheck size={18} />
-            <small className="rail-label">Review</small>
-          </button>
+          {weeklyReviewAvailable && (
+            <button
+              className={weeklyReviewOpen ? "active" : ""}
+              type="button"
+              aria-label="Weekly review"
+              onClick={() => {
+                setWeeklyReviewOpen(true);
+                setInboxOpen(false);
+                setHomeworkOpen(false);
+                setHudOpen(false);
+              }}
+            >
+              <ClipboardCheck size={18} />
+              <small className="rail-label">Review</small>
+            </button>
+          )}
           <button
             type="button"
             aria-label="Command palette"
@@ -4692,20 +4754,22 @@ export default function Home() {
               </span>
               <ChevronRight size={17} />
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMobileMenuOpen(false);
-                setWeeklyReviewOpen(true);
-              }}
-            >
-              <ClipboardCheck size={19} />
-              <span>
-                <strong>Weekly review</strong>
-                <small>Rate this week and plan study</small>
-              </span>
-              <ChevronRight size={17} />
-            </button>
+            {weeklyReviewAvailable && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  setWeeklyReviewOpen(true);
+                }}
+              >
+                <ClipboardCheck size={19} />
+                <span>
+                  <strong>Weekly review</strong>
+                  <small>Rate this week and plan study</small>
+                </span>
+                <ChevronRight size={17} />
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -4969,17 +5033,40 @@ export default function Home() {
           <WeeklyReview
             items={items}
             subjects={subjects}
+            classes={classes}
+            classExceptions={classExceptions}
+            assignments={assignments}
+            assessments={assessments}
             learningSignals={learningSignals}
-            onChallenge={(sourceId, value) => {
-              const item = items.find((i) => i.id === sourceId);
-              const subject = subjects.find((s) => s.id === item?.subjectId);
+            onChallenge={(source, value) => {
+              const item =
+                source.type === "calendar_item"
+                  ? items.find((candidate) => candidate.id === source.id)
+                  : null;
+              const assignment =
+                source.type === "assignment"
+                  ? assignments.find((candidate) => candidate.id === source.id)
+                  : null;
+              const assessment =
+                source.type === "assessment"
+                  ? assessments.find((candidate) => candidate.id === source.id)
+                  : null;
+              const subjectId =
+                item?.subjectId ??
+                assignment?.subjectId ??
+                assessment?.subjectId ??
+                null;
               recordChallenge(
                 {
-                  type: "calendar_item",
-                  id: sourceId,
-                  title: item?.title ?? "Untitled",
-                  subjectId: item?.subjectId ?? null,
-                  subjectName: subject?.name ?? null,
+                  type: source.type,
+                  id: source.id,
+                  title:
+                    item?.title ??
+                    assignment?.title ??
+                    assessment?.title ??
+                    "Untitled",
+                  subjectId,
+                  subjectName: subjectName(subjectId),
                 },
                 value,
               );
@@ -5005,6 +5092,11 @@ export default function Home() {
                   payload: itemToRow(item),
                 }).catch(() => undefined);
               }
+              setCompletedReviewWeeks((current) =>
+                current.includes(currentWeekKey)
+                  ? current
+                  : [...current, currentWeekKey],
+              );
               setNotice("Study plan saved to inbox.");
             }}
             onClose={() => setWeeklyReviewOpen(false)}
@@ -5129,6 +5221,18 @@ export default function Home() {
               <X size={13} />
             </button>
           </div>
+        )}
+
+        {weeklyReviewAvailable && !weeklyReviewOpen && (
+          <aside className="toast weekly-review-toast" role="status">
+            <span>Weekly review is ready.</span>
+            <button
+              type="button"
+              onClick={() => setWeeklyReviewOpen(true)}
+            >
+              Open
+            </button>
+          </aside>
         )}
 
         {zoom === "school" ? (

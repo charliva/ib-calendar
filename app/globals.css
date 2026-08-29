@@ -749,6 +749,22 @@ kbd {
   font-size: 10px;
 }
 
+.weekly-review-toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.weekly-review-toast button {
+  padding: 4px 8px;
+  color: #211f25;
+  background: #fff;
+  border: 0;
+  border-radius: 5px;
+  font-size: 9px;
+  font-weight: 660;
+}
+
 .time-calendar {
   min-width: 760px;
   padding-bottom: 60px;

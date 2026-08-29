@@ -13,6 +13,7 @@ export type OfflineState = SchoolState & {
   learningSignals: LearningSignal[];
   explorations: Exploration[];
   blockChoices: BlockChoice[];
+  completedReviewWeeks: string[];
   ownerKey?: string;
 };
 
@@ -50,6 +51,8 @@ export type LastViewState = {
   intentionsOpen: boolean;
   hudOpen: boolean;
   historyOpen: boolean;
+  weeklyReviewOpen: boolean;
+  weeklyReviewPromptWeek: string | null;
   ownerKey?: string;
   scrollTop?: number;
   viewportHeight?: number;

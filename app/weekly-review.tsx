@@ -10,25 +10,34 @@ import {
   X,
 } from "lucide-react";
 import type { CalendarItem } from "@/lib/calendar-engine";
-import type { Subject } from "@/lib/school";
+import type {
+  Assessment,
+  Assignment,
+  ClassException,
+  SchoolClass,
+  Subject,
+} from "@/lib/school";
 import type { ChallengeLevel, LearningSignal } from "@/lib/study-intelligence";
+import {
+  collectWeeklyReviewEntries,
+  reviewWeekBounds,
+  type WeeklyReviewEntry,
+} from "@/lib/weekly-review";
 
-type ReviewEntry = {
+type ReviewSource = {
+  type: "calendar_item" | "assignment" | "assessment";
   id: string;
-  title: string;
-  kind: "Class" | "Assignment" | "Test";
-  detail: string;
-  subjectId: string | null;
-  subjectName: string;
-  subjectColor: string;
-  date: string;
 };
 
 type Props = {
   items: CalendarItem[];
   subjects: Subject[];
+  classes: SchoolClass[];
+  classExceptions: ClassException[];
+  assignments: Assignment[];
+  assessments: Assessment[];
   learningSignals: LearningSignal[];
-  onChallenge: (sourceId: string, value: ChallengeLevel) => void;
+  onChallenge: (source: ReviewSource, value: ChallengeLevel) => void;
   onSavePlan: (items: Array<{ title: string; subjectId: string | null; durationMin: number }>) => void;
   onClose: () => void;
 };
@@ -40,60 +49,50 @@ const challengeOptions: Array<{ value: ChallengeLevel; label: string; icon: type
   { value: "not_understood", label: "Lost", icon: CircleHelp },
 ];
 
-function startOfWeek(date: Date) {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  d.setDate(diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function endOfWeek(date: Date) {
-  const d = startOfWeek(date);
-  d.setDate(d.getDate() + 7);
-  return d;
-}
-
 function challengeScore(value: ChallengeLevel) {
   return { too_easy: 1, good_challenge: 2, difficult: 3, not_understood: 4 }[value] || 0;
 }
 
-export function WeeklyReview({ items, subjects, learningSignals, onChallenge, onSavePlan, onClose }: Props) {
+export function WeeklyReview({
+  items,
+  subjects,
+  classes,
+  classExceptions,
+  assignments,
+  assessments,
+  learningSignals,
+  onChallenge,
+  onSavePlan,
+  onClose,
+}: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [mode, setMode] = useState<"receipt" | "plan">("receipt");
 
-  const weekStart = useMemo(() => startOfWeek(new Date()), []);
-  const weekEnd = useMemo(() => endOfWeek(new Date()), []);
-
-  const entries = useMemo<ReviewEntry[]>(() => {
-    const result: ReviewEntry[] = [];
-    for (const item of items) {
-      if (!item.subjectId) continue;
-      const subject = subjects.find((s) => s.id === item.subjectId);
-      if (!subject) continue;
-      const date = item.startsAt ?? item.deadline;
-      if (!date) continue;
-      const d = new Date(date);
-      if (d < weekStart || d >= weekEnd) continue;
-      if (item.kind === "event" && item.status === "completed") {
-        result.push({
-          id: item.id,
-          title: item.title,
-          kind: "Class",
-          detail: `${item.durationMin} min`,
-          subjectId: item.subjectId,
-          subjectName: subject.name,
-          subjectColor: subject.color,
-          date,
-        });
-      }
-    }
-    return result.sort((a, b) => a.date.localeCompare(b.date));
-  }, [items, subjects, weekStart, weekEnd]);
+  const { weekStart, weekEnd } = useMemo(
+    () => reviewWeekBounds(new Date()),
+    [],
+  );
+  const entries = useMemo<WeeklyReviewEntry[]>(
+    () =>
+      collectWeeklyReviewEntries(
+        { items, subjects, classes, classExceptions, assignments, assessments },
+        weekStart,
+        weekEnd,
+      ),
+    [
+      items,
+      subjects,
+      classes,
+      classExceptions,
+      assignments,
+      assessments,
+      weekStart,
+      weekEnd,
+    ],
+  );
 
   const planItems = useMemo(() => {
-    const subjectGroups = new Map<string | null, ReviewEntry[]>();
+    const subjectGroups = new Map<string | null, WeeklyReviewEntry[]>();
     for (const entry of entries) {
       const key = entry.subjectId;
       if (!subjectGroups.has(key)) subjectGroups.set(key, []);
@@ -103,14 +102,14 @@ export function WeeklyReview({ items, subjects, learningSignals, onChallenge, on
     for (const [subjectId, group] of subjectGroups) {
       const rated = group.filter((entry) => {
         const signal = learningSignals.find(
-          (s) => s.sourceType === "calendar_item" && s.sourceId === entry.id,
+          (s) => s.sourceType === entry.sourceType && s.sourceId === entry.id,
         );
         return signal !== undefined;
       });
       if (!rated.length) continue;
       const avg = rated.reduce((sum, entry) => {
         const signal = learningSignals.find(
-          (s) => s.sourceType === "calendar_item" && s.sourceId === entry.id,
+          (s) => s.sourceType === entry.sourceType && s.sourceId === entry.id,
         );
         return sum + challengeScore(signal?.challengeLevel ?? "good_challenge");
       }, 0) / rated.length;
@@ -130,8 +129,9 @@ export function WeeklyReview({ items, subjects, learningSignals, onChallenge, on
   }, [entries, learningSignals, subjects]);
 
   const ratedCount = entries.filter((entry) =>
-    learningSignals.some((s) => s.sourceType === "calendar_item" && s.sourceId === entry.id),
+    learningSignals.some((s) => s.sourceType === entry.sourceType && s.sourceId === entry.id),
   ).length;
+  const allRated = entries.length > 0 && ratedCount === entries.length;
 
   return (
     <div className="weekly-review-overlay" role="dialog" aria-label="Weekly review">
@@ -157,13 +157,13 @@ export function WeeklyReview({ items, subjects, learningSignals, onChallenge, on
           {mode === "receipt" ? (
             entries.length === 0 ? (
               <div className="weekly-review-empty">
-                <p>No completed classes this week yet.</p>
+                <p>No completed work this week yet.</p>
               </div>
             ) : (
               <div className="receipt-list">
                 {entries.map((entry) => {
                   const signal = learningSignals.find(
-                    (s) => s.sourceType === "calendar_item" && s.sourceId === entry.id,
+                    (s) => s.sourceType === entry.sourceType && s.sourceId === entry.id,
                   );
                   const value = signal?.challengeLevel ?? null;
                   const isOpen = openId === entry.id;
@@ -202,7 +202,7 @@ export function WeeklyReview({ items, subjects, learningSignals, onChallenge, on
                               className={`chip${value === option.value ? " on" : ""}`}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                onChallenge(entry.id, option.value);
+                                onChallenge({ type: entry.sourceType, id: entry.id }, option.value);
                                 const idx = entries.findIndex((en) => en.id === entry.id);
                                 setOpenId(entries[idx + 1]?.id ?? null);
                               }}
@@ -265,9 +265,9 @@ export function WeeklyReview({ items, subjects, learningSignals, onChallenge, on
               onClose();
             }
           }}
-          disabled={mode === "plan" && planItems.length === 0}
+          disabled={mode === "plan" && planItems.length === 0 && !allRated}
         >
-          {mode === "receipt" ? "Generate study plan" : "Save draft"}
+          {mode === "receipt" ? "Generate study plan" : planItems.length > 0 ? "Save draft" : "Finish review"}
         </button>
       </div>
     </div>
