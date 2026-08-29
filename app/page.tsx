@@ -1,9 +1,12 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
-import { assignmentProgress, planAssignment } from "@/lib/assignment-planner";
+import {
+  assignmentProgress,
+  formatWorkMinutes,
+  planAssignment,
+} from "@/lib/assignment-planner";
 import { planRevisionRunway, planSpacedReviews } from "@/lib/revision-planner";
-import { getJapaneseCalendarDetails } from "@/lib/japanese-calendar";
 import {
   energyTypeForWorkType,
   type FreePeriod,
@@ -30,11 +33,9 @@ import {
   Layers3,
   List,
   Lock,
-  Laptop,
   Move,
   Play,
   Plus,
-  RefreshCw,
   Search,
   Sparkles,
   Trash2,
@@ -47,23 +48,52 @@ import {
   type CSSProperties,
   type DragEvent,
   type FormEvent,
-  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
-  type TouchEvent as ReactTouchEvent,
   type WheelEvent as ReactWheelEvent,
   useCallback,
+  lazy,
   useEffect,
   useMemo,
   useRef,
   useState,
+  Suspense,
 } from "react";
-import { HomeworkInbox } from "@/app/homework-inbox";
-import { SchoolWorkspace } from "@/app/school-workspace";
+import {
+  formatDate,
+  formatProposalTiming,
+  formatRange,
+  formatSpan,
+  formatTime,
+  urgencyClass,
+} from "@/app/calendar-format";
 import { AttentionHome } from "@/app/attention-home";
-import { IntentionsPanel } from "@/app/intentions-panel";
-import { GoDeeperPanel } from "@/app/go-deeper-panel";
+import { CalendarFallback } from "@/app/calendar-ui";
 import { LearningControls } from "@/app/learning-controls";
 import { TemporalField } from "@/app/ui/temporal-field";
+const NowPanel = lazy(() =>
+  import("@/app/now-panel").then((mod) => ({ default: mod.NowPanel })),
+);
+const MobileAgenda = lazy(() =>
+  import("@/app/mobile-agenda").then((mod) => ({ default: mod.MobileAgenda })),
+);
+const TimeCalendar = lazy(() =>
+  import("@/app/time-calendar").then((mod) => ({ default: mod.TimeCalendar })),
+);
+const OverviewCalendar = lazy(() =>
+  import("@/app/overview-calendar").then((mod) => ({ default: mod.OverviewCalendar })),
+);
+const HomeworkInbox = lazy(() =>
+  import("@/app/homework-inbox").then((mod) => ({ default: mod.HomeworkInbox })),
+);
+const SchoolWorkspace = lazy(() =>
+  import("@/app/school-workspace").then((mod) => ({ default: mod.SchoolWorkspace })),
+);
+const IntentionsPanel = lazy(() =>
+  import("@/app/intentions-panel").then((mod) => ({ default: mod.IntentionsPanel })),
+);
+const GoDeeperPanel = lazy(() =>
+  import("@/app/go-deeper-panel").then((mod) => ({ default: mod.GoDeeperPanel })),
+);
 import {
   buildAttentionSnapshot,
   type AttentionCard,
@@ -107,7 +137,6 @@ import {
   energyLabels,
   flexibilityForNewItem,
   itemToRow,
-  itemOverlapsDay,
   isAllDayItem,
   isCalendarSpanItem,
   kindLabels,
@@ -138,7 +167,6 @@ import {
   recommendNow,
   type CurrentStudyLocation,
   type NowRecommendation,
-  type NowRecommendationResult,
 } from "@/lib/now-recommender";
 import {
   isImportedTimetableItem,
@@ -146,6 +174,7 @@ import {
   reconcileTimetableImport,
   timetableRoomForItem,
   subjectsAreSimilar,
+  type RejectedTimetableCandidate,
   type TimetableExtractionCandidate,
 } from "@/lib/timetable-import";
 import {
@@ -208,121 +237,12 @@ type ExtractionResponse = {
   items: ExtractionCandidate[];
 };
 
-const ACTIVE_START = 6;
-const ACTIVE_END = 23;
-const DAY_HOURS = Array.from({ length: 24 }, (_, hour) => hour);
-
-function classColorStyle(
-  item: CalendarItem,
-  subjects: Subject[],
-): CSSProperties | undefined {
-  if (!isImportedTimetableItem(item)) return undefined;
-  const subject = subjects.find(
-    (candidate) =>
-      candidate.id === item.subjectId ||
-      subjectsAreSimilar(
-        item.title,
-        candidate.name,
-        item.title,
-        candidate.shortName,
-      ),
-  );
-  const color = subject?.color;
-  return color?.startsWith("#")
-    ? ({ "--energy": color } as CSSProperties)
-    : undefined;
-}
 const energyTypes = Object.keys(energyLabels) as EnergyType[];
 const priorities: Priority[] = ["low", "medium", "high"];
 const flexibilities: Flexibility[] = ["fixed", "flexible", "elastic"];
 const kinds: ItemKind[] = ["event", "task", "intention"];
 const schoolWorkTypes = Object.keys(WORK_TYPE_LABELS) as SchoolWorkType[];
 const energyRequirements: EnergyRequirement[] = ["low", "medium", "high"];
-
-function isInactiveHour(hour: number) {
-  return hour < ACTIVE_START || hour >= ACTIVE_END;
-}
-
-function hourHeight(hour: number, rowHeight: number) {
-  return isInactiveHour(hour) ? Math.max(18, rowHeight * 0.34) : rowHeight;
-}
-
-function timeOffset(hour: number, minute: number, rowHeight: number) {
-  const wholeHours = DAY_HOURS.slice(0, Math.min(24, hour)).reduce(
-    (total, value) => total + hourHeight(value, rowHeight),
-    0,
-  );
-  if (hour >= 24) return wholeHours;
-  return wholeHours + (minute / 60) * hourHeight(hour, rowHeight);
-}
-
-function timeAtOffset(offset: number, rowHeight: number) {
-  let remaining = Math.max(0, offset);
-  for (const hour of DAY_HOURS) {
-    const height = hourHeight(hour, rowHeight);
-    if (remaining <= height) {
-      return {
-        hour,
-        minute: Math.min(45, Math.round((remaining / height) * 4) * 15),
-      };
-    }
-    remaining -= height;
-  }
-  return { hour: 23, minute: 45 };
-}
-
-function itemGeometry(item: CalendarItem, rowHeight: number) {
-  const start = new Date(item.startsAt!);
-  const end = new Date(item.endsAt!);
-  const startTop = timeOffset(start.getHours(), start.getMinutes(), rowHeight);
-  const endTop =
-    dateKey(start) === dateKey(end)
-      ? timeOffset(end.getHours(), end.getMinutes(), rowHeight)
-      : timeOffset(24, 0, rowHeight);
-  return {
-    top: startTop,
-    height: Math.max(28, endTop - startTop),
-  };
-}
-
-function overlapLayout(items: CalendarItem[]) {
-  const result = new Map<string, { lane: number; lanes: number }>();
-  const sorted = [...items].sort(
-    (a, b) => new Date(a.startsAt!).getTime() - new Date(b.startsAt!).getTime(),
-  );
-  let group: CalendarItem[] = [];
-  let groupEnd = -Infinity;
-
-  const placeGroup = () => {
-    const laneEnds: number[] = [];
-    const placements = group.map((item) => {
-      const start = new Date(item.startsAt!).getTime();
-      const end = new Date(item.endsAt!).getTime();
-      let lane = laneEnds.findIndex((laneEnd) => laneEnd <= start);
-      if (lane < 0) lane = laneEnds.length;
-      laneEnds[lane] = end;
-      return { item, lane };
-    });
-    const lanes = Math.max(1, laneEnds.length);
-    placements.forEach(({ item, lane }) =>
-      result.set(item.id, { lane, lanes }),
-    );
-  };
-
-  sorted.forEach((item) => {
-    const start = new Date(item.startsAt!).getTime();
-    const end = new Date(item.endsAt!).getTime();
-    if (group.length && start >= groupEnd) {
-      placeGroup();
-      group = [];
-      groupEnd = -Infinity;
-    }
-    group.push(item);
-    groupEnd = Math.max(groupEnd, end);
-  });
-  if (group.length) placeGroup();
-  return result;
-}
 
 function relevantCommandItems(command: string, items: CalendarItem[]) {
   const terms = command
@@ -352,46 +272,6 @@ function relevantCommandItems(command: string, items: CalendarItem[]) {
     .sort((a, b) => b.score - a.score || a.time - b.time)
     .slice(0, 60)
     .map(({ item }) => item);
-}
-
-function formatDate(date: Date, options: Intl.DateTimeFormatOptions) {
-  return new Intl.DateTimeFormat("en-GB", options).format(date);
-}
-
-function formatTime(value: string | null) {
-  if (!value) return "Unscheduled";
-  return formatDate(new Date(value), {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function formatRange(item: CalendarItem) {
-  if (!item.startsAt || !item.endsAt) {
-    if (item.windowStart && item.windowEnd) {
-      return `${formatTime(item.windowStart)}–${formatTime(item.windowEnd)} window`;
-    }
-    return `${item.durationMin}–${item.durationMax} min`;
-  }
-  return `${formatTime(item.startsAt)}–${formatTime(item.endsAt)}`;
-}
-
-function formatSpan(item: CalendarItem) {
-  if (!item.startsAt || !item.endsAt) return "";
-  const start = new Date(item.startsAt);
-  const end = new Date(new Date(item.endsAt).getTime() - 1);
-  if (dateKey(start) === dateKey(end)) {
-    return formatDate(start, { month: "short", day: "numeric" });
-  }
-  const sameYear = start.getFullYear() === end.getFullYear();
-  return `${formatDate(start, { month: "short", day: "numeric" })} – ${formatDate(
-    end,
-    {
-      month: "short",
-      day: "numeric",
-      year: sameYear ? undefined : "numeric",
-    },
-  )}`;
 }
 
 function itemWithDuration(item: CalendarItem, minutes: number) {
@@ -429,23 +309,6 @@ function toggleAllDayItem(item: CalendarItem) {
     durationMax: days * 24 * 60,
     status: "scheduled" as const,
   };
-}
-
-function formatProposalTiming(item: CalendarItem) {
-  if (!item.startsAt) return formatRange(item);
-  return `${formatDate(new Date(item.startsAt), {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  })} · ${formatRange(item)}`;
-}
-
-function urgencyClass(item: CalendarItem) {
-  if (!item.deadline || item.status === "completed") return "";
-  const remaining = new Date(item.deadline).getTime() - Date.now();
-  if (remaining <= 24 * 60 * 60_000) return "deadline-imminent";
-  if (remaining <= 72 * 60 * 60_000) return "deadline-near";
-  return "";
 }
 
 function parsedCommand(command: string) {
@@ -1010,8 +873,8 @@ export default function Home() {
   const [syncing, setSyncing] = useState(false);
   const [syncTick, setSyncTick] = useState(0);
   const [zoom, setZoom] = useState<Zoom>("upcoming");
-  const [anchorDate, setAnchorDate] = useState(() => dateKey(new Date()));
-  const [selectedDay, setSelectedDay] = useState(() => dateKey(new Date()));
+  const [anchorDate, setAnchorDate] = useState("1970-01-01");
+  const [selectedDay, setSelectedDay] = useState("1970-01-01");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteMode, setPaletteMode] = useState<PaletteMode>("command");
   const [commandText, setCommandText] = useState("");
@@ -1029,6 +892,10 @@ export default function Home() {
     proposalId: string;
     subjects: Subject[];
     reviewed: boolean;
+  } | null>(null);
+  const [timetableImportIssues, setTimetableImportIssues] = useState<{
+    proposalId: string;
+    issues: RejectedTimetableCandidate[];
   } | null>(null);
   const [selectedItem, setSelectedItem] = useState<CalendarItem | null>(null);
   const [draftItem, setDraftItem] = useState<CalendarItem | null>(null);
@@ -1344,6 +1211,10 @@ export default function Home() {
 
   useEffect(() => {
     const updateClock = () => setClockNow(new Date());
+    const today = dateKey(new Date());
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration-safe: server and client must agree on the initial date
+    setAnchorDate(today);
+    setSelectedDay(today);
     updateClock();
     const timer = window.setInterval(updateClock, 60_000);
     return () => window.clearInterval(timer);
@@ -1555,6 +1426,7 @@ export default function Home() {
         setPaletteOpen(false);
         setProposal(null);
         setTimetableSubjectProposal(null);
+        setTimetableImportIssues(null);
         setSelectedItem(null);
         setDraftItem(null);
         setIsCreatingItem(false);
@@ -2154,7 +2026,7 @@ export default function Home() {
         throw new Error("AI returned an invalid document proposal");
       }
       if (timetableMode && options.weekStart) {
-        const { lessons, newSubjects } = reconcileTimetableImport(
+        const { lessons, newSubjects, rejected } = reconcileTimetableImport(
           raw.items,
           options.weekStart,
           subjects,
@@ -2189,10 +2061,13 @@ export default function Home() {
         setProposal({
           id: proposalId,
           title: `Import ${lessons.length} timetable lesson${lessons.length === 1 ? "" : "s"}`,
-          summary: `${previousWeek.length ? `Replace ${previousWeek.length} earlier imported lesson${previousWeek.length === 1 ? "" : "s"}. ` : ""}${newSubjects.length ? `Add ${newSubjects.length} new subject${newSubjects.length === 1 ? "" : "s"}; similar labels were matched to subjects you already have. ` : ""}This applies only to the week of ${options.weekStart}. Review everything before applying.`,
+          summary: `${previousWeek.length ? `Replace ${previousWeek.length} earlier imported lesson${previousWeek.length === 1 ? "" : "s"}. ` : ""}${newSubjects.length ? `Add ${newSubjects.length} new subject${newSubjects.length === 1 ? "" : "s"}; similar labels were matched to subjects you already have. ` : ""}${rejected.length ? `Hold ${rejected.length} unclear or conflicting row${rejected.length === 1 ? "" : "s"} for review. ` : ""}This applies only to the week of ${options.weekStart}. Review everything before applying.`,
           source: "document",
           changes,
         });
+        setTimetableImportIssues(
+          rejected.length ? { proposalId, issues: rejected } : null,
+        );
         setTimetableSubjectProposal(
           newSubjects.length
             ? { proposalId, subjects: newSubjects, reviewed: false }
@@ -2289,6 +2164,7 @@ export default function Home() {
     }
     setProposal(null);
     setTimetableSubjectProposal(null);
+    setTimetableImportIssues(null);
     setNotice(
       `Applied: ${proposal.title}.${
         importedSubjects.length
@@ -2301,6 +2177,18 @@ export default function Home() {
   function closeProposal() {
     setProposal(null);
     setTimetableSubjectProposal(null);
+    setTimetableImportIssues(null);
+  }
+
+  function skipProposalChange(changeId: string) {
+    setProposal((current) =>
+      current
+        ? {
+            ...current,
+            changes: current.changes.filter((change) => change.id !== changeId),
+          }
+        : current,
+    );
   }
 
   function updateTimetableSubject(
@@ -2741,6 +2629,22 @@ export default function Home() {
     );
   }
 
+  function completeAssignment(assignment: Assignment) {
+    const progress = assignmentProgress(assignment, items);
+    const actualMinutes =
+      progress.completedMinutes > 0
+        ? progress.completedMinutes
+        : assignment.estimatedMinutes;
+    saveAssignment({
+      ...assignment,
+      status: "completed",
+      actualMinutes,
+    });
+    setNotice(
+      `Marked "${assignment.title}" complete — actual time ${formatWorkMinutes(actualMinutes)} (estimated ${formatWorkMinutes(assignment.estimatedMinutes)}).`,
+    );
+  }
+
   function previewFreePeriodSession(
     recommendation: FreePeriodRecommendation,
     period: FreePeriod,
@@ -3015,6 +2919,7 @@ export default function Home() {
       notes: `Captured from: ${capture.rawText}`,
       gradeWeight: null,
       taskContext: "anywhere",
+      actualMinutes: null,
       computerRequired: false,
       workType:
         capture.taskType === "reading"
@@ -4212,7 +4117,7 @@ export default function Home() {
   }
 
   return (
-    <main className={`flex-shell ${draggingItemId ? "is-dragging" : ""}`}>
+    <main id="main-content" className={`flex-shell ${draggingItemId ? "is-dragging" : ""}`}>
       <aside className="icon-rail">
         <button
           className="flux-mark"
@@ -4756,24 +4661,28 @@ export default function Home() {
         </footer>
       </aside>
 
-      <HomeworkInbox
-        open={homeworkOpen}
-        captures={activeHomework}
-        subjects={subjects}
-        recentSubjects={prioritizedSubjects}
-        onClose={() => setHomeworkOpen(false)}
-        onCapture={captureHomework}
-        onConvert={convertHomeworkToAssignment}
-        onComplete={completeHomeworkCapture}
-        onDelete={deleteHomeworkCapture}
-        onDragState={(id) => setDraggingItemId(id ? `homework:${id}` : null)}
-        onOpenWeek={() => {
-          setHomeworkOpen(false);
-          setInboxOpen(false);
-          setHudOpen(false);
-          transitionState(() => setZoom("week"));
-        }}
-      />
+      {homeworkOpen && (
+        <Suspense fallback={null}>
+          <HomeworkInbox
+            open={homeworkOpen}
+            captures={activeHomework}
+            subjects={subjects}
+            recentSubjects={prioritizedSubjects}
+            onClose={() => setHomeworkOpen(false)}
+            onCapture={captureHomework}
+            onConvert={convertHomeworkToAssignment}
+            onComplete={completeHomeworkCapture}
+            onDelete={deleteHomeworkCapture}
+            onDragState={(id) => setDraggingItemId(id ? `homework:${id}` : null)}
+            onOpenWeek={() => {
+              setHomeworkOpen(false);
+              setInboxOpen(false);
+              setHudOpen(false);
+              transitionState(() => setZoom("week"));
+            }}
+          />
+        </Suspense>
+      )}
 
       <section
         className={`calendar-stage zoom-${zoom}`}
@@ -4894,45 +4803,48 @@ export default function Home() {
         )}
 
         {zoom === "school" ? (
-          <SchoolWorkspace
-            subjects={subjects}
-            classes={classes}
-            classExceptions={classExceptions}
-            assignments={assignments}
-            assessments={assessments}
-            assignmentSessions={items}
-            schoolDaySettings={schoolDaySettings}
-            onSaveSubject={saveSubject}
-            onDeleteSubject={deleteSubject}
-            onSaveClass={saveClass}
-            onDeleteClass={deleteClass}
-            onSaveException={saveClassException}
-            onDeleteException={deleteClassException}
-            onSaveSchoolDaySettings={saveSchoolDaySettings}
-            onSaveAssignment={saveAssignment}
-            onDeleteAssignment={deleteAssignment}
-            onPlanAssignment={previewAssignmentPlan}
-            onAddAssignmentSession={addAssignmentSession}
-            onOpenAssignmentSession={openItem}
-            onToggleAssignmentSession={toggleAssignmentSession}
-            onUseFreePeriod={previewFreePeriodSession}
-            onSaveAssessment={saveAssessment}
-            onDeleteAssessment={deleteAssessment}
-            onPlanRevision={previewRevisionRunway}
-            onMarkRevisionLearned={markRevisionLearned}
-            onOpenRevisionSession={openItem}
-            onOpenCalendarItem={openItem}
-            onImportTimetable={(file, weekStart) =>
-              onDocumentSelected(file, {
-                mode: "school_timetable",
-                weekStart,
-              })
-            }
-            timetableImportBusy={timetableImportBusy}
-            learningSignals={learningSignals}
-            onChallenge={recordChallenge}
-            onGoDeeper={openGoDeeper}
-          />
+          <Suspense fallback={null}>
+            <SchoolWorkspace
+              subjects={subjects}
+              classes={classes}
+              classExceptions={classExceptions}
+              assignments={assignments}
+              assessments={assessments}
+              assignmentSessions={items}
+              schoolDaySettings={schoolDaySettings}
+              onSaveSubject={saveSubject}
+              onDeleteSubject={deleteSubject}
+              onSaveClass={saveClass}
+              onDeleteClass={deleteClass}
+              onSaveException={saveClassException}
+              onDeleteException={deleteClassException}
+              onSaveSchoolDaySettings={saveSchoolDaySettings}
+              onSaveAssignment={saveAssignment}
+              onDeleteAssignment={deleteAssignment}
+              onCompleteAssignment={completeAssignment}
+              onPlanAssignment={previewAssignmentPlan}
+              onAddAssignmentSession={addAssignmentSession}
+              onOpenAssignmentSession={openItem}
+              onToggleAssignmentSession={toggleAssignmentSession}
+              onUseFreePeriod={previewFreePeriodSession}
+              onSaveAssessment={saveAssessment}
+              onDeleteAssessment={deleteAssessment}
+              onPlanRevision={previewRevisionRunway}
+              onMarkRevisionLearned={markRevisionLearned}
+              onOpenRevisionSession={openItem}
+              onOpenCalendarItem={openItem}
+              onImportTimetable={(file, weekStart) =>
+                onDocumentSelected(file, {
+                  mode: "school_timetable",
+                  weekStart,
+                })
+              }
+              timetableImportBusy={timetableImportBusy}
+              learningSignals={learningSignals}
+              onChallenge={recordChallenge}
+              onGoDeeper={openGoDeeper}
+            />
+          </Suspense>
         ) : zoom === "upcoming" ? (
           <AttentionHome
             snapshot={attentionSnapshot}
@@ -4971,62 +4883,68 @@ export default function Home() {
             onOpenBlockSuggestion={openBlockSuggestion}
           />
         ) : isCompact && zoom === "week" ? (
-          <MobileAgenda
-            mode={zoom}
-            days={Array.from({ length: 7 }, (_, index) =>
-              addDays(weekStart, index),
-            )}
-            items={filteredItems}
-            subjects={subjects}
-            selectedDay={selectedDay}
-            onSelectDay={setSelectedDay}
-            onOpenItem={openItem}
-            onQuickCapture={() => {
-              setPaletteMode("command");
-              setPaletteOpen(true);
-            }}
-          />
+          <Suspense fallback={<CalendarFallback />}>
+            <MobileAgenda
+              mode={zoom}
+              days={Array.from({ length: 7 }, (_, index) =>
+                addDays(weekStart, index),
+              )}
+              items={filteredItems}
+              subjects={subjects}
+              selectedDay={selectedDay}
+              onSelectDay={setSelectedDay}
+              onOpenItem={openItem}
+              onQuickCapture={() => {
+                setPaletteMode("command");
+                setPaletteOpen(true);
+              }}
+            />
+          </Suspense>
         ) : zoom === "month" || zoom === "semester" ? (
-          <OverviewCalendar
-            anchor={anchor}
-            months={zoom === "month" ? 1 : 6}
-            items={filteredItems}
-            subjects={subjects}
-            onSelectDay={(day) => {
-              setSelectedDay(day);
-              setAnchorDate(day);
-              transitionState(() => setZoom(isCompact ? "day" : "week"));
-            }}
-          />
+          <Suspense fallback={<CalendarFallback />}>
+            <OverviewCalendar
+              anchor={anchor}
+              months={zoom === "month" ? 1 : 6}
+              items={filteredItems}
+              subjects={subjects}
+              onSelectDay={(day) => {
+                setSelectedDay(day);
+                setAnchorDate(day);
+                transitionState(() => setZoom(isCompact ? "day" : "week"));
+              }}
+            />
+          </Suspense>
         ) : (
-          <TimeCalendar
-            days={visibleDays}
-            items={filteredItems}
-            subjects={subjects}
-            proposal={proposal}
-            rowHeight={zoom === "day" ? 72 : 52}
-            selectedDay={selectedDay}
-            resizing={resizing}
-            dragSnap={dragSnap}
-            draggingItem={
-              draggingItemId
-                ? (filteredItems.find((item) => item.id === draggingItemId) ??
-                  null)
-                : null
-            }
-            onSelectDay={setSelectedDay}
-            onDrop={onCalendarDrop}
-            onDragOver={onCalendarDragOver}
-            onOpenItem={openItem}
-            onRenameItem={renameItem}
-            onResize={beginResize}
-            onCreateAt={openNewEvent}
-            onCreateSpan={openNewSpan}
-            onMoveAt={(item, day, hour, minute) =>
-              scheduleAt(item.id, day, hour, minute)
-            }
-            compact={isCompact && zoom === "day"}
-          />
+          <Suspense fallback={<CalendarFallback />}>
+            <TimeCalendar
+              days={visibleDays}
+              items={filteredItems}
+              subjects={subjects}
+              proposal={proposal}
+              rowHeight={zoom === "day" ? 72 : 52}
+              selectedDay={selectedDay}
+              resizing={resizing}
+              dragSnap={dragSnap}
+              draggingItem={
+                draggingItemId
+                  ? (filteredItems.find((item) => item.id === draggingItemId) ??
+                    null)
+                  : null
+              }
+              onSelectDay={setSelectedDay}
+              onDrop={onCalendarDrop}
+              onDragOver={onCalendarDragOver}
+              onOpenItem={openItem}
+              onRenameItem={renameItem}
+              onResize={beginResize}
+              onCreateAt={openNewEvent}
+              onCreateSpan={openNewSpan}
+              onMoveAt={(item, day, hour, minute) =>
+                scheduleAt(item.id, day, hour, minute)
+              }
+              compact={isCompact && zoom === "day"}
+            />
+          </Suspense>
         )}
       </section>
 
@@ -5195,61 +5113,67 @@ export default function Home() {
       )}
 
       {intentionsOpen && (
-        <IntentionsPanel
-          key={intentionSeed?.id ?? intentionSeed?.title ?? "intentions"}
-          open={intentionsOpen}
-          intentions={intentions}
-          subjects={subjects}
-          items={items}
-          learningSignals={learningSignals}
-          seed={intentionSeed}
-          onClose={() => {
-            setIntentionsOpen(false);
-            setIntentionSeed(null);
-          }}
-          onSave={saveIntention}
-          onDelete={deleteIntention}
-          onStart={startIntention}
-          onChallenge={recordChallenge}
-          onGoDeeper={openGoDeeper}
-        />
+        <Suspense fallback={null}>
+          <IntentionsPanel
+            key={intentionSeed?.id ?? intentionSeed?.title ?? "intentions"}
+            open={intentionsOpen}
+            intentions={intentions}
+            subjects={subjects}
+            items={items}
+            learningSignals={learningSignals}
+            seed={intentionSeed}
+            onClose={() => {
+              setIntentionsOpen(false);
+              setIntentionSeed(null);
+            }}
+            onSave={saveIntention}
+            onDelete={deleteIntention}
+            onStart={startIntention}
+            onChallenge={recordChallenge}
+            onGoDeeper={openGoDeeper}
+          />
+        </Suspense>
       )}
 
       {deeperSource && (
-        <GoDeeperPanel
-          source={deeperSource}
-          exploration={deeperExploration}
-          busy={deeperBusy}
-          error={deeperError}
-          onClose={() => {
-            setDeeperSource(null);
-            setDeeperExploration(null);
-            setDeeperError("");
-          }}
-          onGenerate={(fresh) =>
-            generateDeeper(deeperSource, fresh).catch(() => undefined)
-          }
-          onSave={saveExploration}
-          onStart={startExplorationDirection}
-        />
+        <Suspense fallback={null}>
+          <GoDeeperPanel
+            source={deeperSource}
+            exploration={deeperExploration}
+            busy={deeperBusy}
+            error={deeperError}
+            onClose={() => {
+              setDeeperSource(null);
+              setDeeperExploration(null);
+              setDeeperError("");
+            }}
+            onGenerate={(fresh) =>
+              generateDeeper(deeperSource, fresh).catch(() => undefined)
+            }
+            onSave={saveExploration}
+            onStart={startExplorationDirection}
+          />
+        </Suspense>
       )}
 
       {nowOpen && nowResult && (
-        <NowPanel
-          result={nowResult}
-          location={nowLocation}
-          energy={nowEnergy}
-          computerAvailable={nowComputerAvailable}
-          onLocationChange={setNowLocation}
-          onEnergyChange={setNowEnergy}
-          onComputerAvailableChange={setNowComputerAvailable}
-          onRefresh={() => setNowMoment(new Date().toISOString())}
-          onStart={startNow}
-          onClose={() => {
-            setNowOpen(false);
-            setNowMoment(null);
-          }}
-        />
+        <Suspense fallback={null}>
+          <NowPanel
+            result={nowResult}
+            location={nowLocation}
+            energy={nowEnergy}
+            computerAvailable={nowComputerAvailable}
+            onLocationChange={setNowLocation}
+            onEnergyChange={setNowEnergy}
+            onComputerAvailableChange={setNowComputerAvailable}
+            onRefresh={() => setNowMoment(new Date().toISOString())}
+            onStart={startNow}
+            onClose={() => {
+              setNowOpen(false);
+              setNowMoment(null);
+            }}
+          />
+        </Suspense>
       )}
 
       {paletteOpen && (
@@ -5658,6 +5582,33 @@ export default function Home() {
                     </section>
                   )}
                 <div className="proposal-list">
+                  {timetableImportIssues?.proposalId === proposal.id &&
+                    timetableImportIssues.issues.length > 0 && (
+                      <section className="mb-4 rounded-2xl border border-amber-200 bg-amber-50/80 p-4">
+                        <h3 className="text-sm font-semibold text-amber-900">
+                          Held for review — not included
+                        </h3>
+                        <p className="mt-1 text-xs leading-relaxed text-amber-800">
+                          These rows did not block the lessons below. Add them
+                          manually if needed.
+                        </p>
+                        <ul className="mt-3 space-y-2">
+                          {timetableImportIssues.issues.map((issue) => (
+                            <li
+                              className="rounded-xl border border-amber-200 bg-white/70 px-3 py-2"
+                              key={`${issue.title}-${issue.reason}`}
+                            >
+                              <strong className="text-sm text-amber-900">
+                                {issue.title}
+                              </strong>
+                              <span className="ml-2 text-xs text-amber-800">
+                                {issue.reason}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    )}
                   {proposal.changes.map((change) => {
                     const result = proposalValidation?.results.find(
                       (candidate) => candidate.changeId === change.id,
@@ -5709,6 +5660,15 @@ export default function Home() {
                               {warning}
                             </small>
                           ))}
+                          {!result?.valid && proposal.source === "document" && (
+                            <button
+                              className="mt-2 rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--muted)] transition hover:border-[var(--lilac)] hover:text-[var(--lilac-dark)]"
+                              type="button"
+                              onClick={() => skipProposalChange(change.id)}
+                            >
+                              Skip row
+                            </button>
+                          )}
                         </div>
                         <span className="validation-mark">
                           {result?.valid ? (
@@ -6604,2053 +6564,6 @@ export function UpcomingView({
           </button>
         </div>
       )}
-    </section>
-  );
-}
-
-function NowPanel({
-  result,
-  location,
-  energy,
-  computerAvailable,
-  onLocationChange,
-  onEnergyChange,
-  onComputerAvailableChange,
-  onRefresh,
-  onStart,
-  onClose,
-}: {
-  result: NowRecommendationResult;
-  location: CurrentStudyLocation;
-  energy: EnergyRequirement;
-  computerAvailable: boolean;
-  onLocationChange: (value: CurrentStudyLocation) => void;
-  onEnergyChange: (value: EnergyRequirement) => void;
-  onComputerAvailableChange: (value: boolean) => void;
-  onRefresh: () => void;
-  onStart: (recommendation: NowRecommendation) => void;
-  onClose: () => void;
-}) {
-  const locations: CurrentStudyLocation[] = [
-    "home",
-    "school",
-    "library",
-    "commute",
-  ];
-  const energies: EnergyRequirement[] = ["low", "medium", "high"];
-  return (
-    <div
-      className="overlay now-overlay"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.currentTarget === event.target) onClose();
-      }}
-    >
-      <section
-        className="now-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="now-panel-title"
-      >
-        <header>
-          <span className="now-panel-mark">
-            <Zap size={17} fill="currentColor" />
-          </span>
-          <div>
-            <span className="micro-label">Decision mode</span>
-            <h2 id="now-panel-title">What should I do now?</h2>
-          </div>
-          <button
-            type="button"
-            onClick={onRefresh}
-            aria-label="Refresh options"
-          >
-            <RefreshCw size={15} />
-          </button>
-          <button type="button" onClick={onClose} aria-label="Close">
-            <X size={16} />
-          </button>
-        </header>
-
-        <div className="now-context">
-          <fieldset>
-            <legend>Where are you?</legend>
-            <div className="now-segments">
-              {locations.map((value) => (
-                <button
-                  className={location === value ? "active" : ""}
-                  type="button"
-                  key={value}
-                  onClick={() => onLocationChange(value)}
-                >
-                  {value}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-          <fieldset>
-            <legend>Energy right now</legend>
-            <div className="now-segments">
-              {energies.map((value) => (
-                <button
-                  className={energy === value ? "active" : ""}
-                  type="button"
-                  key={value}
-                  onClick={() => onEnergyChange(value)}
-                >
-                  {value}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-          <label className="now-tool-toggle">
-            <input
-              type="checkbox"
-              checked={computerAvailable}
-              onChange={(event) =>
-                onComputerAvailableChange(event.target.checked)
-              }
-            />
-            <Laptop size={14} />
-            Computer available
-          </label>
-        </div>
-
-        <div className="now-window">
-          <CalendarClock size={17} />
-          {result.nextFixed ? (
-            <div>
-              <strong>
-                {result.nextFixed.current
-                  ? `${result.nextFixed.title} is happening now`
-                  : `You have ${result.availableMinutes} minutes`}
-              </strong>
-              <span>
-                {result.nextFixed.current
-                  ? `Until ${formatDate(new Date(result.nextFixed.endsAt), {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}`
-                  : `Before ${result.nextFixed.title} at ${formatDate(
-                      new Date(result.nextFixed.startsAt),
-                      { hour: "2-digit", minute: "2-digit" },
-                    )}`}
-              </span>
-            </div>
-          ) : (
-            <div>
-              <strong>{result.availableMinutes} usable minutes</strong>
-              <span>No fixed event in the next two hours.</span>
-            </div>
-          )}
-        </div>
-
-        {result.recommendations.length ? (
-          <div className="now-recommendations">
-            {result.recommendations.map((recommendation, index) => (
-              <article
-                className={index === 0 ? "is-best" : ""}
-                key={recommendation.id}
-              >
-                <span className="now-rank">
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-
-                <div className="now-recommendation-copy">
-                  <div>
-                    <h3>{recommendation.title}</h3>
-
-                    <span className="now-duration">
-                      {recommendation.durationMinutes} min
-                    </span>
-                  </div>
-                  <p>{recommendation.detail}</p>
-                  <ul aria-label="Why this was recommended">
-                    {recommendation.reasons.map((reason) => (
-                      <li key={reason}>{reason}</li>
-                    ))}
-                  </ul>
-                </div>
-                <button
-                  className="now-start"
-                  type="button"
-                  onClick={() => onStart(recommendation)}
-                >
-                  <Play size={13} fill="currentColor" />
-                  {recommendation.source === "exploration"
-                    ? "Explore"
-                    : "Start"}
-                </button>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <div className="now-empty">
-            <Focus size={20} />
-            <h3>Nothing suitable right now</h3>
-            <p>
-              {result.blockedReason ??
-                result.freeTimeReason ??
-                "Try changing your location, energy, or available tools."}
-            </p>
-          </div>
-        )}
-        <footer>
-          <Lock size={12} />
-          Ranked locally from time, urgency, context, energy, challenge, recent
-          work, tools, and progress. Nothing starts until you choose it.
-        </footer>
-      </section>
-    </div>
-  );
-}
-
-function MobileAgenda({
-  mode,
-  days,
-  items,
-  subjects,
-  selectedDay,
-  onSelectDay,
-  onOpenItem,
-  onQuickCapture,
-}: {
-  mode: "day" | "week";
-  days: Date[];
-  items: CalendarItem[];
-  subjects: Subject[];
-  selectedDay: string;
-  onSelectDay: (day: string) => void;
-  onOpenItem: (item: CalendarItem) => void;
-  onQuickCapture: () => void;
-}) {
-  const [showCulturalDetails, setShowCulturalDetails] = useState(false);
-  const selectedDate = dateFromKey(selectedDay);
-  const scheduled = items
-    .filter(
-      (item) =>
-        item.status === "scheduled" &&
-        item.startsAt &&
-        item.endsAt &&
-        itemOverlapsDay(item, selectedDay),
-    )
-    .sort(
-      (a, b) =>
-        new Date(a.startsAt!).getTime() - new Date(b.startsAt!).getTime(),
-    );
-  const possible = items.filter(
-    (item) =>
-      item.status === "inbox" &&
-      item.windowStart &&
-      dateKey(new Date(item.windowStart)) === selectedDay,
-  );
-  const unscheduled = items
-    .filter((item) => item.status === "inbox" && !possible.includes(item))
-    .slice(0, 4);
-  const capacity = capacityForDay(items, selectedDay);
-  const selectedJapaneseDate = getJapaneseCalendarDetails(selectedDate);
-
-  return (
-    <section className="mobile-agenda">
-      <div className="mobile-capture">
-        <button type="button" onClick={onQuickCapture}>
-          <Plus size={17} />
-          <span>What needs time?</span>
-          <kbd>⌘K</kbd>
-        </button>
-      </div>
-
-      <div className="mobile-date-ribbon">
-        {days.map((day) => {
-          const key = dateKey(day);
-          const dayLoad = capacityForDay(items, key);
-          return (
-            <button
-              className={`${key === selectedDay ? "selected" : ""} ${
-                key === dateKey(new Date()) ? "today" : ""
-              }`}
-              type="button"
-              key={key}
-              onClick={() => onSelectDay(key)}
-            >
-              <span>{formatDate(day, { weekday: "short" })}</span>
-              <strong>{day.getDate()}</strong>
-              <i>
-                <b style={{ width: `${dayLoad.load}%` }} />
-              </i>
-            </button>
-          );
-        })}
-      </div>
-
-      <header className="mobile-agenda-header">
-        <div>
-          <span className="micro-label">
-            {mode === "day" ? "Day" : "Week"} agenda
-          </span>
-          <h2>
-            {formatDate(selectedDate, {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-            })}
-          </h2>
-          <button
-            className="mobile-cultural-date"
-            type="button"
-            aria-expanded={showCulturalDetails}
-            onClick={() => setShowCulturalDetails((current) => !current)}
-          >
-            <small>{selectedJapaneseDate.era}</small>
-            <span className={`rokuyo-tag tone-${selectedJapaneseDate.tone}`}>
-              {selectedJapaneseDate.rokuyo}
-            </span>
-            <span className="cultural-date-hint">What does this mean?</span>
-          </button>
-        </div>
-        <span>
-          {capacity.total ? `${capacity.total} min planned` : "Open day"}
-        </span>
-        {showCulturalDetails && (
-          <JapaneseDateExplanation
-            date={selectedDate}
-            onClose={() => setShowCulturalDetails(false)}
-          />
-        )}
-      </header>
-
-      <div className="agenda-list">
-        {scheduled.length === 0 && (
-          <div className="agenda-open-space">
-            <span />
-            <div>
-              <strong>Open time</strong>
-              <p>Nothing fixed here. Keep it open or give a task some room.</p>
-            </div>
-          </div>
-        )}
-        {scheduled.map((item) => (
-          <button
-            className={`agenda-item kind-${item.kind} flex-${item.flexibility} energy-${item.energyType} priority-${item.priority} ${urgencyClass(
-              item,
-            )}`}
-            type="button"
-            key={item.id}
-            style={classColorStyle(item, subjects)}
-            onClick={() => onOpenItem(item)}
-          >
-            <time>
-              {isCalendarSpanItem(item) ? "Span" : formatTime(item.startsAt)}
-              <small>
-                {isCalendarSpanItem(item)
-                  ? formatSpan(item)
-                  : formatTime(item.endsAt)}
-              </small>
-            </time>
-            <span className="agenda-shape" />
-            <div>
-              <strong>{item.title}</strong>
-              {isImportedTimetableItem(item) && timetableRoomForItem(item) && (
-                <span className="calendar-class-room">
-                  Room {timetableRoomForItem(item)}
-                </span>
-              )}
-              <small>
-                {isCalendarSpanItem(item)
-                  ? `${kindLabels[item.kind]} · continues across days`
-                  : `${energyLabels[item.energyType]} · ${durationMinutes(item)} min`}
-              </small>
-            </div>
-          </button>
-        ))}
-      </div>
-
-      {possible.length > 0 && (
-        <section className="agenda-possibilities">
-          <header>
-            <span>Could fit today</span>
-            <small>Flexible window</small>
-          </header>
-          {possible.map((item) => (
-            <button
-              className={`agenda-possibility energy-${item.energyType}`}
-              type="button"
-              key={item.id}
-              onClick={() => onOpenItem(item)}
-            >
-              <span />
-              <div>
-                <strong>{item.title}</strong>
-                <small>{formatRange(item)}</small>
-              </div>
-              <Sparkles size={14} />
-            </button>
-          ))}
-        </section>
-      )}
-
-      {unscheduled.length > 0 && (
-        <section className="agenda-unscheduled">
-          <header>
-            <span>Still unscheduled</span>
-            <small>{unscheduled.length}</small>
-          </header>
-          {unscheduled.map((item) => (
-            <button
-              type="button"
-              key={item.id}
-              onClick={() => onOpenItem(item)}
-            >
-              <span className={`energy-${item.energyType}`} />
-              <strong>{item.title}</strong>
-              <small>{item.durationMin} min</small>
-            </button>
-          ))}
-        </section>
-      )}
-    </section>
-  );
-}
-
-function InlineItemTitle({
-  item,
-  onRename,
-}: {
-  item: CalendarItem;
-  onRename: (item: CalendarItem, title: string) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [title, setTitle] = useState(item.title);
-
-  function finish() {
-    const nextTitle = title.trim();
-    if (nextTitle) onRename(item, nextTitle);
-    else setTitle(item.title);
-    setEditing(false);
-  }
-
-  if (editing) {
-    return (
-      <input
-        className="inline-item-title-input"
-        value={title}
-        autoFocus
-        aria-label={`Rename ${item.title}`}
-        onChange={(event) => setTitle(event.target.value)}
-        onPointerDown={(event) => event.stopPropagation()}
-        onTouchStart={(event) => event.stopPropagation()}
-        onClick={(event) => event.stopPropagation()}
-        onBlur={finish}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            event.currentTarget.blur();
-          }
-          if (event.key === "Escape") {
-            event.preventDefault();
-            setTitle(item.title);
-            setEditing(false);
-          }
-        }}
-      />
-    );
-  }
-
-  return (
-    <strong
-      className="inline-item-title"
-      role="button"
-      tabIndex={0}
-      title="Click to rename"
-      onPointerDown={(event) => event.stopPropagation()}
-      onTouchStart={(event) => event.stopPropagation()}
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        setEditing(true);
-      }}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          event.stopPropagation();
-          setEditing(true);
-        }
-      }}
-    >
-      {item.title}
-    </strong>
-  );
-}
-
-function JapaneseDateExplanation({
-  date,
-  onClose,
-}: {
-  date: Date;
-  onClose: () => void;
-}) {
-  const details = getJapaneseCalendarDetails(date);
-  return (
-    <aside
-      className="japanese-date-popover"
-      role="dialog"
-      aria-label={`Japanese calendar details for ${formatDate(date, {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-      })}`}
-    >
-      <header>
-        <div>
-          <span>Japanese calendar</span>
-          <h3>
-            {formatDate(date, {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-            })}
-          </h3>
-        </div>
-        <button type="button" onClick={onClose} aria-label="Close explanation">
-          <X size={14} />
-        </button>
-      </header>
-      <dl>
-        <div>
-          <dt>Era</dt>
-          <dd>
-            <strong>{details.era}</strong>
-            <span>
-              {details.eraRomanization} {details.eraYear}
-            </span>
-            <small>{details.eraMeaning}</small>
-          </dd>
-        </div>
-        <div>
-          <dt>Rokuyō</dt>
-          <dd>
-            <strong>{details.rokuyo}</strong>
-            <span>{details.rokuyoRomanization}</span>
-            <small>{details.rokuyoMeaning}</small>
-          </dd>
-        </div>
-      </dl>
-      <p>
-        Rokuyō is a traditional six-day fortune cycle. It is shown as cultural
-        context, not as advice for planning your day.
-      </p>
-    </aside>
-  );
-}
-
-function TimeCalendar({
-  days,
-  items,
-  subjects,
-  proposal,
-  rowHeight,
-  selectedDay,
-  resizing,
-  dragSnap,
-  draggingItem,
-  onSelectDay,
-  onDrop,
-  onDragOver,
-  onOpenItem,
-  onRenameItem,
-  onResize,
-  onCreateAt,
-  onCreateSpan,
-  onMoveAt,
-  compact = false,
-}: {
-  days: Date[];
-  items: CalendarItem[];
-  subjects: Subject[];
-  proposal: CalendarProposal | null;
-  rowHeight: number;
-  selectedDay: string;
-  resizing: {
-    id: string;
-    minutes: number;
-    startsAt: string;
-    endsAt: string;
-  } | null;
-  dragSnap: { day: string; hour: number; minute: number } | null;
-  draggingItem: CalendarItem | null;
-  onSelectDay: (day: string) => void;
-  onDrop: (event: DragEvent, day: string, hour: number, minute: number) => void;
-  onDragOver: (
-    event: DragEvent,
-    day: string,
-    hour: number,
-    minute: number,
-  ) => void;
-  onOpenItem: (item: CalendarItem) => void;
-  onRenameItem: (item: CalendarItem, title: string) => void;
-  onResize: (
-    event: ReactPointerEvent,
-    item: CalendarItem,
-    rowHeight: number,
-    edge: "start" | "end",
-  ) => void;
-  onCreateAt: (
-    day: string,
-    hour: number,
-    minute: number,
-    duration?: number,
-  ) => void;
-  onCreateSpan: (startDay: string, endDay: string) => void;
-  onMoveAt: (
-    item: CalendarItem,
-    day: string,
-    hour: number,
-    minute: number,
-  ) => void;
-  compact?: boolean;
-}) {
-  const hours = DAY_HOURS;
-  const [explainingDay, setExplainingDay] = useState<string | null>(null);
-  const [creationRange, setCreationRange] = useState<{
-    day: string;
-    startMinute: number;
-    endMinute: number;
-  } | null>(null);
-  const creationGesture = useRef<{
-    day: string;
-    anchorMinute: number;
-    moved: boolean;
-  } | null>(null);
-  const mobileCreationGesture = useRef<{
-    day: string;
-    anchorMinute: number;
-    currentMinute: number;
-    startX: number;
-    startY: number;
-    activated: boolean;
-    timer: number;
-  } | null>(null);
-  const mobileCreationScrollBlocker = useRef<
-    ((event: globalThis.TouchEvent) => void) | null
-  >(null);
-  const [mobileMovePreview, setMobileMovePreview] = useState<{
-    id: string;
-    startsAt: string;
-    endsAt: string;
-  } | null>(null);
-  const [desktopMovePreview, setDesktopMovePreview] = useState<{
-    item: CalendarItem;
-    day: string;
-    startsAt: string;
-    endsAt: string;
-  } | null>(null);
-  const desktopMoveGesture = useRef<{
-    item: CalendarItem;
-    pointerId: number;
-    startX: number;
-    startY: number;
-    grabOffsetMinutes: number;
-    active: boolean;
-    preview: {
-      day: string;
-      startsAt: string;
-      endsAt: string;
-    } | null;
-  } | null>(null);
-  const suppressDesktopMoveClickUntil = useRef(0);
-  const mobileMoveGesture = useRef<{
-    item: CalendarItem;
-    day: string;
-    grabOffsetMinutes: number;
-    currentStartMinute: number;
-    startX: number;
-    startY: number;
-    activated: boolean;
-    timer: number;
-  } | null>(null);
-  const suppressMobileMoveClickUntil = useRef(0);
-  const suppressCreateClick = useRef(false);
-  const [spanCreation, setSpanCreation] = useState<{
-    startIndex: number;
-    endIndex: number;
-  } | null>(null);
-  const spanCreationGesture = useRef<{
-    anchorIndex: number;
-  } | null>(null);
-  const calendarRef = useRef<HTMLElement>(null);
-  const dayHeadRef = useRef<HTMLDivElement>(null);
-  const autoScrolledDayRef = useRef<string | null>(null);
-  const axisWidth = compact ? 44 : 52;
-  const bodyHeight = hours.reduce(
-    (total, hour) => total + hourHeight(hour, rowHeight),
-    0,
-  );
-  const proposalOrigins = new Set(
-    proposal?.changes
-      .filter((change) => change.before)
-      .map((change) => change.before!.id) ?? [],
-  );
-  const proposalItems =
-    proposal?.changes.flatMap((change) =>
-      change.after ? [change.after] : [],
-    ) ?? [];
-  const spanningItems = items.filter(
-    (item) =>
-      item.status === "scheduled" &&
-      isCalendarSpanItem(item) &&
-      days.some((day) => itemOverlapsDay(item, dateKey(day))),
-  );
-  const proposedSpanningItems = proposalItems.filter(
-    (item) =>
-      item.status === "scheduled" &&
-      isCalendarSpanItem(item) &&
-      days.some((day) => itemOverlapsDay(item, dateKey(day))),
-  );
-
-  useEffect(() => {
-    if (!explainingDay) return;
-    function closeOnOutsidePointer(event: PointerEvent) {
-      if (!dayHeadRef.current?.contains(event.target as Node)) {
-        setExplainingDay(null);
-      }
-    }
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setExplainingDay(null);
-    }
-    document.addEventListener("pointerdown", closeOnOutsidePointer);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsidePointer);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [explainingDay]);
-
-  useEffect(() => {
-    if (!compact || days.length !== 1) return;
-    const day = dateKey(days[0]);
-    if (autoScrolledDayRef.current === day) return;
-    autoScrolledDayRef.current = day;
-    const frame = window.requestAnimationFrame(() => {
-      const calendar = calendarRef.current;
-      const viewport = calendar?.closest<HTMLElement>(".calendar-stage");
-      if (!calendar || !viewport) return;
-      const now = new Date();
-      const focusHour =
-        day === dateKey(now) ? Math.max(6, now.getHours() - 2) : 7;
-      viewport.scrollTo({
-        top: Math.max(
-          0,
-          calendar.offsetTop +
-            timeOffset(focusHour, 0, rowHeight) -
-            Math.min(window.innerHeight * 0.2, 150),
-        ),
-        behavior: "auto",
-      });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [compact, days, rowHeight]);
-
-  useEffect(
-    () => () => {
-      const gesture = mobileCreationGesture.current;
-      if (gesture) window.clearTimeout(gesture.timer);
-      const moveGesture = mobileMoveGesture.current;
-      if (moveGesture) window.clearTimeout(moveGesture.timer);
-      const blocker = mobileCreationScrollBlocker.current;
-      if (blocker) document.removeEventListener("touchmove", blocker);
-    },
-    [],
-  );
-
-  function minuteFromClientY(element: HTMLElement, clientY: number) {
-    const column = element.closest<HTMLElement>(".day-column");
-    if (!column) return 0;
-    const rect = column.getBoundingClientRect();
-    const time = timeAtOffset(clientY - rect.top, rowHeight);
-    return time.hour * 60 + time.minute;
-  }
-
-  function minuteFromPointer(event: ReactPointerEvent<HTMLButtonElement>) {
-    return minuteFromClientY(event.currentTarget, event.clientY);
-  }
-
-  function clearMobileCreation(clearSelection = true) {
-    const gesture = mobileCreationGesture.current;
-    if (gesture) window.clearTimeout(gesture.timer);
-    mobileCreationGesture.current = null;
-    unlockMobileCreationScroll();
-    if (clearSelection) setCreationRange(null);
-  }
-
-  function clearMobileMove(clearPreview = true) {
-    const gesture = mobileMoveGesture.current;
-    if (gesture) window.clearTimeout(gesture.timer);
-    mobileMoveGesture.current = null;
-    unlockMobileCreationScroll();
-    if (clearPreview) setMobileMovePreview(null);
-  }
-
-  function clearDesktopMove(clearPreview = true) {
-    desktopMoveGesture.current = null;
-    if (clearPreview) setDesktopMovePreview(null);
-  }
-
-  function desktopMovePosition(
-    gesture: NonNullable<typeof desktopMoveGesture.current>,
-    clientX: number,
-    clientY: number,
-  ) {
-    const body = calendarRef.current?.querySelector<HTMLElement>(".time-body");
-    if (!body || days.length === 0) return null;
-    const rect = body.getBoundingClientRect();
-    const columnsWidth = Math.max(1, rect.width - axisWidth);
-    const dayWidth = columnsWidth / days.length;
-    const relativeX = Math.max(
-      0,
-      Math.min(columnsWidth - 1, clientX - rect.left - axisWidth),
-    );
-    const day = dateKey(days[Math.floor(relativeX / dayWidth)] ?? days[0]);
-    const pointerTime = timeAtOffset(clientY - rect.top, rowHeight);
-    const pointerMinute = pointerTime.hour * 60 + pointerTime.minute;
-    const duration = Math.max(15, durationMinutes(gesture.item));
-    const startMinute = Math.max(
-      0,
-      Math.min(
-        24 * 60 - duration,
-        Math.round((pointerMinute - gesture.grabOffsetMinutes) / 15) * 15,
-      ),
-    );
-    const start = dateFromKey(day);
-    start.setHours(Math.floor(startMinute / 60), startMinute % 60, 0, 0);
-    return {
-      item: gesture.item,
-      day,
-      startsAt: start.toISOString(),
-      endsAt: new Date(start.getTime() + duration * 60_000).toISOString(),
-    };
-  }
-
-  function beginDesktopMove(
-    event: ReactPointerEvent<HTMLElement>,
-    item: CalendarItem,
-  ) {
-    if (
-      compact ||
-      event.pointerType === "touch" ||
-      event.button !== 0 ||
-      item.flexibility === "fixed" ||
-      (event.target instanceof Element &&
-        event.target.closest(".resize-handle"))
-    ) {
-      return;
-    }
-    clearDesktopMove();
-    const pointerMinute = minuteFromClientY(event.currentTarget, event.clientY);
-    const start = new Date(item.startsAt!);
-    desktopMoveGesture.current = {
-      item,
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      grabOffsetMinutes:
-        pointerMinute - (start.getHours() * 60 + start.getMinutes()),
-      active: false,
-      preview: null,
-    };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  }
-
-  function moveDesktopEvent(event: ReactPointerEvent<HTMLElement>) {
-    const gesture = desktopMoveGesture.current;
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
-    if (!gesture.active) {
-      const distance = Math.hypot(
-        event.clientX - gesture.startX,
-        event.clientY - gesture.startY,
-      );
-      if (distance < 5) return;
-      gesture.active = true;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    const preview = desktopMovePosition(gesture, event.clientX, event.clientY);
-    if (preview) {
-      gesture.preview = {
-        day: preview.day,
-        startsAt: preview.startsAt,
-        endsAt: preview.endsAt,
-      };
-      setDesktopMovePreview(preview);
-    }
-  }
-
-  function finishDesktopMove(event: ReactPointerEvent<HTMLElement>) {
-    const gesture = desktopMoveGesture.current;
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
-    const preview = gesture.preview;
-    clearDesktopMove();
-    if (!gesture.active || !preview) return;
-    event.preventDefault();
-    event.stopPropagation();
-    suppressDesktopMoveClickUntil.current = event.timeStamp + 500;
-    const start = new Date(preview.startsAt);
-    onMoveAt(gesture.item, preview.day, start.getHours(), start.getMinutes());
-  }
-
-  function cancelDesktopMove() {
-    clearDesktopMove();
-  }
-
-  function lockMobileCreationScroll() {
-    if (mobileCreationScrollBlocker.current) return;
-    const blocker = (event: globalThis.TouchEvent) => {
-      if (
-        mobileCreationGesture.current?.activated ||
-        mobileMoveGesture.current?.activated
-      ) {
-        event.preventDefault();
-      }
-    };
-    mobileCreationScrollBlocker.current = blocker;
-    document.addEventListener("touchmove", blocker, { passive: false });
-  }
-
-  function unlockMobileCreationScroll() {
-    const blocker = mobileCreationScrollBlocker.current;
-    if (!blocker) return;
-    document.removeEventListener("touchmove", blocker);
-    mobileCreationScrollBlocker.current = null;
-  }
-
-  function beginMobileCreation(
-    event: ReactTouchEvent<HTMLButtonElement>,
-    day: string,
-  ) {
-    if (!compact || event.touches.length !== 1) return;
-    clearMobileMove();
-    clearMobileCreation();
-    const touch = event.touches[0];
-    const button = event.currentTarget;
-    const anchorMinute = minuteFromClientY(button, touch.clientY);
-    const gesture = {
-      day,
-      anchorMinute,
-      currentMinute: Math.min(24 * 60, anchorMinute + 60),
-      startX: touch.clientX,
-      startY: touch.clientY,
-      activated: false,
-      timer: 0,
-    };
-    gesture.timer = window.setTimeout(() => {
-      if (mobileCreationGesture.current !== gesture) return;
-      gesture.activated = true;
-      lockMobileCreationScroll();
-      setCreationRange({
-        day,
-        startMinute: anchorMinute,
-        endMinute: gesture.currentMinute,
-      });
-      navigator.vibrate?.(10);
-    }, 420);
-    mobileCreationGesture.current = gesture;
-  }
-
-  function moveMobileCreation(event: ReactTouchEvent<HTMLButtonElement>) {
-    const gesture = mobileCreationGesture.current;
-    const touch = event.touches[0];
-    if (!gesture || !touch) return;
-    if (!gesture.activated) {
-      const distance = Math.hypot(
-        touch.clientX - gesture.startX,
-        touch.clientY - gesture.startY,
-      );
-      if (distance > 10) clearMobileCreation();
-      return;
-    }
-
-    event.preventDefault();
-    gesture.currentMinute = minuteFromClientY(
-      event.currentTarget,
-      touch.clientY,
-    );
-    const startMinute = Math.min(gesture.anchorMinute, gesture.currentMinute);
-    const endMinute = Math.max(
-      Math.max(gesture.anchorMinute, gesture.currentMinute),
-      Math.min(24 * 60, startMinute + 15),
-    );
-    setCreationRange({ day: gesture.day, startMinute, endMinute });
-  }
-
-  function finishMobileCreation(event: ReactTouchEvent<HTMLButtonElement>) {
-    const gesture = mobileCreationGesture.current;
-    if (!gesture) return;
-    window.clearTimeout(gesture.timer);
-    mobileCreationGesture.current = null;
-    unlockMobileCreationScroll();
-    setCreationRange(null);
-    if (!gesture.activated) return;
-
-    event.preventDefault();
-    const startMinute = Math.min(gesture.anchorMinute, gesture.currentMinute);
-    const endMinute = Math.max(
-      Math.max(gesture.anchorMinute, gesture.currentMinute),
-      Math.min(24 * 60, startMinute + 15),
-    );
-    onCreateAt(
-      gesture.day,
-      Math.floor(startMinute / 60),
-      startMinute % 60,
-      Math.max(15, endMinute - startMinute),
-    );
-  }
-
-  function setMobileMovePosition(
-    gesture: NonNullable<typeof mobileMoveGesture.current>,
-    startMinute: number,
-  ) {
-    const duration = Math.max(15, durationMinutes(gesture.item));
-    const boundedStart = Math.max(0, Math.min(24 * 60 - duration, startMinute));
-    gesture.currentStartMinute = boundedStart;
-    const start = dateFromKey(gesture.day);
-    start.setHours(Math.floor(boundedStart / 60), boundedStart % 60, 0, 0);
-    setMobileMovePreview({
-      id: gesture.item.id,
-      startsAt: start.toISOString(),
-      endsAt: new Date(start.getTime() + duration * 60_000).toISOString(),
-    });
-  }
-
-  function beginMobileMove(
-    event: ReactTouchEvent<HTMLElement>,
-    item: CalendarItem,
-    day: string,
-  ) {
-    if (
-      !compact ||
-      item.flexibility === "fixed" ||
-      event.touches.length !== 1
-    ) {
-      return;
-    }
-    clearMobileCreation();
-    clearMobileMove();
-    const touch = event.touches[0];
-    const touchMinute = minuteFromClientY(event.currentTarget, touch.clientY);
-    const start = new Date(item.startsAt!);
-    const startMinute = start.getHours() * 60 + start.getMinutes();
-    const gesture = {
-      item,
-      day,
-      grabOffsetMinutes: touchMinute - startMinute,
-      currentStartMinute: startMinute,
-      startX: touch.clientX,
-      startY: touch.clientY,
-      activated: false,
-      timer: 0,
-    };
-    gesture.timer = window.setTimeout(() => {
-      if (mobileMoveGesture.current !== gesture) return;
-      gesture.activated = true;
-      lockMobileCreationScroll();
-      setMobileMovePosition(gesture, startMinute);
-      navigator.vibrate?.(10);
-    }, 420);
-    mobileMoveGesture.current = gesture;
-  }
-
-  function moveMobileEvent(event: ReactTouchEvent<HTMLElement>) {
-    const gesture = mobileMoveGesture.current;
-    const touch = event.touches[0];
-    if (!gesture || !touch) return;
-    if (!gesture.activated) {
-      const distance = Math.hypot(
-        touch.clientX - gesture.startX,
-        touch.clientY - gesture.startY,
-      );
-      if (distance > 10) clearMobileMove();
-      return;
-    }
-    event.preventDefault();
-    const touchMinute = minuteFromClientY(event.currentTarget, touch.clientY);
-    const startMinute =
-      Math.round((touchMinute - gesture.grabOffsetMinutes) / 15) * 15;
-    setMobileMovePosition(gesture, startMinute);
-  }
-
-  function finishMobileMove(event: ReactTouchEvent<HTMLElement>) {
-    const gesture = mobileMoveGesture.current;
-    if (!gesture) return;
-    window.clearTimeout(gesture.timer);
-    mobileMoveGesture.current = null;
-    unlockMobileCreationScroll();
-    setMobileMovePreview(null);
-    if (!gesture.activated) return;
-    event.preventDefault();
-    suppressMobileMoveClickUntil.current = event.timeStamp + 500;
-    onMoveAt(
-      gesture.item,
-      gesture.day,
-      Math.floor(gesture.currentStartMinute / 60),
-      gesture.currentStartMinute % 60,
-    );
-  }
-
-  function beginCreation(
-    event: ReactPointerEvent<HTMLButtonElement>,
-    day: string,
-  ) {
-    if (event.button !== 0 || (compact && event.pointerType !== "mouse"))
-      return;
-    const anchorMinute = minuteFromPointer(event);
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    creationGesture.current = { day, anchorMinute, moved: false };
-    setCreationRange({
-      day,
-      startMinute: anchorMinute,
-      endMinute: Math.min(24 * 60, anchorMinute + 15),
-    });
-  }
-
-  function moveCreation(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (compact && event.pointerType !== "mouse") return;
-    const gesture = creationGesture.current;
-    if (!gesture) return;
-    const currentMinute = minuteFromPointer(event);
-    if (Math.abs(currentMinute - gesture.anchorMinute) >= 15) {
-      gesture.moved = true;
-    }
-    setCreationRange({
-      day: gesture.day,
-      startMinute: Math.min(gesture.anchorMinute, currentMinute),
-      endMinute: Math.max(
-        Math.max(gesture.anchorMinute, currentMinute),
-        Math.min(24 * 60, Math.min(gesture.anchorMinute, currentMinute) + 15),
-      ),
-    });
-  }
-
-  function finishCreation(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (compact && event.pointerType !== "mouse") return;
-    const gesture = creationGesture.current;
-    if (!gesture) return;
-    const currentMinute = minuteFromPointer(event);
-    creationGesture.current = null;
-    setCreationRange(null);
-    if (!gesture.moved) return;
-    const startMinute = Math.min(gesture.anchorMinute, currentMinute);
-    const endMinute = Math.max(gesture.anchorMinute, currentMinute);
-    const duration = Math.max(15, endMinute - startMinute);
-    suppressCreateClick.current = true;
-    window.setTimeout(() => {
-      suppressCreateClick.current = false;
-    }, 0);
-    onCreateAt(
-      gesture.day,
-      Math.floor(startMinute / 60),
-      startMinute % 60,
-      duration,
-    );
-  }
-
-  function cancelCreation() {
-    creationGesture.current = null;
-    setCreationRange(null);
-  }
-
-  function spanIndexFromPointer(event: ReactPointerEvent<HTMLButtonElement>) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const ratio = rect.width > 0 ? (event.clientX - rect.left) / rect.width : 0;
-    return Math.max(
-      0,
-      Math.min(days.length - 1, Math.floor(ratio * days.length)),
-    );
-  }
-
-  function beginSpanCreation(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (event.button !== 0 || days.length === 0) return;
-    const anchorIndex = spanIndexFromPointer(event);
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    spanCreationGesture.current = { anchorIndex };
-    setSpanCreation({ startIndex: anchorIndex, endIndex: anchorIndex });
-  }
-
-  function moveSpanCreation(event: ReactPointerEvent<HTMLButtonElement>) {
-    const gesture = spanCreationGesture.current;
-    if (!gesture) return;
-    const currentIndex = spanIndexFromPointer(event);
-    setSpanCreation({
-      startIndex: Math.min(gesture.anchorIndex, currentIndex),
-      endIndex: Math.max(gesture.anchorIndex, currentIndex),
-    });
-  }
-
-  function finishSpanCreation(event: ReactPointerEvent<HTMLButtonElement>) {
-    const gesture = spanCreationGesture.current;
-    if (!gesture || days.length === 0) return;
-    const currentIndex = spanIndexFromPointer(event);
-    const startIndex = Math.min(gesture.anchorIndex, currentIndex);
-    const endIndex = Math.max(gesture.anchorIndex, currentIndex);
-    spanCreationGesture.current = null;
-    setSpanCreation(null);
-    onCreateSpan(dateKey(days[startIndex]), dateKey(days[endIndex]));
-  }
-
-  function cancelSpanCreation() {
-    spanCreationGesture.current = null;
-    setSpanCreation(null);
-  }
-
-  return (
-    <section
-      ref={calendarRef}
-      className={`time-calendar ${compact ? "mobile-day-calendar" : ""}`}
-      style={{ "--row-height": `${rowHeight}px` } as CSSProperties}
-    >
-      <div
-        className={`day-head ${explainingDay ? "has-date-popover" : ""}`}
-        ref={dayHeadRef}
-        style={{
-          gridTemplateColumns: `${axisWidth}px repeat(${days.length}, minmax(${compact ? 0 : 110}px, 1fr))`,
-        }}
-      >
-        <span />
-        {days.map((day) => {
-          const key = dateKey(day);
-          const capacity = capacityForDay(items, key);
-          const japaneseDate = getJapaneseCalendarDetails(day);
-          return (
-            <button
-              className={`${key === selectedDay ? "selected" : ""} ${
-                key === dateKey(new Date()) ? "today" : ""
-              }`}
-              type="button"
-              key={key}
-              aria-expanded={explainingDay === key}
-              onClick={() => {
-                onSelectDay(key);
-                setExplainingDay((current) => (current === key ? null : key));
-              }}
-              aria-label={`${formatDate(day, {
-                weekday: "long",
-                month: "long",
-                day: "numeric",
-              })}, ${japaneseDate.era}, ${japaneseDate.rokuyo}`}
-            >
-              <span>{formatDate(day, { weekday: "short" })}</span>
-              <strong>{day.getDate()}</strong>
-              <span className="day-cultural-meta">
-                <small>{japaneseDate.era}</small>
-                <b className={`rokuyo-tag tone-${japaneseDate.tone}`}>
-                  {japaneseDate.rokuyo}
-                </b>
-              </span>
-              <i>
-                <b style={{ width: `${capacity.load}%` }} />
-              </i>
-            </button>
-          );
-        })}
-        {explainingDay && (
-          <JapaneseDateExplanation
-            date={dateFromKey(explainingDay)}
-            onClose={() => setExplainingDay(null)}
-          />
-        )}
-      </div>
-      <div
-        className="multi-day-strip"
-        style={{
-          gridTemplateColumns: `${axisWidth}px repeat(${days.length}, minmax(${compact ? 0 : 110}px, 1fr))`,
-        }}
-      >
-        <span className="multi-day-label">
-          {compact ? "all day" : "add span"}
-        </span>
-        <button
-          type="button"
-          className="multi-day-create-surface"
-          aria-label={
-            compact
-              ? "Add an all-day event"
-              : "Drag across days to create a multi-day event"
-          }
-          onPointerDown={beginSpanCreation}
-          onPointerMove={moveSpanCreation}
-          onPointerUp={finishSpanCreation}
-          onPointerCancel={cancelSpanCreation}
-          onLostPointerCapture={cancelSpanCreation}
-        >
-          {compact
-            ? "Tap to add an all-day event"
-            : "Drag across days to add an event"}
-        </button>
-        {spanCreation && (
-          <span
-            className="multi-day-create-selection"
-            aria-hidden="true"
-            style={{
-              gridColumn: `${spanCreation.startIndex + 2} / ${spanCreation.endIndex + 3}`,
-            }}
-          />
-        )}
-        {[...spanningItems, ...proposedSpanningItems].map((item, row) => {
-          const covered = days
-            .map((day, index) =>
-              itemOverlapsDay(item, dateKey(day)) ? index : -1,
-            )
-            .filter((index) => index >= 0);
-          const first = covered[0];
-          const last = covered.at(-1);
-          if (first === undefined || last === undefined) return null;
-          const proposed = proposedSpanningItems.includes(item);
-          const visibleStart = new Date(days[0]);
-          visibleStart.setHours(0, 0, 0, 0);
-          const visibleEnd = addDays(days.at(-1) ?? days[0], 1);
-          visibleEnd.setHours(0, 0, 0, 0);
-          const continuesBefore = new Date(item.startsAt!) < visibleStart;
-          const continuesAfter = new Date(item.endsAt!) > visibleEnd;
-          return (
-            <button
-              className={`multi-day-item kind-${item.kind} energy-${item.energyType} flex-${item.flexibility} ${
-                proposed ? "proposal-target" : ""
-              } ${continuesBefore ? "continues-before" : ""} ${
-                continuesAfter ? "continues-after" : ""
-              }`}
-              type="button"
-              key={`${proposed ? "proposal-" : ""}${item.id}`}
-              onClick={() => !proposed && onOpenItem(item)}
-              aria-label={`${item.title}, ${formatSpan(item)}${
-                continuesBefore || continuesAfter
-                  ? ", continues beyond this week"
-                  : ""
-              }`}
-              style={{
-                gridColumn: `${first + 2} / ${last + 3}`,
-                gridRow: row + 2,
-                ...classColorStyle(item, subjects),
-              }}
-            >
-              {item.flexibility === "fixed" ? (
-                <Lock size={10} />
-              ) : (
-                <Sparkles size={10} />
-              )}
-              <InlineItemTitle
-                key={item.title}
-                item={item}
-                onRename={onRenameItem}
-              />
-              <small>{formatSpan(item)}</small>
-            </button>
-          );
-        })}
-      </div>
-      <div
-        className="time-body"
-        style={{
-          gridTemplateColumns: `${axisWidth}px repeat(${days.length}, minmax(${compact ? 0 : 110}px, 1fr))`,
-          height: `${bodyHeight}px`,
-        }}
-      >
-        <div className="time-axis">
-          {hours
-            .filter((hour) => hour % 3 === 0)
-            .map((hour) => (
-              <time
-                className={isInactiveHour(hour) ? "inactive" : ""}
-                key={hour}
-                style={{
-                  top: `${Math.max(4, timeOffset(hour, 0, rowHeight) - 6)}px`,
-                }}
-              >
-                {String(hour).padStart(2, "0")}:00
-              </time>
-            ))}
-        </div>
-        {days.map((day) => {
-          const key = dateKey(day);
-          const dayItems = items.filter(
-            (item) =>
-              item.startsAt &&
-              item.endsAt &&
-              item.status === "scheduled" &&
-              !isCalendarSpanItem(item) &&
-              dateKey(new Date(item.startsAt)) === key,
-          );
-          const ranges = items.filter(
-            (item) =>
-              item.status === "inbox" &&
-              item.windowStart &&
-              item.windowEnd &&
-              dateKey(new Date(item.windowStart)) === key,
-          );
-          const deadlines = items.filter(
-            (item) => item.deadline && dateKey(new Date(item.deadline)) === key,
-          );
-          const proposedDayItems = proposalItems.filter(
-            (item) =>
-              item.startsAt &&
-              item.endsAt &&
-              item.status === "scheduled" &&
-              !isCalendarSpanItem(item) &&
-              dateKey(new Date(item.startsAt)) === key,
-          );
-          const proposedRanges = proposalItems.filter(
-            (item) =>
-              item.status === "inbox" &&
-              item.windowStart &&
-              item.windowEnd &&
-              dateKey(new Date(item.windowStart)) === key,
-          );
-          const layout = overlapLayout(dayItems);
-          const columnTime = (event: DragEvent<HTMLDivElement>) => {
-            const rect = event.currentTarget.getBoundingClientRect();
-            return timeAtOffset(event.clientY - rect.top, rowHeight);
-          };
-          let desktopDropPreview: {
-            item: CalendarItem;
-            top: number;
-            height: number;
-            startsAt: string;
-            endsAt: string;
-            valid: boolean;
-            reason: string;
-          } | null = null;
-          const previewSource =
-            desktopMovePreview?.day === key
-              ? desktopMovePreview
-              : !compact && draggingItem && dragSnap?.day === key
-                ? (() => {
-                    const start = dateFromKey(key);
-                    start.setHours(dragSnap.hour, dragSnap.minute, 0, 0);
-                    const duration = Math.max(
-                      draggingItem.durationMin,
-                      durationMinutes(draggingItem),
-                    );
-                    return {
-                      item: draggingItem,
-                      day: key,
-                      startsAt: start.toISOString(),
-                      endsAt: new Date(
-                        start.getTime() + duration * 60_000,
-                      ).toISOString(),
-                    };
-                  })()
-                : null;
-          if (previewSource) {
-            const { item: previewItem } = previewSource;
-            const candidate = {
-              ...previewItem,
-              startsAt: previewSource.startsAt,
-              endsAt: previewSource.endsAt,
-            };
-            const validation = validatePlacement(
-              previewItem,
-              candidate.startsAt,
-              candidate.endsAt,
-              items,
-            );
-            const geometry = itemGeometry(candidate, rowHeight);
-            desktopDropPreview = {
-              item: candidate,
-              ...geometry,
-              startsAt: candidate.startsAt,
-              endsAt: candidate.endsAt,
-              valid: validation.valid,
-              reason: validation.errors[0] ?? "Ready to move",
-            };
-          }
-          return (
-            <div
-              className="day-column"
-              key={key}
-              onDragOver={(event) => {
-                const time = columnTime(event);
-                onDragOver(event, key, time.hour, time.minute);
-              }}
-              onDrop={(event) => {
-                const time = columnTime(event);
-                onDrop(event, key, time.hour, time.minute);
-              }}
-            >
-              {hours.map((hour) => {
-                return (
-                  <button
-                    className={`time-slot ${hour % 3 === 0 ? "major-hour" : ""} ${
-                      isInactiveHour(hour) ? "inactive" : ""
-                    }`}
-                    type="button"
-                    key={hour}
-                    aria-label={`Schedule at ${formatDate(day, {
-                      weekday: "long",
-                      month: "long",
-                      day: "numeric",
-                    })} ${hour}:00`}
-                    onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
-                      if (compact) {
-                        event.preventDefault();
-                        return;
-                      }
-                      if (suppressCreateClick.current) {
-                        event.preventDefault();
-                        return;
-                      }
-                      const rect = event.currentTarget.getBoundingClientRect();
-                      const minute = Math.min(
-                        45,
-                        Math.round(
-                          ((event.clientY - rect.top) / rect.height) * 4,
-                        ) * 15,
-                      );
-                      onCreateAt(key, hour, minute);
-                    }}
-                    onPointerDown={(event) => beginCreation(event, key)}
-                    onPointerMove={moveCreation}
-                    onPointerUp={finishCreation}
-                    onPointerCancel={cancelCreation}
-                    onTouchStart={(event) => beginMobileCreation(event, key)}
-                    onTouchMove={moveMobileCreation}
-                    onTouchEnd={finishMobileCreation}
-                    onTouchCancel={() => clearMobileCreation()}
-                    style={{ height: `${hourHeight(hour, rowHeight)}px` }}
-                  ></button>
-                );
-              })}
-              {creationRange?.day === key && (
-                <div
-                  className="creation-selection"
-                  style={{
-                    top: timeOffset(
-                      Math.floor(creationRange.startMinute / 60),
-                      creationRange.startMinute % 60,
-                      rowHeight,
-                    ),
-                    height: Math.max(
-                      12,
-                      timeOffset(
-                        Math.floor(creationRange.endMinute / 60),
-                        creationRange.endMinute % 60,
-                        rowHeight,
-                      ) -
-                        timeOffset(
-                          Math.floor(creationRange.startMinute / 60),
-                          creationRange.startMinute % 60,
-                          rowHeight,
-                        ),
-                    ),
-                  }}
-                >
-                  <span>
-                    {String(
-                      Math.floor(creationRange.startMinute / 60),
-                    ).padStart(2, "0")}
-                    :{String(creationRange.startMinute % 60).padStart(2, "0")}–
-                    {String(Math.floor(creationRange.endMinute / 60)).padStart(
-                      2,
-                      "0",
-                    )}
-                    :{String(creationRange.endMinute % 60).padStart(2, "0")}
-                  </span>
-                </div>
-              )}
-              {desktopDropPreview && (
-                <div
-                  className={`calendar-drop-preview ${
-                    desktopDropPreview.valid ? "is-valid" : "is-invalid"
-                  }`}
-                  style={{
-                    top: desktopDropPreview.top,
-                    height: desktopDropPreview.height,
-                    ...classColorStyle(desktopDropPreview.item, subjects),
-                  }}
-                  aria-live="polite"
-                >
-                  <span>
-                    {formatTime(desktopDropPreview.startsAt)}–
-                    {formatTime(desktopDropPreview.endsAt)}
-                  </span>
-                  <strong>{desktopDropPreview.item.title}</strong>
-                  <small>
-                    {desktopDropPreview.valid
-                      ? "Release to move"
-                      : desktopDropPreview.reason}
-                  </small>
-                </div>
-              )}
-              {mobileMovePreview &&
-                dayItems.some((item) => item.id === mobileMovePreview.id) &&
-                (() => {
-                  const original = dayItems.find(
-                    (item) => item.id === mobileMovePreview.id,
-                  );
-                  if (!original) return null;
-                  const geometry = itemGeometry(original, rowHeight);
-                  return (
-                    <div
-                      className="mobile-move-origin"
-                      style={{ top: geometry.top, height: geometry.height }}
-                      aria-hidden="true"
-                    >
-                      <span>Original</span>
-                    </div>
-                  );
-                })()}
-              {ranges.map((item) => {
-                const start = new Date(item.windowStart!);
-                const end = new Date(item.windowEnd!);
-                const top = timeOffset(
-                  start.getHours(),
-                  start.getMinutes(),
-                  rowHeight,
-                );
-                const endTop =
-                  dateKey(start) === dateKey(end)
-                    ? timeOffset(end.getHours(), end.getMinutes(), rowHeight)
-                    : timeOffset(24, 0, rowHeight);
-                const height = Math.max(24, endTop - top);
-                return (
-                  <button
-                    className={`possibility-band energy-${item.energyType} kind-${item.kind}`}
-                    type="button"
-                    key={item.id}
-                    onClick={() => onOpenItem(item)}
-                    style={{ top, height }}
-                  >
-                    <Sparkles size={11} />
-                    <span>{item.title}</span>
-                  </button>
-                );
-              })}
-              {proposedRanges.map((item) => {
-                const start = new Date(item.windowStart!);
-                const end = new Date(item.windowEnd!);
-                const top = timeOffset(
-                  start.getHours(),
-                  start.getMinutes(),
-                  rowHeight,
-                );
-                const endTop =
-                  dateKey(start) === dateKey(end)
-                    ? timeOffset(end.getHours(), end.getMinutes(), rowHeight)
-                    : timeOffset(24, 0, rowHeight);
-                const height = Math.max(24, endTop - top);
-                return (
-                  <div
-                    className={`possibility-band proposal-target energy-${item.energyType} kind-${item.kind}`}
-                    key={`proposal-range-${item.id}`}
-                    style={{ top, height }}
-                  >
-                    <Layers3 size={11} />
-                    <span>{item.title}</span>
-                  </div>
-                );
-              })}
-              {deadlines.map((item) => {
-                const deadline = new Date(item.deadline!);
-                const top = timeOffset(
-                  deadline.getHours(),
-                  deadline.getMinutes(),
-                  rowHeight,
-                );
-                return (
-                  <button
-                    className="deadline-line"
-                    type="button"
-                    key={`${item.id}-deadline`}
-                    onClick={() => onOpenItem(item)}
-                    style={{ top }}
-                  >
-                    <span>Deadline · {item.title}</span>
-                  </button>
-                );
-              })}
-              {dayItems.map((item) => {
-                const previewItem =
-                  resizing?.id === item.id
-                    ? {
-                        ...item,
-                        startsAt: resizing.startsAt,
-                        endsAt: resizing.endsAt,
-                      }
-                    : mobileMovePreview?.id === item.id
-                      ? {
-                          ...item,
-                          startsAt: mobileMovePreview.startsAt,
-                          endsAt: mobileMovePreview.endsAt,
-                        }
-                      : item;
-                const { top, height } = itemGeometry(previewItem, rowHeight);
-                const displayHeight = Math.max(24, height - 4);
-                const placement = layout.get(item.id) ?? { lane: 0, lanes: 1 };
-                const width = 100 / placement.lanes;
-                return (
-                  <article
-                    className={`calendar-block ${
-                      resizing?.id === item.id ? "is-resizing" : ""
-                    } ${
-                      mobileMovePreview?.id === item.id
-                        ? "is-mobile-moving"
-                        : ""
-                    } ${
-                      desktopMovePreview?.item.id === item.id
-                        ? "is-drag-origin"
-                        : ""
-                    } kind-${item.kind} energy-${item.energyType} flex-${item.flexibility} priority-${item.priority} ${urgencyClass(
-                      item,
-                    )} ${
-                      proposalOrigins.has(item.id) ? "proposal-origin" : ""
-                    }`}
-                    key={item.id}
-                    data-density={
-                      displayHeight < 40
-                        ? "micro"
-                        : displayHeight < 68
-                          ? "compact"
-                          : "roomy"
-                    }
-                    data-lanes={Math.min(3, placement.lanes)}
-                    onPointerDown={(event) => beginDesktopMove(event, item)}
-                    onPointerMove={moveDesktopEvent}
-                    onPointerUp={finishDesktopMove}
-                    onPointerCancel={cancelDesktopMove}
-                    onClick={(event) => {
-                      if (
-                        event.timeStamp <
-                          suppressMobileMoveClickUntil.current ||
-                        event.timeStamp < suppressDesktopMoveClickUntil.current
-                      ) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        return;
-                      }
-                      onOpenItem(item);
-                    }}
-                    onTouchStart={(event) => beginMobileMove(event, item, key)}
-                    onTouchMove={moveMobileEvent}
-                    onTouchEnd={finishMobileMove}
-                    onTouchCancel={() => clearMobileMove()}
-                    style={
-                      {
-                        top: top + 2,
-                        height: displayHeight,
-                        left: `calc(${placement.lane * width}% + 3px)`,
-                        right: "auto",
-                        width: `calc(${width}% - 6px)`,
-                        viewTransitionName: `calendar-item-${item.id}`,
-                        ...classColorStyle(item, subjects),
-                      } as CSSProperties
-                    }
-                  >
-                    {!compact && (
-                      <button
-                        className="resize-handle resize-handle-start"
-                        type="button"
-                        draggable={false}
-                        aria-label={`Extend or shorten the start of ${item.title}`}
-                        onDragStart={(event) => event.preventDefault()}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                        }}
-                        onPointerDown={(event) =>
-                          onResize(event, item, rowHeight, "start")
-                        }
-                      />
-                    )}
-                    <div>
-                      {item.flexibility === "fixed" ? (
-                        <Lock size={10} />
-                      ) : compact ? (
-                        <CalendarClock size={10} />
-                      ) : (
-                        <GripVertical size={10} />
-                      )}
-                      <time>{formatTime(item.startsAt)}</time>
-                    </div>
-                    <InlineItemTitle
-                      key={item.title}
-                      item={item}
-                      onRename={onRenameItem}
-                    />
-                    {isImportedTimetableItem(item) &&
-                      timetableRoomForItem(item) && (
-                        <span className="calendar-class-room">
-                          Room {timetableRoomForItem(item)}
-                        </span>
-                      )}
-                    {mobileMovePreview?.id === item.id && (
-                      <span className="mobile-move-time-badge">
-                        {formatTime(previewItem.startsAt)}–
-                        {formatTime(previewItem.endsAt)}
-                      </span>
-                    )}
-                    <small>
-                      {isImportedTimetableItem(item)
-                        ? item.description || "Click to edit this period"
-                        : `${energyLabels[item.energyType]}${
-                            item.constraints.length
-                              ? ` · ${item.constraints.length} constraint${
-                                  item.constraints.length === 1 ? "" : "s"
-                                }`
-                              : ""
-                          }`}
-                    </small>
-                    {!compact && (
-                      <button
-                        className="resize-handle resize-handle-end"
-                        type="button"
-                        draggable={false}
-                        aria-label={`Extend or shorten the end of ${item.title}`}
-                        onDragStart={(event) => event.preventDefault()}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                        }}
-                        onPointerDown={(event) =>
-                          onResize(event, item, rowHeight, "end")
-                        }
-                      />
-                    )}
-                  </article>
-                );
-              })}
-              {proposedDayItems.map((item) => {
-                const { top, height } = itemGeometry(item, rowHeight);
-                return (
-                  <article
-                    className={`calendar-block proposal-target kind-${item.kind} energy-${item.energyType} flex-${item.flexibility}`}
-                    key={`proposal-${item.id}`}
-                    style={{ top: top + 2, height: Math.max(24, height - 4) }}
-                  >
-                    <div>
-                      <Layers3 size={10} />
-                      <time>{formatTime(item.startsAt)}</time>
-                    </div>
-                    <strong>{item.title}</strong>
-                    <small>Proposed position</small>
-                  </article>
-                );
-              })}
-            </div>
-          );
-        })}
-        <NowLine days={days} rowHeight={rowHeight} axisWidth={axisWidth} />
-      </div>
-    </section>
-  );
-}
-
-function NowLine({
-  days,
-  rowHeight,
-  axisWidth = 52,
-}: {
-  days: Date[];
-  rowHeight: number;
-  axisWidth?: number;
-}) {
-  const now = new Date();
-  const dayIndex = days.findIndex((day) => dateKey(day) === dateKey(now));
-  if (dayIndex < 0) {
-    return null;
-  }
-  const top = timeOffset(now.getHours(), now.getMinutes(), rowHeight);
-  return (
-    <div
-      className="now-line"
-      style={{
-        top,
-        left: `calc(${axisWidth}px + (100% - ${axisWidth}px) * ${dayIndex} / ${days.length})`,
-        width: `calc((100% - ${axisWidth}px) / ${days.length})`,
-      }}
-    >
-      <i />
-      <span>now</span>
-    </div>
-  );
-}
-
-function OverviewCalendar({
-  anchor,
-  months,
-  items,
-  subjects,
-  onSelectDay,
-}: {
-  anchor: Date;
-  months: number;
-  items: CalendarItem[];
-  subjects: Subject[];
-  onSelectDay: (day: string) => void;
-}) {
-  const firstMonth = new Date(anchor.getFullYear(), anchor.getMonth(), 1, 12);
-  return (
-    <section className={`overview-grid months-${months}`}>
-      {Array.from({ length: months }, (_, monthIndex) => {
-        const month = new Date(
-          firstMonth.getFullYear(),
-          firstMonth.getMonth() + monthIndex,
-          1,
-          12,
-        );
-        const daysInMonth = new Date(
-          month.getFullYear(),
-          month.getMonth() + 1,
-          0,
-        ).getDate();
-        const leading = (month.getDay() + 6) % 7;
-        const monthItems = items.filter((item) => {
-          const inMonth = (value: string | null) => {
-            if (!value) return false;
-            const date = new Date(value);
-            return (
-              date.getFullYear() === month.getFullYear() &&
-              date.getMonth() === month.getMonth()
-            );
-          };
-          const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
-          const monthEnd = new Date(
-            month.getFullYear(),
-            month.getMonth() + 1,
-            1,
-          );
-          const overlapsMonth = Boolean(
-            item.startsAt &&
-            item.endsAt &&
-            new Date(item.startsAt) < monthEnd &&
-            new Date(item.endsAt) > monthStart,
-          );
-          return overlapsMonth || inMonth(item.deadline);
-        });
-        const monthDeadlines = monthItems.filter((item) => {
-          if (!item.deadline) return false;
-          const deadline = new Date(item.deadline);
-          return (
-            deadline.getFullYear() === month.getFullYear() &&
-            deadline.getMonth() === month.getMonth()
-          );
-        }).length;
-        return (
-          <article className="month-card" key={dateKey(month)}>
-            <header>
-              <div>
-                <h2>
-                  {formatDate(month, {
-                    month: "long",
-                    year: months === 1 ? "numeric" : undefined,
-                  })}
-                </h2>
-                <span>
-                  {monthItems.length} planned
-                  {monthDeadlines ? ` · ${monthDeadlines} due` : ""}
-                </span>
-              </div>
-              <div className="month-load-key" aria-label="Daily load key">
-                <i />
-                <span>load</span>
-              </div>
-            </header>
-            <div className="month-weekdays">
-              {"MTWTFSS".split("").map((day, index) => (
-                <span key={`${day}-${index}`}>{day}</span>
-              ))}
-            </div>
-            <div className="month-days">
-              {Array.from({ length: leading }, (_, index) => (
-                <span key={`empty-${index}`} />
-              ))}
-              {Array.from({ length: daysInMonth }, (_, index) => {
-                const date = new Date(
-                  month.getFullYear(),
-                  month.getMonth(),
-                  index + 1,
-                  12,
-                );
-                const key = dateKey(date);
-                const dayItems = items.filter(
-                  (item) =>
-                    (item.startsAt &&
-                      item.endsAt &&
-                      itemOverlapsDay(item, key)) ||
-                    (item.deadline && dateKey(new Date(item.deadline)) === key),
-                );
-                const capacity = capacityForDay(items, key);
-                return (
-                  <button
-                    className={`${key === dateKey(new Date()) ? "today" : ""} ${
-                      capacity.load >= 85 ? "overloaded" : ""
-                    }`}
-                    type="button"
-                    key={key}
-                    onClick={() => onSelectDay(key)}
-                    aria-label={`${formatDate(date, {
-                      weekday: "long",
-                      day: "numeric",
-                      month: "long",
-                    })}, ${dayItems.length} calendar items, ${capacity.load}% load`}
-                  >
-                    <div className="month-day-heading">
-                      <strong>{index + 1}</strong>
-                      {capacity.load > 0 && <span>{capacity.load}%</span>}
-                    </div>
-                    {months === 1 ? (
-                      <div className="month-event-list">
-                        {dayItems.slice(0, 3).map((item) => (
-                          <span
-                            className={`month-event energy-${item.energyType} flex-${item.flexibility} ${item.deadline ? "has-deadline" : ""}`}
-                            key={`${item.id}-${item.deadline ? "deadline" : "item"}`}
-                            style={classColorStyle(item, subjects)}
-                          >
-                            <i />
-                            <time>
-                              {item.deadline && !itemOverlapsDay(item, key)
-                                ? "Due"
-                                : isCalendarSpanItem(item)
-                                  ? "Span"
-                                  : item.startsAt
-                                    ? formatTime(item.startsAt)
-                                    : "Due"}
-                            </time>
-                            <em>
-                              {item.title}
-                              {isImportedTimetableItem(item) &&
-                                timetableRoomForItem(item) && (
-                                  <small>
-                                    Room {timetableRoomForItem(item)}
-                                  </small>
-                                )}
-                            </em>
-                          </span>
-                        ))}
-                        {dayItems.length > 3 && (
-                          <small>+{dayItems.length - 3} more</small>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="semester-density">
-                        <span
-                          style={{ width: `${Math.max(4, capacity.load)}%` }}
-                        />
-                        <div>
-                          {dayItems.slice(0, 4).map((item) => (
-                            <i
-                              className={`energy-${item.energyType}`}
-                              key={`${item.id}-${item.deadline ? "deadline" : "item"}`}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {dayItems.some((item) => item.deadline) && (
-                      <span className="month-deadline-mark" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </article>
-        );
-      })}
     </section>
   );
 }
