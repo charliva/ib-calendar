@@ -13,17 +13,11 @@ import {
   type FreePeriodRecommendation,
 } from "@/lib/school-day-engine";
 import {
-  ArrowDownToLine,
   CalendarPlus,
   CalendarClock,
-  Command,
-  FileUp,
   GraduationCap,
   Layers3,
-  Move,
   Plus,
-  Search,
-  Sparkles,
   X,
 } from "lucide-react";
 import {
@@ -40,7 +34,6 @@ import {
   Suspense,
 } from "react";
 import {
-  formatDate,
 } from "@/app/calendar-format";
 import {
   isAttentionQuestion,
@@ -73,6 +66,7 @@ import { QuickHud } from "@/components/calendar/QuickHud";
 import { CalendarHeader } from "@/components/calendar/CalendarHeader";
 import { ProposalReview } from "@/components/calendar/ProposalReview";
 import { EventModal } from "@/components/calendar/EventModal";
+import { CommandPalette } from "@/components/calendar/CommandPalette";
 import {
   rowToItem,
   safeMutationPayload,
@@ -4456,221 +4450,29 @@ export default function Home() {
         </Suspense>
       )}
 
-      {paletteOpen && (
-        <div
-          className="overlay"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.currentTarget === event.target) setPaletteOpen(false);
-          }}
-        >
-          <section className="command-palette" aria-label="Command palette">
-            <header>
-              <Command size={17} />
-              <span>Command</span>
-              <kbd>esc</kbd>
-            </header>
-            <div className="palette-modes">
-              <button
-                className={paletteMode === "command" ? "active" : ""}
-                type="button"
-                onClick={() => setPaletteMode("command")}
-              >
-                <Sparkles size={13} /> Create / transform
-              </button>
-              <button
-                className={paletteMode === "filter" ? "active" : ""}
-                type="button"
-                onClick={() => setPaletteMode("filter")}
-              >
-                <Search size={13} /> Filter
-              </button>
-              <button
-                className={paletteMode === "upload" ? "active" : ""}
-                type="button"
-                onClick={() => setPaletteMode("upload")}
-              >
-                <FileUp size={13} /> Document
-              </button>
-            </div>
-            {paletteMode === "upload" ? (
-              <div className="upload-drop">
-                <FileUp size={24} />
-                <h3>Document → proposed calendar</h3>
-                <p>
-                  Timetable, ticket, syllabus, poster, image, text, or PDF.
-                  Nothing is applied without a diff.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={commandBusy}
-                >
-                  {commandBusy ? "Reading…" : "Choose document"}
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*,application/pdf,text/plain,text/csv"
-                  onChange={(event) =>
-                    onDocumentSelected(event.target.files?.[0] ?? null)
-                  }
-                  hidden
-                />
-              </div>
-            ) : (
-              <form onSubmit={submitCommand}>
-                {paletteMode === "command" &&
-                  commandConversation.length > 0 && (
-                    <section
-                      className="command-conversation"
-                      aria-label="Command conversation"
-                    >
-                      <header>
-                        <span>One thing at a time</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCommandConversation([]);
-                            setCommandQuestions([]);
-                            setCommandText("");
-                          }}
-                        >
-                          Start over
-                        </button>
-                      </header>
-                      <div className="command-turns" aria-live="polite">
-                        {commandConversation.slice(-4).map((turn, index) => (
-                          <p
-                            className={turn.role}
-                            key={`${turn.role}-${index}-${turn.text}`}
-                          >
-                            {turn.text}
-                          </p>
-                        ))}
-                      </div>
-                      {commandQuestions.length > 0 && (
-                        <div className="command-question-pills">
-                          {commandQuestions.map((question) => (
-                            <span key={question.field}>{question.label}</span>
-                          ))}
-                        </div>
-                      )}
-                    </section>
-                  )}
-                <div className="palette-input">
-                  {paletteMode === "command" ? (
-                    <Sparkles size={18} />
-                  ) : (
-                    <Search size={18} />
-                  )}
-                  <input
-                    autoFocus
-                    value={commandText}
-                    onChange={(event) => setCommandText(event.target.value)}
-                    placeholder={
-                      paletteMode === "filter"
-                        ? "deep focus, task, chemistry…"
-                        : commandConversation.length > 0
-                          ? "Answer naturally…"
-                          : "Chemistry pages 52–57 Thursday"
-                    }
-                    aria-label="Calendar command"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!commandText.trim() || commandBusy}
-                  >
-                    {commandBusy
-                      ? "Thinking…"
-                      : commandIsHomework
-                        ? "Capture"
-                        : "Preview"}
-                  </button>
-                </div>
-                {paletteMode === "command" &&
-                commandConversation.length === 0 &&
-                commandIsHomework ? (
-                  <div
-                    className="parsed-intent homework-intent"
-                    aria-label="Parsed homework"
-                  >
-                    <span>Instant capture · local</span>
-                    <div>
-                      <strong>
-                        {homeworkCommandPreview.matched.subject ?? "Homework"}
-                      </strong>
-                      <i>{homeworkCommandPreview.title}</i>
-                      {homeworkCommandPreview.deadline && (
-                        <>
-                          <Move size={12} />
-                          <i>
-                            {formatDate(
-                              new Date(homeworkCommandPreview.deadline),
-                              {
-                                weekday: "short",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              },
-                            )}
-                          </i>
-                        </>
-                      )}
-                      <i className="intent-shift">
-                        {homeworkCommandPreview.taskType}
-                      </i>
-                    </div>
-                  </div>
-                ) : paletteMode === "command" &&
-                  commandConversation.length === 0 &&
-                  commandPreview ? (
-                  <div className="parsed-intent" aria-label="Parsed command">
-                    <span>Parsed intent</span>
-                    <div>
-                      <strong>{commandPreview.action}</strong>
-                      <i>{commandPreview.subject}</i>
-                      {commandPreview.timing && (
-                        <>
-                          <Move size={12} />
-                          <i>{commandPreview.timing}</i>
-                        </>
-                      )}
-                      {commandPreview.shift && (
-                        <i className="intent-shift">{commandPreview.shift}</i>
-                      )}
-                    </div>
-                  </div>
-                ) : null}
-              </form>
-            )}
-            {paletteMode === "command" && commandConversation.length === 0 && (
-              <div className="command-examples">
-                {[
-                  "Chemistry pages 52–57 Thursday",
-                  "Biology essay Friday 18:00",
-                  "French vocab tomorrow",
-                  "Move everything tomorrow afternoon one hour later",
-                ].map((example) => (
-                  <button
-                    type="button"
-                    key={example}
-                    onClick={() => setCommandText(example)}
-                  >
-                    <ArrowDownToLine size={12} />
-                    {example}
-                  </button>
-                ))}
-              </div>
-            )}
-            <footer>
-              <span>Schoolwork parses locally</span>
-              <span>AI handles complex changes</span>
-              <span>Rules validate</span>
-            </footer>
-          </section>
-        </div>
-      )}
-
+      <CommandPalette
+        open={paletteOpen}
+        mode={paletteMode}
+        commandText={commandText}
+        commandBusy={commandBusy}
+        commandConversation={commandConversation}
+        commandQuestions={commandQuestions}
+        commandPreview={commandPreview}
+        homeworkCommandPreview={homeworkCommandPreview}
+        commandIsHomework={commandIsHomework}
+        onClose={() => setPaletteOpen(false)}
+        onModeChange={setPaletteMode}
+        onCommandTextChange={setCommandText}
+        onSubmit={(event) => submitCommand(event, "command")}
+        onResetConversation={() => {
+          setCommandConversation([]);
+          setCommandQuestions([]);
+          setCommandText("");
+        }}
+        onDocumentSelected={(file) =>
+          onDocumentSelected(file, { mode: "school_timetable" })
+        }
+      />
       <ProposalReview
         proposal={proposal}
         timetableSubjectProposal={timetableSubjectProposal}
