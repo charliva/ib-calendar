@@ -157,6 +157,7 @@ export type Assignment = {
   minSessionMinutes: number;
   maxSessionMinutes: number;
   splittable: boolean;
+  actualMinutes: number | null;
   createdAt: string;
 };
 
@@ -223,7 +224,28 @@ export function normalizeAssignment(
     splittable: assignment.splittable ?? true,
     workType: assignment.workType ?? null,
     requiredEnergy: assignment.requiredEnergy ?? "medium",
+    actualMinutes: assignment.actualMinutes ?? null,
   };
+}
+
+export function estimateMinutesFromHistory(
+  workType: SchoolWorkType | null,
+  assignments: Assignment[],
+): number | null {
+  const observations = assignments
+    .filter(
+      (entry) =>
+        entry.status === "completed" &&
+        entry.actualMinutes !== null &&
+        entry.actualMinutes > 0 &&
+        entry.workType === workType,
+    )
+    .map((entry) => entry.actualMinutes!);
+  if (observations.length === 0) return null;
+  return Math.round(
+    observations.reduce((total, value) => total + value, 0) /
+      observations.length,
+  );
 }
 
 export const EMPTY_SCHOOL_STATE: SchoolState = {
@@ -456,6 +478,10 @@ export function rowToAssignment(row: Record<string, unknown>): Assignment {
     minSessionMinutes: numeric(row.min_session_minutes, 30),
     maxSessionMinutes: numeric(row.max_session_minutes, 90),
     splittable: row.splittable === undefined ? true : Boolean(row.splittable),
+    actualMinutes:
+      row.actual_minutes === null || row.actual_minutes === undefined
+        ? null
+        : numeric(row.actual_minutes),
     createdAt: text(row.created_at) || new Date().toISOString(),
   };
 }
@@ -483,6 +509,7 @@ export function assignmentToRow(assignment: Assignment) {
     min_session_minutes: assignment.minSessionMinutes,
     max_session_minutes: assignment.maxSessionMinutes,
     splittable: assignment.splittable,
+    actual_minutes: assignment.actualMinutes,
   };
 }
 

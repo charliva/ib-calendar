@@ -51,7 +51,7 @@ import {
   type FreePeriod,
   type FreePeriodRecommendation,
 } from "@/lib/school-day-engine";
-import { WORK_TYPE_LABELS } from "@/lib/school";
+import { estimateMinutesFromHistory, WORK_TYPE_LABELS } from "@/lib/school";
 import {
   isImportedTimetableItem,
   isItemInWeek,
@@ -98,6 +98,7 @@ type Props = {
   onSaveSchoolDaySettings: (settings: SchoolDaySettings) => void;
   onSaveAssignment: (assignment: Assignment) => void;
   onDeleteAssignment: (assignment: Assignment) => void;
+  onCompleteAssignment: (assignment: Assignment) => void;
   onPlanAssignment: (assignment: Assignment) => void;
   onAddAssignmentSession: (assignment: Assignment) => void;
   onOpenAssignmentSession: (session: CalendarItem) => void;
@@ -231,6 +232,7 @@ function emptyAssignment(subjectId = ""): Assignment {
     minSessionMinutes: 30,
     maxSessionMinutes: 90,
     splittable: true,
+    actualMinutes: null,
     createdAt: new Date().toISOString(),
   };
 }
@@ -485,11 +487,13 @@ export function SchoolWorkspace(props: Props) {
     closeEditor();
   }
 
-  const sortedAssignments = [...assignments].sort((a, b) => {
-    if (!a.dueAt) return 1;
-    if (!b.dueAt) return -1;
-    return new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime();
-  });
+  const sortedAssignments = [...assignments]
+    .filter((assignment) => assignment.status !== "completed")
+    .sort((a, b) => {
+      if (!a.dueAt) return 1;
+      if (!b.dueAt) return -1;
+      return new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime();
+    });
   const sortedAssessments = [...assessments].sort(
     (a, b) =>
       new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime(),
@@ -1188,6 +1192,20 @@ export function SchoolWorkspace(props: Props) {
                             title="Add an unscheduled work session"
                           >
                             <Plus size={13} /> Session
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              props.onCompleteAssignment(assignment)
+                            }
+                            title={
+                              assignment.status === "completed"
+                                ? "Already completed"
+                                : "Mark assignment as complete"
+                            }
+                            disabled={assignment.status === "completed"}
+                          >
+                            <CheckCircle2 size={13} /> Complete
                           </button>
                           <div className="record-actions">
                           <button
@@ -1889,9 +1907,15 @@ export function SchoolWorkspace(props: Props) {
                         const template = workType
                           ? props.schoolDaySettings.focusTemplates[workType]
                           : null;
+                        const suggested =
+                          estimateMinutesFromHistory(
+                            workType,
+                            props.assignments,
+                          ) ?? assignmentDraft.estimatedMinutes;
                         setAssignmentDraft({
                           ...assignmentDraft,
                           workType,
+                          estimatedMinutes: suggested,
                           ...(template
                             ? {
                                 minSessionMinutes: template.durationMin,
