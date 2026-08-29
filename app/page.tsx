@@ -17,8 +17,6 @@ import {
   CalendarPlus,
   CalendarClock,
   Check,
-  ChevronLeft,
-  ChevronRight,
   Command,
   FileUp,
   GraduationCap,
@@ -29,7 +27,6 @@ import {
   Search,
   Sparkles,
   Trash2,
-  Undo2,
   X,
 } from "lucide-react";
 import {
@@ -80,6 +77,7 @@ import { CalendarRail } from "@/components/calendar/CalendarRail";
 import { MobileActionSheets } from "@/components/calendar/MobileActionSheets";
 import { TaskDock } from "@/components/calendar/TaskDock";
 import { QuickHud } from "@/components/calendar/QuickHud";
+import { CalendarHeader } from "@/components/calendar/CalendarHeader";
 import {
   rowToItem,
   safeMutationPayload,
@@ -4206,93 +4204,26 @@ export default function Home() {
         }}
         onWheel={onWeekWheel}
       >
-        <header className="calendar-toolbar">
-          {zoom === "school" ? (
-            <div className="school-toolbar-title">
-              <GraduationCap size={15} />
-              <strong>School foundation</strong>
-            </div>
-          ) : (
-            <>
-              <div className="date-navigation">
-                <button
-                  type="button"
-                  aria-label="Previous period"
-                  onClick={() => moveAnchor(-1)}
-                >
-                  <ChevronLeft size={16} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const today = dateKey(new Date());
-                    setAnchorDate(today);
-                    setSelectedDay(today);
-                  }}
-                >
-                  Today
-                </button>
-                <button
-                  type="button"
-                  aria-label="Next period"
-                  onClick={() => moveAnchor(1)}
-                >
-                  <ChevronRight size={16} />
-                </button>
-                <TemporalField
-                  className="toolbar-date-jump"
-                  mode="date"
-                  value={anchorDate}
-                  onChange={(value) => {
-                    if (!value) return;
-                    setAnchorDate(value);
-                    setSelectedDay(value);
-                  }}
-                  required
-                  ariaLabel="Jump to a date"
-                />
-                <h2>
-                  {zoom === "semester"
-                    ? `${formatDate(anchor, { month: "long" })} – ${formatDate(
-                        new Date(
-                          anchor.getFullYear(),
-                          anchor.getMonth() + 5,
-                          1,
-                          12,
-                        ),
-                        { month: "long", year: "numeric" },
-                      )}`
-                    : formatDate(anchor, {
-                        month: "long",
-                        year: "numeric",
-                      })}
-                </h2>
-              </div>
-              <div className="zoom-control" aria-label="Temporal zoom">
-                {(
-                  ["upcoming", "day", "week", "month", "semester"] as Zoom[]
-                ).map((level) => (
-                  <button
-                    className={zoom === level ? "active" : ""}
-                    type="button"
-                    key={level}
-                    onClick={() => transitionState(() => setZoom(level))}
-                  >
-                    {level === "upcoming" ? "home" : level}
-                  </button>
-                ))}
-              </div>
-              <button
-                className="undo-button"
-                type="button"
-                onClick={undoLast}
-                disabled={undoStack.length === 0}
-              >
-                <Undo2 size={14} /> Undo
-              </button>
-            </>
-          )}
-        </header>
+        <CalendarHeader
+          zoom={zoom}
+          anchor={anchor}
+          anchorDate={anchorDate}
+          undoCount={undoStack.length}
+          onPrevious={() => moveAnchor(-1)}
+          onNext={() => moveAnchor(1)}
+          onToday={() => {
+            const today = dateKey(new Date());
+            setAnchorDate(today);
+            setSelectedDay(today);
+          }}
+          onAnchorChange={(value) => {
+            if (!value) return;
+            setAnchorDate(value);
+            setSelectedDay(value);
+          }}
+          onZoomChange={(level) => transitionState(() => setZoom(level))}
+          onUndo={undoLast}
+        />
 
         {notice && (
           <div className="toast" role="status">
