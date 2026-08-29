@@ -16,7 +16,6 @@ import {
   ArrowDownToLine,
   CalendarPlus,
   CalendarClock,
-  Check,
   Command,
   FileUp,
   GraduationCap,
@@ -25,7 +24,6 @@ import {
   Plus,
   Search,
   Sparkles,
-  Trash2,
   X,
 } from "lucide-react";
 import {
@@ -43,8 +41,6 @@ import {
 } from "react";
 import {
   formatDate,
-  formatProposalTiming,
-  formatSpan,
 } from "@/app/calendar-format";
 import {
   isAttentionQuestion,
@@ -55,10 +51,8 @@ import {
   simpleFallbackProposal,
 } from "@/lib/calendar/commands";
 import {
-  itemWithDuration,
   normalizeItemTiming,
   relevantCommandItems,
-  toggleAllDayItem,
 } from "@/lib/calendar/scheduling";
 import {
   isBlockPolishResponse,
@@ -78,6 +72,7 @@ import { TaskDock } from "@/components/calendar/TaskDock";
 import { QuickHud } from "@/components/calendar/QuickHud";
 import { CalendarHeader } from "@/components/calendar/CalendarHeader";
 import { ProposalReview } from "@/components/calendar/ProposalReview";
+import { EventModal } from "@/components/calendar/EventModal";
 import {
   rowToItem,
   safeMutationPayload,
@@ -86,8 +81,6 @@ import {
 import { AttentionHome } from "@/app/attention-home";
 import { AccessGate } from "@/app/access-gate";
 import { CalendarFallback } from "@/app/calendar-ui";
-import { LearningControls } from "@/app/learning-controls";
-import { TemporalField } from "@/app/ui/temporal-field";
 const WeeklyReview = lazy(() =>
   import("@/app/weekly-review").then((mod) => ({ default: mod.WeeklyReview })),
 );
@@ -159,9 +152,6 @@ import {
   energyLabels,
   flexibilityForNewItem,
   itemToRow,
-  isAllDayItem,
-  isCalendarSpanItem,
-  kindLabels,
   makeItem,
   scheduleInsights,
   startOfWeek,
@@ -171,14 +161,8 @@ import {
   type CalendarItem,
   type CalendarProposal,
   type EnergyRequirement,
-  type EnergyType,
-  type Flexibility,
   type HistoryEntry,
-  type ItemKind,
-  type Priority,
   type ProposalChange,
-  type SchoolWorkType,
-  type TaskContext,
 } from "@/lib/calendar-engine";
 import {
   looksLikeHomeworkCommand,
@@ -195,7 +179,6 @@ import {
   isItemInWeek,
   reconcileTimetableImport,
   timetableRoomForItem,
-  subjectsAreSimilar,
   type RejectedTimetableCandidate,
 } from "@/lib/timetable-import";
 import {
@@ -237,7 +220,6 @@ import {
   type SchoolClass,
   type SchoolDaySettings,
   type Subject,
-  WORK_TYPE_LABELS,
 } from "@/lib/school";
 import { createClient } from "@/lib/supabase/client";
 import { compactPendingMutations, prepareMutation } from "@/lib/sync";
@@ -246,12 +228,6 @@ type Zoom = "school" | "upcoming" | "day" | "week" | "month" | "semester";
 type PaletteMode = "command" | "filter" | "upload";
 type CommandTurn = { role: "user" | "assistant"; text: string };
 
-const energyTypes = Object.keys(energyLabels) as EnergyType[];
-const priorities: Priority[] = ["low", "medium", "high"];
-const flexibilities: Flexibility[] = ["fixed", "flexible", "elastic"];
-const kinds: ItemKind[] = ["event", "task", "intention"];
-const schoolWorkTypes = Object.keys(WORK_TYPE_LABELS) as SchoolWorkType[];
-const energyRequirements: EnergyRequirement[] = ["low", "medium", "high"];
 
 function transitionState(update: () => void) {
   if (typeof document !== "undefined" && "startViewTransition" in document) {
@@ -320,17 +296,6 @@ function commandItem(item: CalendarItem) {
     computerRequired: item.computerRequired,
     status: item.status,
   };
-}
-
-function toLocalInput(value: string | null) {
-  if (!value) return "";
-  const date = new Date(value);
-  const offset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
-}
-
-function fromLocalInput(value: string) {
-  return value ? new Date(value).toISOString() : null;
 }
 
 export default function Home() {
@@ -4724,614 +4689,35 @@ export default function Home() {
         }
         timetableImportIssues={timetableImportIssues}
       />
-      {draftItem && selectedItem && (
-        <div
-          className="overlay item-overlay"
-          onMouseDown={(event) => {
-            if (event.currentTarget === event.target) {
-              setSelectedItem(null);
-              setDraftItem(null);
-              setIsCreatingItem(false);
-            }
+      {selectedItem && draftItem && (
+        <EventModal
+          selectedItem={selectedItem}
+          draftItem={draftItem}
+          subjects={subjects}
+          assessments={assessments}
+          learningSource={sourceForCalendarItem(selectedItem)}
+          challengeLevel={latestSignalFor(
+            sourceForCalendarItem(selectedItem),
+            learningSignals,
+          )?.challengeLevel ?? null}
+          isCreatingItem={isCreatingItem}
+          draftTimingError={draftTimingError}
+          durationOptions={draftDurationOptions}
+          focusTemplates={schoolDaySettings.focusTemplates}
+          onDraftChange={setDraftItem}
+          onClose={() => {
+            setSelectedItem(null);
+            setDraftItem(null);
+            setIsCreatingItem(false);
           }}
-        >
-          <form className="item-inspector" onSubmit={saveDraft}>
-            <header>
-              <div>
-                <span className="micro-label">
-                  {isImportedTimetableItem(draftItem)
-                    ? "Edit school period"
-                    : isCreatingItem
-                      ? "New calendar item"
-                      : "Edit calendar item"}
-                </span>
-                {!isImportedTimetableItem(draftItem) && (
-                  <div className="quick-kind-switch" aria-label="Item type">
-                    {kinds.map((kind) => (
-                      <button
-                        className={draftItem.kind === kind ? "active" : ""}
-                        type="button"
-                        key={kind}
-                        onClick={() =>
-                          setDraftItem({
-                            ...draftItem,
-                            kind,
-                            flexibility:
-                              kind === "event"
-                                ? "flexible"
-                                : draftItem.flexibility === "fixed"
-                                  ? "flexible"
-                                  : draftItem.flexibility,
-                          })
-                        }
-                      >
-                        {kindLabels[kind]}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <button
-                className="inspector-close"
-                type="button"
-                onClick={() => {
-                  setSelectedItem(null);
-                  setDraftItem(null);
-                  setIsCreatingItem(false);
-                }}
-                aria-label="Close item editor"
-              >
-                <X size={16} />
-              </button>
-            </header>
-            {isImportedTimetableItem(draftItem) && (
-              <section className="school-period-subject">
-                <label>
-                  <span>Subject</span>
-                  <select
-                    autoFocus
-                    value={
-                      subjects.find((subject) =>
-                        subjectsAreSimilar(
-                          draftItem.title,
-                          subject.name,
-                          "",
-                          subject.shortName,
-                        ),
-                      )?.id ??
-                      (draftItem.title === "Assembly"
-                        ? "__assembly"
-                        : "__custom")
-                    }
-                    onChange={(event) => {
-                      if (event.target.value === "__assembly") {
-                        setDraftItem({
-                          ...draftItem,
-                          title: "Assembly",
-                          energyType: "social",
-                        });
-                        return;
-                      }
-                      if (event.target.value === "__custom") return;
-                      const subject = subjects.find(
-                        (candidate) => candidate.id === event.target.value,
-                      );
-                      if (!subject) return;
-                      setDraftItem({
-                        ...draftItem,
-                        title: subject.name,
-                        subjectId: subject.id,
-                        description: draftItem.description || subject.teacher,
-                      });
-                    }}
-                  >
-                    <option value="__assembly">Assembly</option>
-                    {subjects.map((subject) => (
-                      <option value={subject.id} key={subject.id}>
-                        {subject.name} ({subject.shortName})
-                      </option>
-                    ))}
-                    <option value="__custom">Custom label</option>
-                  </select>
-                </label>
-                <small>
-                  This changes only this period, not the whole subject.
-                </small>
-              </section>
-            )}
-            <input
-              className="item-title-input"
-              autoFocus={!isImportedTimetableItem(draftItem)}
-              value={draftItem.title}
-              onChange={(event) =>
-                setDraftItem({ ...draftItem, title: event.target.value })
-              }
-              aria-label="Item title"
-              placeholder={
-                draftItem.kind === "event"
-                  ? "What’s happening?"
-                  : "What needs doing?"
-              }
-            />
-            <section className="item-schedule-card">
-              <header className="item-section-heading">
-                <CalendarClock size={16} />
-                <div>
-                  <strong>Schedule</strong>
-                  <small>
-                    {draftItem.startsAt
-                      ? formatProposalTiming(draftItem)
-                      : "Leave unscheduled to keep it in your inbox"}
-                  </small>
-                </div>
-              </header>
-              <div className="item-schedule-row">
-                <label className="item-start-field">
-                  <span>Starts</span>
-                  <TemporalField
-                    mode="datetime"
-                    value={toLocalInput(draftItem.startsAt)}
-                    onChange={(value) => {
-                      const startsAt = fromLocalInput(value);
-                      const minutes = durationMinutes(draftItem);
-                      setDraftItem({
-                        ...draftItem,
-                        startsAt,
-                        endsAt: startsAt
-                          ? new Date(
-                              new Date(startsAt).getTime() + minutes * 60_000,
-                            ).toISOString()
-                          : null,
-                        status: startsAt ? "scheduled" : "inbox",
-                      });
-                    }}
-                    ariaLabel="Choose start date and time"
-                  />
-                </label>
-                <label className="item-duration-field">
-                  <span>Duration</span>
-                  <select
-                    value={durationMinutes(draftItem)}
-                    disabled={!draftItem.startsAt || isAllDayItem(draftItem)}
-                    onChange={(event) =>
-                      setDraftItem(
-                        itemWithDuration(draftItem, Number(event.target.value)),
-                      )
-                    }
-                  >
-                    {draftDurationOptions.map((minutes) => (
-                      <option value={minutes} key={minutes}>
-                        {minutes < 60
-                          ? `${minutes} min`
-                          : minutes % 60 === 0
-                            ? `${minutes / 60} ${minutes === 60 ? "hour" : "hours"}`
-                            : `${Math.floor(minutes / 60)} hr ${minutes % 60} min`}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              {!isImportedTimetableItem(draftItem) && draftItem.startsAt && (
-                <button
-                  className={`item-all-day-toggle ${
-                    isAllDayItem(draftItem) ? "active" : ""
-                  }`}
-                  type="button"
-                  aria-pressed={isAllDayItem(draftItem)}
-                  onClick={() => setDraftItem(toggleAllDayItem(draftItem))}
-                >
-                  <span aria-hidden="true" /> All day
-                </button>
-              )}
-            </section>
-            {draftTimingError && (
-              <p className="item-timing-error" role="alert">
-                {draftTimingError}
-              </p>
-            )}
-            {isCalendarSpanItem(draftItem) && (
-              <p className="item-span-summary">
-                <CalendarClock size={13} /> {formatSpan(draftItem)} · shown as a
-                continuous span in every calendar view
-              </p>
-            )}
-            {isImportedTimetableItem(draftItem) && (
-              <div className="school-period-details">
-                <label className="school-period-room">
-                  <span>Room</span>
-                  <input
-                    value={draftItem.room}
-                    onChange={(event) =>
-                      setDraftItem({
-                        ...draftItem,
-                        room: event.target.value,
-                      })
-                    }
-                    placeholder="e.g. KE114"
-                    maxLength={80}
-                  />
-                  <small>This changes only this class occurrence.</small>
-                </label>
-                <label className="school-period-notes">
-                  <span>Teacher & notes</span>
-                  <textarea
-                    value={draftItem.description}
-                    onChange={(event) =>
-                      setDraftItem({
-                        ...draftItem,
-                        description: event.target.value,
-                      })
-                    }
-                    placeholder="Teacher · class details"
-                  />
-                </label>
-              </div>
-            )}
-            <details className="item-more">
-              <summary>
-                <span>Details</span>
-                <small>Notes, exact time & planning</small>
-              </summary>
-              {!isImportedTimetableItem(draftItem) && (
-                <textarea
-                  className="item-detail-notes"
-                  value={draftItem.description}
-                  onChange={(event) =>
-                    setDraftItem({
-                      ...draftItem,
-                      description: event.target.value,
-                    })
-                  }
-                  placeholder="Add notes (optional)"
-                  aria-label="Item notes"
-                />
-              )}
-              <div className="compact-options-grid">
-                <label>
-                  <span>Exact end</span>
-                  <TemporalField
-                    mode="datetime"
-                    value={toLocalInput(draftItem.endsAt)}
-                    onChange={(value) => {
-                      const endsAt = fromLocalInput(value);
-                      const minutes =
-                        draftItem.startsAt && endsAt
-                          ? Math.max(
-                              5,
-                              Math.round(
-                                (new Date(endsAt).getTime() -
-                                  new Date(draftItem.startsAt).getTime()) /
-                                  60_000,
-                              ),
-                            )
-                          : draftItem.durationMin;
-                      setDraftItem({
-                        ...draftItem,
-                        endsAt,
-                        durationMin: minutes,
-                        durationMax: minutes,
-                      });
-                    }}
-                    ariaLabel="Choose exact end date and time"
-                  />
-                </label>
-                <label>
-                  <span>Energy</span>
-                  <select
-                    value={draftItem.energyType}
-                    onChange={(event) =>
-                      setDraftItem({
-                        ...draftItem,
-                        energyType: event.target.value as EnergyType,
-                      })
-                    }
-                  >
-                    {energyTypes.map((energy) => (
-                      <option key={energy} value={energy}>
-                        {energyLabels[energy]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  <span>Priority</span>
-                  <select
-                    value={draftItem.priority}
-                    onChange={(event) =>
-                      setDraftItem({
-                        ...draftItem,
-                        priority: event.target.value as Priority,
-                      })
-                    }
-                  >
-                    {priorities.map((priority) => (
-                      <option key={priority}>{priority}</option>
-                    ))}
-                  </select>
-                </label>
-                {!isImportedTimetableItem(draftItem) && (
-                  <>
-                    <label>
-                      <span>Deadline</span>
-                      <TemporalField
-                        mode="datetime"
-                        value={toLocalInput(draftItem.deadline)}
-                        onChange={(value) =>
-                          setDraftItem({
-                            ...draftItem,
-                            deadline: fromLocalInput(value),
-                          })
-                        }
-                        placeholder="No deadline"
-                        ariaLabel="Choose deadline"
-                      />
-                    </label>
-                    <label>
-                      <span>Flexibility</span>
-                      <select
-                        value={draftItem.flexibility}
-                        disabled={isCreatingItem && draftItem.kind === "event"}
-                        onChange={(event) =>
-                          setDraftItem({
-                            ...draftItem,
-                            flexibility: event.target.value as Flexibility,
-                          })
-                        }
-                      >
-                        {(isCreatingItem && draftItem.kind === "event"
-                          ? (["flexible"] as Flexibility[])
-                          : flexibilities
-                        ).map((flexibility) => (
-                          <option key={flexibility}>{flexibility}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      <span>Window starts</span>
-                      <TemporalField
-                        mode="datetime"
-                        value={toLocalInput(draftItem.windowStart)}
-                        onChange={(value) =>
-                          setDraftItem({
-                            ...draftItem,
-                            windowStart: fromLocalInput(value),
-                          })
-                        }
-                        placeholder="No start"
-                        ariaLabel="Choose window start"
-                      />
-                    </label>
-                    <label>
-                      <span>Window ends</span>
-                      <TemporalField
-                        mode="datetime"
-                        value={toLocalInput(draftItem.windowEnd)}
-                        onChange={(value) =>
-                          setDraftItem({
-                            ...draftItem,
-                            windowEnd: fromLocalInput(value),
-                          })
-                        }
-                        placeholder="No end"
-                        ariaLabel="Choose window end"
-                      />
-                    </label>
-                  </>
-                )}
-              </div>
-              <label className="constraint-field">
-                <span>Constraints</span>
-                <input
-                  value={draftItem.constraints.join(", ")}
-                  onChange={(event) =>
-                    setDraftItem({
-                      ...draftItem,
-                      constraints: event.target.value
-                        .split(",")
-                        .map((value) => value.trim())
-                        .filter(Boolean),
-                    })
-                  }
-                  placeholder="after school, before deadline"
-                />
-              </label>
-              {draftItem.kind === "task" && (
-                <>
-                  <label className="constraint-field">
-                    <span>Work type</span>
-                    <select
-                      value={draftItem.workType ?? ""}
-                      onChange={(event) => {
-                        const workType =
-                          (event.target.value as SchoolWorkType) || null;
-                        const template = workType
-                          ? schoolDaySettings.focusTemplates[workType]
-                          : null;
-                        setDraftItem({
-                          ...draftItem,
-                          workType,
-                          energyType: energyTypeForWorkType(workType),
-                          ...(template
-                            ? {
-                                durationMin: template.durationMin,
-                                durationMax: template.durationMax,
-                                endsAt: draftItem.startsAt
-                                  ? new Date(
-                                      new Date(draftItem.startsAt).getTime() +
-                                        template.durationMin * 60_000,
-                                    ).toISOString()
-                                  : null,
-                              }
-                            : {}),
-                        });
-                      }}
-                    >
-                      <option value="">Unspecified</option>
-                      {schoolWorkTypes.map((workType) => (
-                        <option value={workType} key={workType}>
-                          {WORK_TYPE_LABELS[workType]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="constraint-field">
-                    <span>Required energy</span>
-                    <select
-                      value={draftItem.requiredEnergy}
-                      onChange={(event) =>
-                        setDraftItem({
-                          ...draftItem,
-                          requiredEnergy: event.target
-                            .value as EnergyRequirement,
-                        })
-                      }
-                    >
-                      {energyRequirements.map((energy) => (
-                        <option value={energy} key={energy}>
-                          {energy}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="constraint-field">
-                    <span>Work context</span>
-                    <select
-                      value={draftItem.taskContext}
-                      onChange={(event) =>
-                        setDraftItem({
-                          ...draftItem,
-                          taskContext: event.target.value as TaskContext,
-                        })
-                      }
-                    >
-                      <option value="anywhere">Anywhere</option>
-                      <option value="school">School</option>
-                      <option value="home">Home</option>
-                      <option value="library">Library</option>
-                    </select>
-                  </label>
-                  <label className="check-field">
-                    <input
-                      type="checkbox"
-                      checked={draftItem.computerRequired}
-                      onChange={(event) =>
-                        setDraftItem({
-                          ...draftItem,
-                          computerRequired: event.target.checked,
-                        })
-                      }
-                    />
-                    Computer required
-                  </label>
-                  <label className="check-field">
-                    <input
-                      type="checkbox"
-                      checked={draftItem.splittable}
-                      onChange={(event) =>
-                        setDraftItem({
-                          ...draftItem,
-                          splittable: event.target.checked,
-                        })
-                      }
-                    />
-                    May be split into sessions
-                  </label>
-                </>
-              )}
-            </details>
-            {!isCreatingItem &&
-              (selectedItem.kind === "task" ||
-                selectedItem.subjectId ||
-                selectedItem.assignmentId ||
-                selectedItem.assessmentId) && (
-                <LearningControls
-                  source={sourceForCalendarItem(selectedItem)}
-                  value={
-                    latestSignalFor(
-                      sourceForCalendarItem(selectedItem),
-                      learningSignals,
-                    )?.challengeLevel ?? null
-                  }
-                  onChallenge={recordChallenge}
-                  onGoDeeper={openGoDeeper}
-                />
-              )}
-            <footer>
-              {!isCreatingItem && (
-                <button
-                  className="delete"
-                  type="button"
-                  onClick={() => deleteItem(selectedItem)}
-                >
-                  <Trash2 size={14} /> Delete
-                </button>
-              )}
-              {!isCreatingItem &&
-                selectedItem.flexibility !== "fixed" &&
-                selectedItem.status === "scheduled" && (
-                  <button
-                    className="secondary"
-                    type="button"
-                    onClick={() => {
-                      unscheduleItem(selectedItem.id);
-                      setSelectedItem(null);
-                      setDraftItem(null);
-                    }}
-                  >
-                    Unschedule
-                  </button>
-                )}
-              {!isCreatingItem &&
-                selectedItem.kind === "task" &&
-                (selectedItem.assignmentId || selectedItem.intentionId) && (
-                  <button
-                    className="secondary"
-                    type="button"
-                    onClick={() => {
-                      toggleAssignmentSession(selectedItem);
-                      setSelectedItem(null);
-                      setDraftItem(null);
-                    }}
-                  >
-                    <Check size={14} />
-                    {selectedItem.status === "completed"
-                      ? "Reopen session"
-                      : "Mark complete"}
-                  </button>
-                )}
-              {!isCreatingItem &&
-                selectedItem.kind === "task" &&
-                selectedItem.assessmentId &&
-                !selectedItem.learnedAt && (
-                  <button
-                    className="secondary"
-                    type="button"
-                    onClick={() => {
-                      const assessment = assessments.find(
-                        (entry) => entry.id === selectedItem.assessmentId,
-                      );
-                      if (assessment) {
-                        markRevisionLearned(selectedItem, assessment);
-                      }
-                      setSelectedItem(null);
-                      setDraftItem(null);
-                    }}
-                  >
-                    <Check size={14} /> Mark learned
-                  </button>
-                )}
-              <button
-                className="save"
-                type="submit"
-                disabled={!draftItem.title.trim() || Boolean(draftTimingError)}
-              >
-                {isCreatingItem
-                  ? `Create ${kindLabels[draftItem.kind].toLowerCase()}`
-                  : "Save changes"}
-              </button>
-            </footer>
-          </form>
-        </div>
+          onSubmit={saveDraft}
+          onDelete={deleteItem}
+          onUnschedule={unscheduleItem}
+          onToggleAssignmentSession={toggleAssignmentSession}
+          onMarkRevisionLearned={markRevisionLearned}
+          onChallenge={recordChallenge}
+          onGoDeeper={openGoDeeper}
+        />
       )}
 
       {accountOpen && (

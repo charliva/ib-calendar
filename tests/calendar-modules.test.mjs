@@ -14,6 +14,10 @@ import {
   rowToItem,
   safeMutationPayload,
 } from "../lib/db/queries/calendar.ts";
+import {
+  fromLocalInput,
+  toLocalInput,
+} from "../lib/calendar/time-inputs.ts";
 
 test("parses command action, subject, and timing", () => {
   const parsed = parsedCommand("Create revision notes today for biology");
@@ -135,4 +139,12 @@ test("repairs invalid offline calendar mutation payloads", () => {
   assert.equal(payload.ends_at, "2026-08-29T09:45:00.000Z");
   assert.equal(payload.window_start, null);
   assert.equal(payload.window_end, null);
+});
+
+test("converts local datetime inputs without shifting wall time", () => {
+  const localValue = toLocalInput(new Date(2026, 7, 29, 9, 30).toISOString());
+  assert.equal(localValue, "2026-08-29T09:30");
+  assert.equal(fromLocalInput(localValue), new Date(2026, 7, 29, 9, 30).toISOString());
+  assert.equal(toLocalInput(null), "");
+  assert.equal(fromLocalInput(""), null);
 });
