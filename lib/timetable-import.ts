@@ -28,6 +28,13 @@ export type NormalizedTimetableLesson = {
 export type ReconciledTimetableImport = {
   lessons: NormalizedTimetableLesson[];
   newSubjects: Subject[];
+  rejected: RejectedTimetableCandidate[];
+};
+
+export type RejectedTimetableCandidate = {
+  title: string;
+  evidence: string;
+  reason: string;
 };
 
 const SUBJECT_COLORS = [
@@ -248,7 +255,7 @@ export function normalizeTimetableLessons(
 export function reconcileTimetableImport(
   candidates: TimetableExtractionCandidate[],
   weekStart: string,
-  existingSubjects: Subject[],
+  existingSubjects: Subject[] = [],
 ): ReconciledTimetableImport {
   const week = dateFromKey(weekStart);
   week.setHours(0, 0, 0, 0);
@@ -257,14 +264,31 @@ export function reconcileTimetableImport(
   const lessons: NormalizedTimetableLesson[] = [];
   const newSubjects: Subject[] = [];
   const availableSubjects = [...existingSubjects];
+  const rejected: RejectedTimetableCandidate[] = [];
+  const reject = (candidate: TimetableExtractionCandidate, reason: string) => {
+    rejected.push({
+      title: candidate.title?.trim() || "Untitled row",
+      evidence: candidate.evidence || "Detected in the timetable screenshot.",
+      reason,
+    });
+  };
 
   for (const candidate of candidates) {
+    const candidateTitle = candidate.title?.trim() || "";
     if (
       candidate.kind !== "event" ||
-      !candidate.title.trim() ||
+      !candidateTitle ||
       !candidate.startsAt ||
       !candidate.endsAt
     ) {
+      reject(
+        candidate,
+        !candidateTitle
+          ? "The row has no lesson name."
+          : !candidate.startsAt || !candidate.endsAt
+            ? "The row is missing an exact start or end time."
+            : "The row is not a class event.",
+      );
       continue;
     }
     const start = new Date(candidate.startsAt);
@@ -280,6 +304,14 @@ export function reconcileTimetableImport(
       duration < 5 ||
       duration > 720
     ) {
+      reject(
+        candidate,
+        start < week || start >= weekEnd || end > weekEnd
+          ? "The lesson is outside the selected week."
+          : duration < 5
+            ? "The lesson is shorter than five minutes."
+            : "The lesson timing is invalid.",
+      );
       continue;
     }
     const assembly = isAssemblyCandidate(candidate);
@@ -316,7 +348,10 @@ export function reconcileTimetableImport(
       ? "Assembly"
       : matchedSubject?.name ?? candidate.rawLabel?.trim() ?? candidate.title.trim();
     const key = `${title.toLowerCase()}|${start.toISOString()}|${end.toISOString()}`;
-    if (seen.has(key)) continue;
+    if (seen.has(key)) {
+      reject(candidate, "The same lesson and time was already detected.");
+      continue;
+    }
     seen.add(key);
     lessons.push({
       evidence: candidate.evidence || "Visible lesson in the timetable screenshot.",
@@ -371,5 +406,6 @@ export function reconcileTimetableImport(
       )
       .slice(0, 70),
     newSubjects,
+    rejected,
   };
 }

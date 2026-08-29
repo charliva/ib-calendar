@@ -95,7 +95,7 @@ test("drops duplicates, fuzzy entries, and lessons outside the selected week", (
     endsAt: "2026-08-04T11:00:00+02:00",
     evidence: "Tuesday column",
   };
-  const lessons = normalizeTimetableLessons(
+  const result = reconcileTimetableImport(
     [
       valid,
       valid,
@@ -110,8 +110,16 @@ test("drops duplicates, fuzzy entries, and lessons outside the selected week", (
     "2026-08-03",
   );
 
-  assert.equal(lessons.length, 1);
-  assert.equal(lessons[0].item.title, "English");
+  assert.equal(result.lessons.length, 1);
+  assert.equal(result.rejected.length, 3);
+  assert.deepEqual(
+    result.rejected.map(({ reason }) => reason),
+    [
+      "The same lesson and time was already detected.",
+      "The row is missing an exact start or end time.",
+      "The lesson is outside the selected week.",
+    ],
+  );
 });
 
 test("an approved reimport may replace prior fixed screenshot events", () => {
