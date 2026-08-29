@@ -10,6 +10,10 @@ import {
   normalizeItemTiming,
   toggleAllDayItem,
 } from "../lib/calendar/scheduling.ts";
+import {
+  rowToItem,
+  safeMutationPayload,
+} from "../lib/db/queries/calendar.ts";
 
 test("parses command action, subject, and timing", () => {
   const parsed = parsedCommand("Create revision notes today for biology");
@@ -69,4 +73,66 @@ test("normalizes invalid scheduled end times", () => {
     status: "scheduled",
   });
   assert.equal(normalizeItemTiming(item).endsAt, "2026-08-29T09:45:00.000Z");
+});
+
+test("maps a database row back to a synced calendar item", () => {
+  const item = rowToItem({
+    id: "item-1",
+    kind: "task",
+    title: "Read chapter",
+    description: null,
+    room: null,
+    starts_at: "2026-08-29T09:00:00.000Z",
+    ends_at: null,
+    duration_min: 30,
+    duration_max: 30,
+    deadline: null,
+    window_start: null,
+    window_end: null,
+    energy_type: "deep_focus",
+    priority: "medium",
+    splittable: false,
+    flexibility: "flexible",
+    constraints: [],
+    assignment_id: null,
+    assessment_id: null,
+    intention_id: null,
+    subject_id: null,
+    revision_stage: null,
+    review_offset_days: null,
+    learned_at: null,
+    homework_capture_id: null,
+    task_context: "school",
+    computer_required: false,
+    work_type: null,
+    required_energy: "medium",
+    status: "scheduled",
+    source: "manual",
+    created_at: "2026-08-29T08:00:00.000Z",
+  });
+  assert.equal(item.syncStatus, "synced");
+  assert.equal(item.endsAt, "2026-08-29T09:30:00.000Z");
+});
+
+test("repairs invalid offline calendar mutation payloads", () => {
+  const mutation = {
+    id: 1,
+    table: "calendar_items",
+    action: "upsert",
+    recordId: "item-1",
+    payload: {
+      id: "item-1",
+      starts_at: "2026-08-29T09:00:00.000Z",
+      ends_at: "2026-08-29T08:00:00.000Z",
+      duration_min: 45,
+      window_start: "2026-08-29T10:00:00.000Z",
+      window_end: "2026-08-29T09:00:00.000Z",
+      status: "scheduled",
+    },
+    ownerKey: "user-1",
+  };
+  const payload = safeMutationPayload(mutation);
+  assert.equal(payload.ends_at, "2026-08-29T09:45:00.000Z");
+  assert.equal(payload.window_start, null);
+  assert.equal(payload.window_end, null);
 });
