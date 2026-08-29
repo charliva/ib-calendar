@@ -82,6 +82,18 @@ import {
   toggleAllDayItem,
 } from "@/lib/calendar/scheduling";
 import {
+  isBlockPolishResponse,
+  isClarificationResponse,
+  isCommandResponse,
+  isDeeperResponse,
+  type ClarificationResponse,
+} from "@/lib/ai/study-planner";
+import {
+  documentMediaType,
+  isExtractionResponse,
+  type ExtractionResponse,
+} from "@/lib/ai/timetable-parser";
+import {
   rowToItem,
   safeMutationPayload,
   syncErrorMessage,
@@ -200,7 +212,6 @@ import {
   timetableRoomForItem,
   subjectsAreSimilar,
   type RejectedTimetableCandidate,
-  type TimetableExtractionCandidate,
 } from "@/lib/timetable-import";
 import {
   getLastViewState,
@@ -248,22 +259,7 @@ import { compactPendingMutations, prepareMutation } from "@/lib/sync";
 
 type Zoom = "school" | "upcoming" | "day" | "week" | "month" | "semester";
 type PaletteMode = "command" | "filter" | "upload";
-type CommandResponse = Parameters<typeof proposalFromCommandResponse>[0];
 type CommandTurn = { role: "user" | "assistant"; text: string };
-type ClarificationResponse = {
-  kind: "clarification";
-  message: string;
-  questions: Array<{
-    field: "subject" | "date" | "time" | "location" | "other";
-    label: string;
-  }>;
-};
-type ExtractionCandidate = TimetableExtractionCandidate;
-type ExtractionResponse = {
-  title: string;
-  summary: string;
-  items: ExtractionCandidate[];
-};
 
 const energyTypes = Object.keys(energyLabels) as EnergyType[];
 const priorities: Priority[] = ["low", "medium", "high"];
@@ -312,143 +308,6 @@ const GATE_EMAILS = (process.env.NEXT_PUBLIC_ACCESS_GATE_EMAILS ?? "")
   .split(",")
   .map((entry) => entry.trim().toLowerCase())
   .filter(Boolean);
-
-function isCommandResponse(value: unknown): value is CommandResponse {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Record<string, unknown>;
-  return (
-    typeof candidate.title === "string" &&
-    typeof candidate.summary === "string" &&
-    Array.isArray(candidate.changes) &&
-    candidate.changes.every((change) => {
-      if (!change || typeof change !== "object") return false;
-      const entry = change as Record<string, unknown>;
-      return (
-        ["create", "update", "delete"].includes(String(entry.type)) &&
-        (entry.itemId === null || typeof entry.itemId === "string") &&
-        typeof entry.reason === "string" &&
-        (entry.after === null ||
-          (typeof entry.after === "object" && entry.after !== null))
-      );
-    })
-  );
-}
-
-function isClarificationResponse(
-  value: unknown,
-): value is ClarificationResponse {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Record<string, unknown>;
-  return (
-    candidate.kind === "clarification" &&
-    typeof candidate.message === "string" &&
-    Array.isArray(candidate.questions) &&
-    candidate.questions.length > 0 &&
-    candidate.questions.every((question) => {
-      if (!question || typeof question !== "object") return false;
-      const entry = question as Record<string, unknown>;
-      return (
-        ["subject", "date", "time", "location", "other"].includes(
-          String(entry.field),
-        ) && typeof entry.label === "string"
-      );
-    })
-  );
-}
-
-function isExtractionResponse(value: unknown): value is ExtractionResponse {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Record<string, unknown>;
-  return (
-    typeof candidate.title === "string" &&
-    typeof candidate.summary === "string" &&
-    Array.isArray(candidate.items) &&
-    candidate.items.every((item) => {
-      if (!item || typeof item !== "object") return false;
-      const entry = item as Record<string, unknown>;
-      return (
-        typeof entry.title === "string" &&
-        ["event", "task", "intention"].includes(String(entry.kind)) &&
-        typeof entry.evidence === "string"
-      );
-    })
-  );
-}
-
-function documentMediaType(file: File) {
-  if (file.type) return file.type;
-  const extension = file.name.split(".").at(-1)?.toLowerCase();
-  if (extension === "png") return "image/png";
-  if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
-  if (extension === "webp") return "image/webp";
-  if (extension === "heic" || extension === "heif") return "image/heic";
-  if (extension === "pdf") return "application/pdf";
-  if (extension === "csv") return "text/csv";
-  if (extension === "txt") return "text/plain";
-  return "application/octet-stream";
-}
-
-function isDeeperResponse(
-  value: unknown,
-): value is Pick<Exploration, "framing" | "directions"> {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Record<string, unknown>;
-  return (
-    typeof candidate.framing === "string" &&
-    Array.isArray(candidate.directions) &&
-    candidate.directions.length >= 4 &&
-    candidate.directions.every((direction) => {
-      if (!direction || typeof direction !== "object") return false;
-      const entry = direction as Record<string, unknown>;
-      return (
-        [
-          "why",
-          "connection",
-          "harder_problem",
-          "application",
-          "edge_case",
-          "teacher_question",
-          "understanding_check",
-          "further_reading",
-        ].includes(String(entry.kind)) &&
-        typeof entry.title === "string" &&
-        typeof entry.prompt === "string" &&
-        typeof entry.whyUseful === "string"
-      );
-    })
-  );
-}
-
-function isBlockPolishResponse(
-  value: unknown,
-): value is {
-  suggestions: Array<
-    Pick<
-      BlockSuggestion,
-      "id" | "category" | "title" | "description" | "reason"
-    >
-  >;
-} {
-  if (!value || typeof value !== "object") return false;
-  const suggestions = (value as Record<string, unknown>).suggestions;
-  return (
-    Array.isArray(suggestions) &&
-    suggestions.length === 3 &&
-    suggestions.every((suggestion) => {
-      if (!suggestion || typeof suggestion !== "object") return false;
-      const entry = suggestion as Record<string, unknown>;
-      return (
-        typeof entry.id === "string" &&
-        ["recovery", "responsibility", "meaningful"].includes(
-          String(entry.category),
-        ) &&
-        typeof entry.title === "string" &&
-        typeof entry.description === "string" &&
-        (entry.reason === null || typeof entry.reason === "string")
-      );
-    })
-  );
-}
 
 function commandItem(item: CalendarItem) {
   return {
