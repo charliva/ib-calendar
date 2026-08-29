@@ -43,7 +43,6 @@ import {
   Undo2,
   UserRound,
   X,
-  Zap,
 } from "lucide-react";
 import {
   type CSSProperties,
@@ -93,6 +92,7 @@ import {
   isExtractionResponse,
 } from "@/lib/ai/timetable-parser";
 import { AccountPanel } from "@/components/calendar/AccountPanel";
+import { CalendarRail } from "@/components/calendar/CalendarRail";
 import {
   rowToItem,
   safeMutationPayload,
@@ -346,16 +346,6 @@ function toLocalInput(value: string | null) {
 
 function fromLocalInput(value: string) {
   return value ? new Date(value).toISOString() : null;
-}
-
-function initials(value?: string | null) {
-  if (!value) return <UserRound size={16} />;
-  return value
-    .split(/[\s@._-]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
 }
 
 export default function Home() {
@@ -3899,149 +3889,70 @@ export default function Home() {
 
   return (
     <main id="main-content" className={`flex-shell ${draggingItemId ? "is-dragging" : ""}`}>
-      <aside className="icon-rail">
-        <button
-          className="flux-mark"
-          type="button"
-          aria-label="Today"
-          onClick={() => {
-            const today = dateKey(new Date());
-            setAnchorDate(today);
-            setSelectedDay(today);
-          }}
-        >
-          <Zap size={17} fill="currentColor" />
-          <small className="rail-label">Today</small>
-        </button>
-        <nav aria-label="Calendar tools">
-          <button
-            className={
-              !inboxOpen && !homeworkOpen && !hudOpen && zoom !== "school"
-                ? "active"
-                : ""
-            }
-            type="button"
-            aria-label="Attention home"
-            onClick={() => {
-              setInboxOpen(false);
-              setHomeworkOpen(false);
-              setHudOpen(false);
-              transitionState(() => setZoom("upcoming"));
-            }}
-          >
-            <CalendarClock size={19} />
-            <small className="rail-label">Home</small>
-          </button>
-          <button
-            className={zoom === "school" ? "active" : ""}
-            type="button"
-            aria-label="School"
-            onClick={() => {
-              setInboxOpen(false);
-              setHomeworkOpen(false);
-              setHudOpen(false);
-              transitionState(() => setZoom("school"));
-            }}
-          >
-            <GraduationCap size={19} />
-            <small className="rail-label">School</small>
-          </button>
-          <button
-            className={homeworkOpen ? "active" : ""}
-            type="button"
-            aria-label="Homework inbox"
-            onClick={() => {
-              setHomeworkOpen((current) => !current);
-              setInboxOpen(false);
-              setHudOpen(false);
-            }}
-          >
-            <BookOpen size={18} />
-            {activeHomework.length > 0 && <span>{activeHomework.length}</span>}
-            <small className="rail-label">Homework</small>
-          </button>
-          <button
-            className={inboxOpen ? "active" : ""}
-            type="button"
-            aria-label="Flexible work"
-            onClick={() => {
-              setInboxOpen((current) => !current);
-              setHomeworkOpen(false);
-              setHudOpen(false);
-            }}
-          >
-            <Inbox size={18} />
-            {inboxItems.length > 0 && <span>{inboxItems.length}</span>}
-            <small className="rail-label">Flexible work</small>
-          </button>
-          {weeklyReviewAvailable && (
-            <button
-              className={weeklyReviewOpen ? "active" : ""}
-              type="button"
-              aria-label="Weekly review"
-              onClick={() => {
-                setWeeklyReviewOpen(true);
-                setInboxOpen(false);
-                setHomeworkOpen(false);
-                setHudOpen(false);
-              }}
-            >
-              <ClipboardCheck size={18} />
-              <small className="rail-label">Review</small>
-            </button>
-          )}
-          <button
-            type="button"
-            aria-label="Command palette"
-            onClick={() => {
-              setPaletteOpen(true);
-              setInboxOpen(false);
-              setHomeworkOpen(false);
-              setHudOpen(false);
-            }}
-          >
-            <Command size={19} />
-            <small className="rail-label">Command menu</small>
-          </button>
-          <button
-            className={hudOpen && !historyOpen ? "active" : ""}
-            type="button"
-            aria-label="Quick HUD"
-            onClick={() => {
-              setHudOpen((current) => !current || historyOpen);
-              setHistoryOpen(false);
-              setInboxOpen(false);
-              setHomeworkOpen(false);
-            }}
-          >
-            <Activity size={18} />
-            <small className="rail-label">Now & next</small>
-          </button>
-          <button
-            className={hudOpen && historyOpen ? "active" : ""}
-            type="button"
-            aria-label="History"
-            onClick={() => {
-              setHistoryOpen(true);
-              setHudOpen(true);
-              setInboxOpen(false);
-              setHomeworkOpen(false);
-            }}
-          >
-            <History size={19} />
-            <small className="rail-label">History</small>
-          </button>
-        </nav>
-        <button
-          className="rail-account"
-          type="button"
-          aria-label="Account and sync"
-          onClick={() => setAccountOpen((current) => !current)}
-        >
-          {initials(user?.email)}
-          <small className="rail-label">Account & sync</small>
-        </button>
-      </aside>
+      <CalendarRail
+        zoom={zoom}
+        inboxOpen={inboxOpen}
+        homeworkOpen={homeworkOpen}
+        hudOpen={hudOpen}
+        historyOpen={historyOpen}
+        weeklyReviewOpen={weeklyReviewOpen}
+        weeklyReviewAvailable={weeklyReviewAvailable}
+        activeHomeworkCount={activeHomework.length}
+        inboxCount={inboxItems.length}
+        userEmail={user?.email}
+        onToday={() => {
+          const today = dateKey(new Date());
+          setAnchorDate(today);
+          setSelectedDay(today);
+        }}
+        onHome={() => {
+          setInboxOpen(false);
+          setHomeworkOpen(false);
+          setHudOpen(false);
+          transitionState(() => setZoom("upcoming"));
+        }}
+        onSchool={() => {
+          setInboxOpen(false);
+          setHomeworkOpen(false);
+          setHudOpen(false);
+          transitionState(() => setZoom("school"));
+        }}
+        onToggleHomework={() => {
+          setHomeworkOpen((current) => !current);
+          setInboxOpen(false);
+          setHudOpen(false);
+        }}
+        onToggleInbox={() => {
+          setInboxOpen((current) => !current);
+          setHomeworkOpen(false);
+          setHudOpen(false);
+        }}
+        onWeeklyReview={() => {
+          setWeeklyReviewOpen(true);
+          setInboxOpen(false);
+          setHomeworkOpen(false);
+          setHudOpen(false);
+        }}
+        onOpenCommand={() => {
+          setPaletteOpen(true);
+          setInboxOpen(false);
+          setHomeworkOpen(false);
+          setHudOpen(false);
+        }}
+        onToggleHud={() => {
+          setHudOpen((current) => !current || historyOpen);
+          setHistoryOpen(false);
+          setInboxOpen(false);
+          setHomeworkOpen(false);
+        }}
+        onOpenHistory={() => {
+          setHistoryOpen(true);
+          setHudOpen(true);
+          setInboxOpen(false);
+          setHomeworkOpen(false);
+        }}
+        onToggleAccount={() => setAccountOpen((current) => !current)}
+      />
 
       <nav className="mobile-tab-bar" aria-label="Mobile navigation">
         <button
