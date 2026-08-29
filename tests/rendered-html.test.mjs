@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-async function render() {
+async function render(url = "http://localhost/calendar") {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
 
   return worker.fetch(
-    new Request("http://localhost/", {
+    new Request(url, {
       headers: { accept: "text/html" },
     }),
     {
@@ -43,4 +43,10 @@ test("server-renders the Syllabi calendar", async () => {
   assert.doesNotMatch(html, /Biology revision/);
   assert.doesNotMatch(html, /codex-preview/);
   assert.doesNotMatch(html, /Your site is taking shape/);
+});
+
+test("redirects the legacy root to the calendar route", async () => {
+  const response = await render("http://localhost/");
+  assert.equal(response.status, 307);
+  assert.equal(response.headers.get("location"), "/calendar");
 });
