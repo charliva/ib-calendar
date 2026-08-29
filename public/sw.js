@@ -1,4 +1,4 @@
-const CACHE = "syllabi-mobile-shell-v5";
+const CACHE = "syllabi-mobile-shell-v6";
 const SHELL = ["/", "/manifest.webmanifest", "/favicon.svg", "/apple-touch-icon.png"];
 
 self.addEventListener("install", (event) => {
