@@ -13,6 +13,7 @@ export type OfflineState = SchoolState & {
   learningSignals: LearningSignal[];
   explorations: Exploration[];
   blockChoices: BlockChoice[];
+  completedReviewWeeks: string[];
   ownerKey?: string;
 };
 
@@ -50,6 +51,8 @@ export type LastViewState = {
   intentionsOpen: boolean;
   hudOpen: boolean;
   historyOpen: boolean;
+  weeklyReviewOpen: boolean;
+  weeklyReviewPromptWeek: string | null;
   ownerKey?: string;
   scrollTop?: number;
   viewportHeight?: number;
@@ -155,4 +158,81 @@ export async function updatePendingMutation(mutation: PendingMutation) {
   const database = await dbPromise;
   if (!database || mutation.id === undefined) return;
   await database.put("calendar-mutations", mutation);
+}
+
+export const MAX_PENDING_FAILURES = 5;
+
+export type DeadLetterMutation = PendingMutation & {
+  deadLetteredAt: string;
+  attempts: number;
+  lastError: string;
+};
+
+const DEAD_LETTER_STORE = "calendar-mutations-dead-letter";
+
+const dbWithDeadLetterPromise =
+  typeof window === "undefined"
+    ? null
+    : openDB("syllabi-offline", 8, {
+        upgrade(database, oldVersion) {
+          if (oldVersion < 7) {
+            if (!database.objectStoreNames.contains("calendar-state")) {
+              database.createObjectStore("calendar-state");
+            }
+            if (!database.objectStoreNames.contains("calendar-mutations")) {
+              database.createObjectStore("calendar-mutations", {
+                keyPath: "id",
+                autoIncrement: true,
+              });
+            }
+          }
+          if (
+            oldVersion < 8 &&
+            !database.objectStoreNames.contains(DEAD_LETTER_STORE)
+          ) {
+            database.createObjectStore(DEAD_LETTER_STORE, {
+              keyPath: "id",
+              autoIncrement: true,
+            });
+          }
+        },
+      });
+
+export function shouldDeadLetter(mutation: PendingMutation): boolean {
+  return (mutation.failureCount ?? 0) >= MAX_PENDING_FAILURES;
+}
+
+export async function moveToDeadLetter(
+  mutation: PendingMutation,
+  lastError: string,
+) {
+  const database = await dbWithDeadLetterPromise;
+  if (!database || mutation.id === undefined) return;
+  const transaction = database.transaction(
+    [DEAD_LETTER_STORE, "calendar-mutations"],
+    "readwrite",
+  );
+  const deadLetterStore = transaction.objectStore(DEAD_LETTER_STORE);
+  const liveStore = transaction.objectStore("calendar-mutations");
+  const dead: DeadLetterMutation = {
+    ...mutation,
+    deadLetteredAt: new Date().toISOString(),
+    attempts: mutation.failureCount ?? 0,
+    lastError,
+  };
+  await deadLetterStore.add({ ...dead, id: undefined });
+  await liveStore.delete(mutation.id);
+  await transaction.done;
+}
+
+export async function getDeadLetterMutations(): Promise<DeadLetterMutation[]> {
+  const database = await dbWithDeadLetterPromise;
+  if (!database) return [];
+  return database.getAll(DEAD_LETTER_STORE);
+}
+
+export async function removeDeadLetterMutation(id: number) {
+  const database = await dbWithDeadLetterPromise;
+  if (!database) return;
+  await database.delete(DEAD_LETTER_STORE, id);
 }

@@ -21,6 +21,8 @@ import type {
   Subject,
 } from "./school.ts";
 import type { Exploration, LearningSignal } from "./study-intelligence.ts";
+import { filterSuggestionsForPicker } from "./block-suggestion-safety.ts";
+import { PERSONAL_TEMPLATES, type PersonalTemplate } from "./personal-templates.ts";
 
 const MINUTE = 60_000;
 const DAY = 86_400_000;
@@ -480,15 +482,6 @@ const lightActivities: ContextualActivity[] = [
     score: 5,
   },
   {
-    id: "gilmore-girls",
-    title: "Watch Gilmore Girls",
-    description: "Watch an episode and let that be enough for this part of the day.",
-    minutes: 45,
-    locations: ["home"],
-    blocks: ["after_school", "evening", "night"],
-    score: 5,
-  },
-  {
     id: "gentle-yoga",
     title: "Do some gentle yoga",
     description: "Stretch and move slowly for a few minutes to reset physically.",
@@ -562,56 +555,6 @@ const usefulActivities: ContextualActivity[] = [
     blocks: ["evening", "night", "morning"],
     locations: ["home"],
     score: 8,
-  },
-];
-
-const meaningfulActivities: ContextualActivity[] = [
-  {
-    id: "be-present-socially",
-    title: "Be present with the people here",
-    description: "Let the social plan be the meaningful choice instead of squeezing productivity around it.",
-    minutes: 45,
-    ambient: socialContext,
-    score: 13,
-  },
-  {
-    id: "journal",
-    title: "Journal for a few minutes",
-    description: "Write down what is on your mind or what surprised you today without polishing it.",
-    minutes: 15,
-    locations: ["home"],
-    score: 7,
-  },
-  {
-    id: "write",
-    title: "Write something",
-    description: "Spend a contained stretch writing an idea, scene, reflection, or argument you care about.",
-    minutes: 30,
-    score: 6,
-  },
-  {
-    id: "walk",
-    title: "Go for a walk",
-    description: "Leave the screen behind and walk without needing the time to produce anything.",
-    minutes: 30,
-    locations: ["home", "school"],
-    score: 6,
-  },
-  {
-    id: "morning-curiosity",
-    title: "Read something interesting",
-    description: "Follow a question or idea before the demands of the day take over.",
-    minutes: 20,
-    blocks: ["morning", "travel_to_school"],
-    score: 8,
-  },
-  {
-    id: "connect",
-    title: "Connect with someone",
-    description: "Message or spend time with someone you care about, with no productivity angle attached.",
-    minutes: 20,
-    blocks: ["school", "travel_home", "after_school", "evening"],
-    score: 5,
   },
 ];
 
@@ -710,11 +653,17 @@ function responsibilityDescription(recommendation: NowRecommendation) {
   return `Move ${recommendation.title} forward for ${recommendation.durationMinutes} minutes without giving it the whole block.`;
 }
 
-function contextFits(
-  expected: Intention["taskContext"],
-  actual: CurrentStudyLocation,
-) {
-  return expected === "anywhere" || expected === actual;
+function personalTemplateFitsBlock(
+  template: PersonalTemplate,
+  block: TimeBlock,
+): boolean {
+  if (template.locations && !template.locations.includes(block.context.location)) {
+    return false;
+  }
+  if (template.blocks && !template.blocks.includes(block.type)) {
+    return false;
+  }
+  return true;
 }
 
 function meaningfulSuggestion(
@@ -722,112 +671,61 @@ function meaningfulSuggestion(
   input: BlockChoiceInput,
 ): BlockSuggestion {
   const available = block.context.availableMinutes;
-  if (socialContext.test(ambientText(block))) {
-    const activity = meaningfulActivities[0];
-    return {
-      id: suggestionId("meaningful", "generic", activity.id),
-      category: "meaningful",
-      sourceType: "generic",
-      sourceId: activity.id,
-      title: activity.title,
-      description: activity.description,
-      estimatedDuration: activityDuration(activity, block),
-      reason: "Your active social plan is context for the block, not an obstacle to planning it.",
-    };
-  }
-  const personalItems = input.items
-    .filter(
-      (item) =>
-        item.kind === "task" &&
-        !item.assignmentId &&
-        !item.assessmentId &&
-        !item.subjectId &&
-        !["completed", "archived"].includes(item.status) &&
-        item.durationMin <= available &&
-        (item.taskContext === "anywhere" || item.taskContext === block.context.location),
-    )
+  const candidates = PERSONAL_TEMPLATES
+    .filter((template) => personalTemplateFitsBlock(template, block))
+    .filter((template) => template.minutes <= available)
     .sort(
       (a, b) =>
-        recentPenalty("calendar_item", a.id, input.recentChoices) -
-        recentPenalty("calendar_item", b.id, input.recentChoices),
+        recentPenalty("generic", a.id, input.recentChoices) -
+        recentPenalty("generic", b.id, input.recentChoices) ||
+        b.score - a.score,
     );
-  const personalItem = personalItems[0];
-  if (personalItem) {
-    const minutes = Math.min(available, durationMinutes(personalItem));
-    return {
-      id: suggestionId("meaningful", "calendar_item", personalItem.id),
-      category: "meaningful",
-      sourceType: "calendar_item",
-      sourceId: personalItem.id,
-      title: personalItem.title,
-      description: `Give ${minutes} minutes to ${personalItem.title} because it matters to you, not because school demands it.`,
-      estimatedDuration: minutes,
-      reason: "A personal item already in your system fits this block.",
-    };
-  }
-
-  const intention = input.intentions
-    .filter(
-      (entry) =>
-        entry.status === "active" &&
-        contextFits(entry.taskContext, block.context.location) &&
-        entry.preferredSessionMinutes <= available,
-    )
-    .sort(
-      (a, b) =>
-        recentPenalty("intention", a.id, input.recentChoices) -
-          recentPenalty("intention", b.id, input.recentChoices) ||
-        (a.subjectId ? 1 : 0) - (b.subjectId ? 1 : 0),
-    )[0];
-  if (intention) {
-    return {
-      id: suggestionId("meaningful", "intention", intention.id),
-      category: "meaningful",
-      sourceType: "intention",
-      sourceId: intention.id,
-      title: intention.title,
-      description: intention.notes || `Spend a contained session moving ${intention.title} forward.`,
-      estimatedDuration: Math.min(available, intention.preferredSessionMinutes),
-      reason: "This is something you chose to make room for, rather than a fixed obligation.",
-    };
-  }
-
-  const exploration = input.explorations
-    .filter((entry) => entry.status === "saved" || entry.status === "generated")
-    .sort(
-      (a, b) =>
-        recentPenalty("exploration", a.id, input.recentChoices) -
-        recentPenalty("exploration", b.id, input.recentChoices),
-    )[0];
-  if (exploration) {
-    return {
-      id: suggestionId("meaningful", "exploration", exploration.id),
-      category: "meaningful",
-      sourceType: "exploration",
-      sourceId: exploration.id,
-      title: `Explore ${exploration.sourceTitle}`,
-      description: exploration.directions[0]?.prompt || exploration.framing,
-      estimatedDuration: Math.min(30, available),
-      reason: "You previously marked this as worth thinking about more deeply.",
-    };
-  }
-
-  const activity =
-    chooseActivity(meaningfulActivities, block, input, "generic") ??
-    meaningfulActivities[2];
+  const template = candidates[0] ?? PERSONAL_TEMPLATES[0];
+  const isLowEnergy = input.currentEnergy === "low";
+  const title = isLowEnergy ? template.low : template.high;
+  const minutes = Math.max(5, Math.min(template.minutes, available));
   return {
-    id: suggestionId("meaningful", "generic", activity.id),
+    id: suggestionId("meaningful", "generic", template.id),
     category: "meaningful",
     sourceType: "generic",
-    sourceId: activity.id,
-    title: activity.title,
-    description: activity.description,
-    estimatedDuration: activityDuration(activity, block),
-    reason: "A good block can include something chosen for interest, connection, or creativity.",
+    sourceId: template.id,
+    title,
+    description: isLowEnergy
+      ? `Step into a small break. ${title.replace(/\.$/, "")} gives your mind a genuine pause.`
+      : `Pick something chosen for interest, not obligation. ${title.replace(/\.$/, "")} fits this block.`,
+    estimatedDuration: minutes,
+    reason: isLowEnergy
+      ? "Your energy is set to low, so a small recharging step fits better than a project."
+      : "Wind down is always an option; Personal is the alternative when you have something you want to make room for.",
   };
 }
 
+function emitBlockSuggestionTelemetry(
+  suggestions: readonly BlockSuggestion[],
+  currentEnergy: EnergyRequirement,
+): void {
+  if (process.env.SYLLABI_DEV_TELEMETRY !== "true") return;
+  for (const suggestion of suggestions) {
+    const payload = {
+      event: "block_suggestion_emitted",
+      category: suggestion.category,
+      sourceType: suggestion.sourceType,
+      sourceId: suggestion.sourceId,
+      energy: currentEnergy,
+      minutes: suggestion.estimatedDuration,
+      blocked: false,
+    };
+    console.info(JSON.stringify(payload));
+  }
+}
+
 export function buildBlockChoice(input: BlockChoiceInput): BlockChoice | null {
+  // CHOKEPORT INVARIANT (PR1): every suggestion emitted from this function
+  // MUST pass through `filterSuggestionsForPicker`. No caller may render or
+  // return picker suggestions without going through the safety filter. The
+  // filter is the single public chokepoint; see lib/block-suggestion-safety.ts.
+  // It fails closed: unknown sources, unknown categories, missing fields, and
+  // blocked terms are dropped, never passed through.
   const block = inferCurrentTimeBlock(input);
   if (!block.context.flexible || block.context.availableMinutes < 5) return null;
   const existing = input.recentChoices.find(
@@ -835,11 +733,14 @@ export function buildBlockChoice(input: BlockChoiceInput): BlockChoice | null {
   );
   if (existing) return existing;
   const nowIso = input.now.toISOString();
-  const suggestions = [
+  const rawSuggestions = [
     recoverySuggestion(block, input),
     responsibilitySuggestion(block, input),
     meaningfulSuggestion(block, input),
   ];
+  const safeSuggestions = filterSuggestionsForPicker(rawSuggestions).slice(0, 2);
+  if (safeSuggestions.length === 0) return null;
+  emitBlockSuggestionTelemetry(safeSuggestions, input.currentEnergy);
   return {
     id: crypto.randomUUID(),
     blockKey: block.key,
@@ -847,7 +748,7 @@ export function buildBlockChoice(input: BlockChoiceInput): BlockChoice | null {
     startsAt: block.startsAt,
     endsAt: block.endsAt,
     context: block.context,
-    suggestions,
+    suggestions: safeSuggestions,
     selectedSuggestionId: null,
     status: "suggested",
     selectedAt: null,

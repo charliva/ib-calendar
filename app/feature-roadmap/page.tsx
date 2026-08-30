@@ -149,7 +149,7 @@ export default function FeatureRoadmapPage() {
       <div className="mx-auto w-full max-w-6xl px-6 py-12 sm:px-8 lg:px-12 lg:py-16">
         <header className="mb-14">
           <Link
-            href="/"
+            href="/calendar"
             className="inline-flex items-center gap-2 text-sm font-medium text-[var(--muted)] transition-colors hover:text-[var(--ink)]"
           >
             ← Back to Syllabi
@@ -321,7 +321,7 @@ export default function FeatureRoadmapPage() {
             two current dead ends and reuse the same review-before-apply model.
           </p>
           <Link
-            href="/"
+            href="/calendar"
             className="mt-8 inline-flex items-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-semibold text-[var(--ink)] transition-transform hover:-translate-y-0.5"
           >
             Return to the calendar
