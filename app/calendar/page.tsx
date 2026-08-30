@@ -182,6 +182,8 @@ import {
   queueMutation,
   removePendingMutation,
   saveLastViewState,
+  MAX_PENDING_FAILURES,
+  moveToDeadLetter,
   saveOfflineState,
   updatePendingMutation,
   type LastViewState,
