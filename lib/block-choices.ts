@@ -800,8 +800,13 @@ export function rowToBlockChoice(row: Record<string, unknown>): BlockChoice {
     endsAt: String(row.ends_at),
     context: row.context as TimeBlockContext,
     suggestions: Array.isArray(row.suggestions)
-      ? (row.suggestions as BlockSuggestion[]).slice(0, 3)
-      : [],
+      ? filterSuggestionsForPicker(
+          (row.suggestions as BlockSuggestion[]).slice(0, 3),
+        )
+      : [],  // The DB constraint allows 1–3 elements (PR1). Re-validate
+      // through the chokepoint on read so the invariant holds for legacy
+      // rows, out-of-band writes, and any other client that bypasses the
+      // app's write path.
     selectedSuggestionId:
       typeof row.selected_suggestion_id === "string"
         ? row.selected_suggestion_id

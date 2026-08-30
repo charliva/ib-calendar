@@ -1032,6 +1032,12 @@ export default function Home() {
   useEffect(() => {
     if (!hydrated || !isOnline || !user) return;
     let cancelled = false;
+    // The outbox flush and the cloud reload are independent. A failed
+    // flush (e.g. a block-choice row rejected by a DB constraint) must
+    // not block the rest of the calendar from loading, otherwise the user
+    // sees an empty agenda whenever a single mutation fails. We run them
+    // sequentially, but a non-empty failures list does not short-circuit
+    // loadCloud.
     flushPending(user.id)
       .then((failures) => {
         if (cancelled) return;
@@ -1039,18 +1045,17 @@ export default function Home() {
           setNotice(
             `${failures.length} change${failures.length === 1 ? " is" : "s are"} waiting to sync. Retrying automatically.`,
           );
-          setSyncing(false);
-          return;
         }
         return loadCloud(user);
       })
       .catch((error) => {
-        if (!cancelled) {
-          setNotice(
-            `Cloud sync will retry automatically: ${syncErrorMessage(error)}`,
-          );
-          setSyncing(false);
-        }
+        if (cancelled) return;
+        setNotice(
+          `Cloud sync will retry automatically: ${syncErrorMessage(error)}`,
+        );
+        // Still try to load the calendar so the user is not stuck on an
+        // empty agenda when the outbox itself throws.
+        return loadCloud(user);
       });
     return () => {
       cancelled = true;
