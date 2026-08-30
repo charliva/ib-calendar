@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Weekly Review - Receipt</title>
+  <style>
+    :root {
+      --ink: #151419;
+      --ink-soft: #29272e;
+      --paper: #fffefa;
+      --canvas: #f4f2ed;
+      --panel: #faf9f5;
+      --line: #dedbd3;
+      --line-soft: #ebe8e1;
+      --muted: #77736d;
+      --lilac: #8b84c9;
+      --lilac-dark: #5c5590;
+      --peach: #e6a878;
+      --mint: #6db894;
+      --sky: #70a8cf;
+      --rose: #c97080;
+      --yellow: #d4b050;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+      color-scheme: light;
+    }
+    * { box-sizing: border-box; margin: 0; }
+    body { background: var(--canvas); color: var(--ink); -webkit-font-smoothing: antialiased; }
+    .top-bar {
+      position: sticky; top: 0; z-index: 100; display: flex; justify-content: space-between; gap: 18px;
+      padding: 11px 20px; background: #211f24; color: #fff; font-size: 12px;
+    }
+    .top-bar strong { font-weight: 750; }
+    .top-bar span:last-child { color: #a9a5b0; }
+    .page { width: min(1120px, 100%); margin: 0 auto; padding: 30px clamp(14px, 4vw, 48px) 72px; }
+    .surface { display: none; overflow: hidden; border: 1px solid var(--line); border-radius: 22px; background: var(--paper); box-shadow: 0 18px 50px rgb(29 26 31 / 8%); }
+    .surface.active { display: block; animation: rise .22s ease both; }
+    @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    .surface-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 22px; border-bottom: 1px solid var(--line-soft); background: var(--panel); }
+    .surface-head h2 { font-size: 19px; letter-spacing: -.035em; }
+    .surface-head p { margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+    .week-nav { display: flex; align-items: center; gap: 5px; }
+    .week-nav button { width: 29px; height: 29px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--muted); cursor: pointer; }
+    .week-nav span { min-width: 66px; color: var(--muted); font-size: 11px; text-align: center; }
+    .hint { max-width: 760px; margin-top: 14px; padding: 10px 14px; border-radius: 10px; background: #f3f1eb; color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .hint b { color: var(--ink); }
+    .chip { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: #faf9f5; color: #46433e; font-size: 11px; font-weight: 660; cursor: pointer; transition: background .15s ease, color .15s ease; }
+    .chip:hover { background: #f0ede6; }
+    .chip.on { border-color: transparent; background: #e1eee5; color: #183b2d; }
+    .chip.on.peach { background: #fbe7d9; color: #70431f; }
+    .chip.on.rose { background: #f6e0e4; color: #7d3542; }
+    .chip.on.sky { background: #e0edf6; color: #265973; }
+    .stamp { display: inline-grid; place-items: center; min-width: 58px; padding: 4px 8px; border: 1.5px solid currentColor; border-radius: 5px; transform: rotate(-3deg); font-size: 9px; font-weight: 820; text-transform: uppercase; letter-spacing: .08em; }
+    .stamp.easy { color: #265973; } .stamp.good { color: #254b3c; } .stamp.hard { color: #70431f; } .stamp.lost { color: #7d3542; }
+    .receipt-list { background: #fffefa; }
+    .receipt-row {
+      --subject: var(--muted);
+      position: relative;
+      padding: 16px 20px 16px 24px;
+      border-bottom: 1px solid #f0eee8;
+      cursor: pointer;
+      transition: background .15s ease;
+    }
+    .receipt-row::before {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      width: 3px;
+      content: "";
+      background: var(--subject);
+      opacity: .72;
+    }
+    .receipt-row:hover { background: #fbfaf7; }
+    .receipt-row.open { background: #f8f6f1; }
+    .receipt-meta {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+    }
+    .receipt-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .receipt-title > div {
+      min-width: 0;
+    }
+    .receipt-title b {
+      overflow: hidden;
+      font-size: 12px;
+      font-weight: 710;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .receipt-meta-line {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 3px;
+      color: var(--muted);
+      font-family: "SF Mono", ui-monospace, monospace;
+      font-size: 9px;
+      line-height: 1;
+    }
+    .receipt-meta-line span + span::before {
+      margin-right: 7px;
+      content: "/";
+      color: #c9c5bc;
+    }
+    .receipt-meta-line .subject-label {
+      color: var(--ink);
+      font-weight: 740;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    .receipt-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+    .receipt-unrated {
+      display: inline-grid;
+      place-items: center;
+      min-width: 58px;
+      padding: 4px 8px;
+      border: 1px dashed #c9c5bc;
+      border-radius: 5px;
+      color: var(--muted);
+      font-size: 9px;
+      font-weight: 720;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+    .receipt-rating { display: none; gap: 5px; margin-top: 10px; }
+    .receipt-row.open .receipt-rating { display: flex; }
+    .study-plan {
+      display: none;
+      background: #fffefa;
+    }
+
+    .study-plan.active { display: block; animation: rise .22s ease both; }
+
+    .study-plan-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 22px 26px 18px;
+      border-bottom: 3px double var(--ink);
+      background: #fdfcf9;
+    }
+
+    .study-plan-header h2 { font-size: clamp(24px, 3.2vw, 32px); font-weight: 760; letter-spacing: -.045em; line-height: 1.08; }
+    .study-plan-header p { max-width: 620px; margin-top: 8px; color: var(--muted); font-size: 11px; line-height: 1.55; }
+    .study-plan-course { color: var(--muted); font-family: "SF Mono", monospace; font-size: 10px; white-space: nowrap; }
+
+    .study-plan-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(220px, .8fr);
+    }
+
+    .study-plan-main { padding: 18px 20px; border-right: 1px solid var(--line-soft); }
+    .study-plan-side { padding: 18px 20px; background: #faf9f5; }
+    .study-plan-main h3, .study-plan-side h3 { margin-bottom: 10px; padding-bottom: 7px; border-bottom: 1px solid var(--line); font-size: 10px; font-weight: 780; text-transform: uppercase; letter-spacing: .09em; }
+    .plan-rows { display: grid; gap: 8px; }
+    .plan-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 10px; padding: 10px 11px; border: 1px solid #e2ded7; border-radius: 8px; background: #fff; }
+    .plan-row b { display: block; font-size: 11px; }
+    .plan-row span { display: block; margin-top: 2px; color: var(--muted); font-size: 9px; }
+    .plan-row .duration { color: var(--ink); font-family: "SF Mono", monospace; font-size: 9px; font-weight: 700; white-space: nowrap; }
+    .plan-row .include { min-height: 26px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 5px; background: #faf9f5; color: var(--muted); font-size: 8px; font-weight: 780; text-transform: uppercase; cursor: pointer; }
+    .plan-row .include.on { background: #e1eee5; color: #183b2d; border-color: transparent; }
+    .plan-side-list { display: grid; gap: 8px; font-size: 10px; line-height: 1.45; }
+    .plan-side-list div { padding: 9px; border: 1px solid var(--line-soft); border-radius: 7px; background: #fff; }
+    .plan-side-list b { display: block; margin-bottom: 2px; font-size: 10px; }
+    .plan-side-list span { color: var(--muted); }
+    .bottom-dock {
+      position: fixed;
+      bottom: max(14px, calc(env(safe-area-inset-bottom) + 10px));
+      left: 50%;
+      z-index: 220;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: min(520px, calc(100% - 28px));
+      transform: translateX(-50%);
+    }
+    .bottom-dock button {
+      min-height: 48px;
+      border: 0;
+      background: var(--ink);
+      color: #fff;
+      cursor: pointer;
+      transition: opacity .15s ease, transform .15s ease;
+    }
+    .bottom-dock button:hover { opacity: .92; }
+    .bottom-dock button:active { transform: scale(.99); }
+    #dock-primary {
+      flex: 1;
+      border-radius: 999px;
+      font-size: 14px;
+      font-weight: 740;
+      box-shadow: 0 14px 34px rgb(21 20 25 / 22%);
+    }
+    #dock-back {
+      display: none;
+      flex: 0 0 52px;
+      width: 52px;
+      border-radius: 999px;
+      color: #fff;
+      font-size: 21px;
+      line-height: 1;
+      box-shadow: 0 14px 34px rgb(21 20 25 / 22%);
+    }
+    body[data-mode="plan"] #dock-back {
+      display: grid;
+      place-items: center;
+    }
+    body[data-mode="receipt"] #dock-primary {
+      width: 100%;
+    }
+    body[data-mode="plan"] #dock-primary {
+      font-size: 13px;
+    }
+
+    .subject-trend {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 7px;
+      border-radius: 99px;
+      font-size: 9px;
+      font-weight: 760;
+      white-space: nowrap;
+    }
+
+    .subject-trend.up { background: #f6e0e4; color: #7d3542; }
+    .subject-trend.steady { background: #f3f1eb; color: var(--muted); }
+    .subject-trend.down { background: #e0edf6; color: #265973; }
+
+    .primary-btn { min-height: 34px; padding: 8px 14px; border: 0; border-radius: 9px; background: var(--ink); color: #fff; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .primary-btn { min-height: 34px; padding: 8px 14px; border: 0; border-radius: 9px; background: var(--ink); color: #fff; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .toast { position: fixed; bottom: 82px; left: 50%; z-index: 300; padding: 9px 16px; border-radius: 99px; background: var(--ink); color: #fff; font-size: 12px; font-weight: 650; opacity: 0; pointer-events: none; transform: translateX(-50%); transition: opacity .22s ease, transform .22s ease; }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+    @media (max-width: 880px) {
+      .study-plan-grid { grid-template-columns: 1fr; }
+      .study-plan-main { border-right: 0; border-bottom: 1px solid var(--line-soft); }
+      .page { padding-bottom: 112px; }
+      .bottom-dock { width: calc(100% - 28px); }
+    }
+    @media (max-width: 560px) {
+      .surface-head { flex-direction: column; }
+      .study-plan-header { flex-direction: column; }
+      .receipt-right { flex-direction: column; align-items: flex-end; }
+    }
+
+    @media (min-width: 1200px) {
+      .page { width: min(1360px, 100%); padding: 40px clamp(20px, 3vw, 56px) 88px; }
+      .surface-head { padding: 22px 28px 20px; }
+      .surface-head h2 { font-size: 22px; }
+      .surface-head p { font-size: 12px; }
+      .receipt-row { padding: 18px 24px 18px 28px; }
+      .receipt-title b { font-size: 14px; }
+      .receipt-meta-line { font-size: 10px; }
+      .stamp { font-size: 10px; min-width: 64px; }
+      .receipt-unrated { font-size: 10px; min-width: 64px; }
+      .receipt-rating { gap: 6px; margin-top: 12px; }
+      .receipt-rating .chip { min-height: 32px; font-size: 12px; }
+      .study-plan-header h2 { font-size: 26px; }
+      .study-plan-main, .study-plan-side { padding: 22px 24px; }
+      .plan-row b { font-size: 12px; }
+      .plan-row span { font-size: 10px; }
+      .plan-row .duration { font-size: 10px; }
+      .plan-rows .include { font-size: 9px; min-height: 28px; }
+      .primary-btn { min-height: 38px; font-size: 13px; }
+      .hint { font-size: 12px; max-width: 800px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top-bar">
+    <span><strong>Preview</strong> - Receipt</span>
+    <span>Interactive local only</span>
+  </header>
+  <main class="page">
+    <div class="stage">
+      <section class="surface active" id="surface-receipt">
+        <div class="surface-head">
+          <div><h2>Weekly receipt</h2><p>A chronological ledger. Tap any line to stamp it.</p></div>
+          <div class="week-nav"><button>‹</button><span>9–13 Feb</span><button>›</button></div>
+        </div>
+        <div class="receipt-list" id="receipt-list"></div>
+      </section>
+      <section class="surface" id="surface-plan">
+        <div class="study-plan active">
+          <header class="study-plan-header">
+            <div>
+              <h2>Draft study plan</h2>
+              <p id="study-plan-subtitle">Built from this week’s review. Nothing is scheduled until you approve it.</p>
+            </div>
+            <span class="study-plan-course" id="study-plan-course">SOURCE - WEEKLY REVIEW</span>
+          </header>
+          <div class="study-plan-grid">
+            <section class="study-plan-main">
+              <h3>Proposed sessions</h3>
+              <div class="plan-rows" id="study-plan-rows"></div>
+            </section>
+            <aside class="study-plan-side">
+              <h3>Planning notes</h3>
+              <div class="plan-side-list" id="study-plan-notes"></div>
+            </aside>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+  <div class="toast" id="toast"></div>
+  <div class="bottom-dock" id="bottom-dock">
+    <button id="dock-back" type="button" aria-label="Back to review">‹</button>
+    <button id="dock-primary" type="button">Generate study plan</button>
+  </div>
+  <script>
+      const activities = [
+      { id: "bio-mon", day: "Mon", dayIndex: 0, subject: "Biology", kind: "Class", title: "Biology HL - Enzyme kinetics", detail: "60 min" },
+      { id: "math-mon", day: "Mon", dayIndex: 0, subject: "Maths", kind: "Class", title: "Math AI SL - Statistics", detail: "45 min" },
+      { id: "chem-assign", day: "Tue", dayIndex: 1, subject: "Chemistry", kind: "Assignment", title: "Chemistry practice set", detail: "60 min actual" },
+      { id: "eng-paper", day: "Wed", dayIndex: 2, subject: "English", kind: "Assignment", title: "English HL - Paper 2 practice", detail: "90 min actual" },
+      { id: "bio-test", day: "Wed", dayIndex: 2, subject: "Biology", kind: "Test", title: "Biology HL Test - Topic 3", detail: "60 min" },
+      { id: "ee-sources", day: "Thu", dayIndex: 3, subject: "Extended Essay", kind: "Assignment", title: "EE - source reading", detail: "90 / 120 min" },
+      { id: "hist-essay", day: "Fri", dayIndex: 4, subject: "History", kind: "Assignment", title: "History essay draft", detail: "Not submitted" }
+    ];
+    const challengeLabels = { easy: "Easy", good: "Good", hard: "Hard", lost: "Lost" };
+    const challengeVals = {};
+    let receiptOpenId = null;
+    let planSource = "receipt";
+    const subjectColor = { Biology: "#6db894", Maths: "#70a8cf", Chemistry: "#d4b050", English: "#8b84c9", History: "#e6a878", "Extended Essay": "#8b84c9" };
+    function toast(message) {
+      const toastEl = document.getElementById("toast");
+      toastEl.textContent = message;
+      toastEl.classList.add("show");
+      clearTimeout(toastEl._timer);
+      toastEl._timer = setTimeout(() => toastEl.classList.remove("show"), 1900);
+    }
+    function el(tag, className, html) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (html !== undefined) node.innerHTML = html;
+      return node;
+    }
+    function renderReceipt() {
+      const list = document.getElementById("receipt-list");
+      list.innerHTML = "";
+      activities.forEach((item) => {
+        const value = challengeVals[item.id];
+        const row = el("div", "receipt-row" + (receiptOpenId === item.id ? " open" : ""));
+        row.style.setProperty("--subject", subjectColor[item.subject] || "var(--muted)");
+        row.innerHTML = `
+          <div class="receipt-meta">
+            <div class="receipt-title">
+              <div>
+                <b>${item.title}</b>
+                <small class="receipt-meta-line">
+                  <span class="subject-label">${item.subject}</span>
+                  <span>${item.kind}</span>
+                  <span>${item.detail}</span>
+                </small>
+              </div>
+            </div>
+            <div class="receipt-right">${value ? `<span class="stamp ${value}">${challengeLabels[value]}</span>` : `<span class="receipt-unrated">Unrated</span>`}</div>
+          </div>
+          <div class="receipt-rating">${["easy", "good", "hard", "lost"].map((option) => `<button class="chip ${value === option ? `on ${option}` : ""}" data-value="${option}">${challengeLabels[option]}</button>`).join("")}</div>
+        `;
+        row.addEventListener("click", () => {
+          receiptOpenId = receiptOpenId === item.id ? null : item.id;
+          renderReceipt();
+        });
+        row.querySelectorAll(".chip").forEach((button) => {
+          button.addEventListener("click", (event) => {
+            event.stopPropagation();
+            challengeVals[item.id] = button.dataset.value;
+            const currentIndex = activities.findIndex((activity) => activity.id === item.id);
+            receiptOpenId = activities[currentIndex + 1]?.id ?? null;
+            toast(`${item.title}: ${challengeLabels[button.dataset.value]}`);
+            renderReceipt();
+          });
+        });
+        list.appendChild(row);
+      });
+    }
+    function challengeScore(value) {
+      return { easy: 1, good: 2, hard: 3, lost: 4 }[value] || 0;
+    }
+
+    function buildStudyPlan() {
+      const rows = [];
+      const subjects = [...new Set(activities.map((item) => item.subject))];
+      subjects.forEach((subject) => {
+        const subjectItems = activities.filter((item) => item.subject === subject);
+        const currentValues = subjectItems.map((item) => challengeVals[item.id]).filter(Boolean);
+        if (!currentValues.length) return;
+        const average = currentValues.reduce((total, value) => total + challengeScore(value), 0) / currentValues.length;
+        const title = activities.find((item) => item.subject === subject).title;
+        if (average >= 3.5) {
+          rows.push({ title, detail: "Two short sessions: concept repair, then guided practice.", duration: "2 × 25", priority: true });
+        } else if (average >= 2.5) {
+          rows.push({ title, detail: "One retrieval session before the next lesson.", duration: "30", priority: true });
+        } else if (average >= 1.5) {
+          rows.push({ title, detail: "Light maintenance to keep the topic active.", duration: "20", priority: false });
+        } else {
+          rows.push({ title, detail: "Extend with a harder problem set or depth reading.", duration: "25", priority: false });
+        }
+      });
+
+      if (!rows.length) {
+        rows.push(
+          { title: "Biology - kinetics", detail: "Default repair block from recurring difficulty.", duration: "2 × 25", priority: true },
+          { title: "History essay runway", detail: "Start before deadline pressure builds.", duration: "45", priority: true },
+          { title: "Maths maintenance", detail: "Keep recent statistics active.", duration: "20", priority: false }
+        );
+      }
+
+      return rows;
+    }
+
+    function renderStudyPlan(originMode) {
+      planSource = originMode;
+      const rows = buildStudyPlan();
+      const rowContainer = document.getElementById("study-plan-rows");
+      rowContainer.innerHTML = "";
+      rows.forEach((row, index) => {
+        rowContainer.appendChild(el("div", "plan-row", `
+          <div><b>${row.title}</b><span>${row.detail}</span></div>
+          <span class="duration">${row.duration} min</span>
+          <button class="include ${row.priority ? "on" : ""}" data-index="${index}">${row.priority ? "Included" : "Include"}</button>
+        `));
+      });
+      rowContainer.querySelectorAll(".include").forEach((button) => {
+        button.addEventListener("click", () => {
+          button.classList.toggle("on");
+          button.textContent = button.classList.contains("on") ? "Included" : "Include";
+        });
+      });
+
+      const notes = document.getElementById("study-plan-notes");
+      const hardRows = rows.filter((row) => row.priority).length;
+      notes.innerHTML = `
+        <div><b>Priority sessions</b><span>${hardRows} flagged as higher priority.</span></div>
+        <div><b>Planning principle</b><span>Repair and retrieval come before new depth.</span></div>
+        <div><b>Calendar impact</b><span>None until the plan is saved.</span></div>
+      `;
+
+      document.getElementById("study-plan-course").textContent = "SOURCE - WEEKLY RECEIPT";
+    }
+
+    function showStudyPlan(originMode) {
+      renderStudyPlan(originMode);
+      setMode("plan");
+    }
+
+    const surfaces = ["receipt", "plan"];
+    function setMode(mode) {
+      surfaces.forEach((name) => document.getElementById(`surface-${name}`).classList.toggle("active", name === mode));
+      document.body.dataset.mode = mode;
+      document.getElementById("dock-primary").textContent = mode === "receipt" ? "Generate study plan" : "Save draft";
+      if (mode === "receipt") renderReceipt();
+    }
+    document.getElementById("dock-primary").addEventListener("click", () => {
+      if (document.body.dataset.mode === "receipt") {
+        showStudyPlan(planSource);
+        return;
+      }
+      toast("Draft saved - calendar updated");
+    });
+    document.getElementById("dock-back").addEventListener("click", () => setMode("receipt"));
+    setMode("receipt");
+  </script>
+</body>
+</html>
