@@ -1,5 +1,11 @@
 "use client";
 
+import {
+  SignInButton,
+  SignUpButton,
+  Show,
+  UserButton,
+} from "@clerk/nextjs";
 import { ChevronLeft, ChevronRight, GraduationCap, Undo2 } from "lucide-react";
 import { TemporalField } from "../../app/ui/temporal-field.tsx";
 import { formatDate } from "../../app/calendar-format.ts";
@@ -98,6 +104,15 @@ export function CalendarHeader({
           >
             <Undo2 size={14} /> Undo
           </button>
+          <div className="clerk-auth-controls" aria-label="Account">
+            <Show when="signed-out">
+              <SignInButton mode="modal" />
+              <SignUpButton mode="modal" />
+            </Show>
+            <Show when="signed-in">
+              <UserButton />
+            </Show>
+          </div>
         </>
       )}
     </header>

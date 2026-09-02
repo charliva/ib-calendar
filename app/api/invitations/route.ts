@@ -1,14 +1,22 @@
 import { authenticatedUser } from "@/lib/supabase/api-auth";
-import { createAdminClient, ensureAccountAndSendCode } from "@/lib/supabase/admin";
+import { inviteUserByEmail } from "@/lib/supabase/admin";
 import {
-  createInvitationToken,
   INVITATION_LIMIT_PER_DAY,
-  invitationTokenHash,
   normalizeInvitationEmail,
 } from "@/lib/invitations";
+import { createClient } from "@supabase/supabase-js";
+
+function adminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const secretKey = process.env.SUPABASE_SECRET_KEY;
+  if (!url || !secretKey) throw new Error("Supabase admin client is not configured");
+  return createClient(url, secretKey, {
+    auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+  });
+}
 
 export async function POST(request: Request) {
-  const user = await authenticatedUser(request);
+  const user = await authenticatedUser();
   if (!user) {
     return Response.json({ error: "Authentication required" }, { status: 401 });
   }
@@ -27,7 +35,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const admin = createAdminClient();
+    const admin = adminClient();
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { count, error: countError } = await admin
       .from("invitations")
@@ -42,43 +50,41 @@ export async function POST(request: Request) {
       );
     }
 
-    const token = createInvitationToken();
-    const tokenHash = await invitationTokenHash(token);
-    const status = email ? "claimed" : "open";
-    const { data: invitation, error: insertError } = await admin
-      .from("invitations")
-      .insert({
-        created_by: user.id,
-        invited_email: email,
-        token_hash: tokenHash,
-        status,
-        claimed_at: email ? new Date().toISOString() : null,
-      })
-      .select("id, expires_at")
-      .single();
-    if (insertError) throw insertError;
-
-    if (email) {
-      try {
-        await ensureAccountAndSendCode(email, user.id);
-      } catch (error) {
-        await admin
-          .from("invitations")
-          .update({ status: "failed" })
-          .eq("id", invitation.id);
-        throw error;
-      }
+    if (!email) {
+      return Response.json(
+        { error: "An email address is required" },
+        { status: 400 },
+      );
     }
 
-    const origin = new URL(request.url).origin;
+    const result = await inviteUserByEmail(email, user.id);
+
+    const { error: insertError } = await admin.from("invitations").insert({
+      created_by: user.id,
+      invited_email: email,
+      token_hash: `clerk:${result.clerkUserId}:${result.expiresAt}`,
+      status: "open",
+    });
+    if (insertError) {
+      // Surface duplicate or quota issues clearly.
+      if (insertError.code === "23505") {
+        return Response.json(
+          { error: "This email already has a pending invitation" },
+          { status: 409 },
+        );
+      }
+      throw insertError;
+    }
+
     return Response.json({
-      inviteUrl: `${origin}/?invite=${token}`,
+      inviteUrl: result.signInUrl,
       email,
-      expiresAt: invitation.expires_at,
-      codeSent: Boolean(email),
+      expiresAt: result.expiresAt,
+      clerkUserId: result.clerkUserId,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not create invitation";
+    const message =
+      error instanceof Error ? error.message : "Could not create invitation";
     return Response.json({ error: message }, { status: 500 });
   }
 }

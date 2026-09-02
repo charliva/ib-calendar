@@ -1,3 +1,5 @@
+import { ClerkProvider } from "@clerk/nextjs";
+import { clerkVariables } from "@/components/auth/clerk-appearance";
 import type { Metadata, Viewport } from "next";
 import { Outfit, Space_Grotesk } from "next/font/google";
 import { headers } from "next/headers";
@@ -82,8 +84,10 @@ export default function RootLayout({
         <meta name="format-detection" content="telephone=no" />
       </head>
       <body className={`${displaySans.variable} ${monoSans.variable}`}>
-        <a href="#main-content" className="skip-link">Skip to content</a>
-        {children}
+        <ClerkProvider appearance={{ variables: clerkVariables }}>
+          <a href="#main-content" className="skip-link">Skip to content</a>
+          {children}
+        </ClerkProvider>
       </body>
     </html>
   );

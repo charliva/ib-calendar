@@ -1,15 +1,15 @@
-import { createClient, type User } from "@supabase/supabase-js";
+import { clerkClient } from "@clerk/nextjs/server";
+import { createClient } from "@supabase/supabase-js";
 
 function serverEnv() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   const secretKey = process.env.SUPABASE_SECRET_KEY;
 
-  if (!url || !publishableKey || !secretKey) {
-    throw new Error("Invitation service is not configured");
+  if (!url || !secretKey) {
+    throw new Error("Supabase admin client is not configured");
   }
 
-  return { url, publishableKey, secretKey };
+  return { url, secretKey };
 }
 
 export function createAdminClient() {
@@ -23,79 +23,79 @@ export function createAdminClient() {
   });
 }
 
-export function createServerAuthClient() {
-  const { url, publishableKey } = serverEnv();
-  return createClient(url, publishableKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-      detectSessionInUrl: false,
-    },
-  });
-}
+const INVITATION_TTL_SECONDS = 7 * 24 * 60 * 60;
 
-export async function ensureAccountAndSendCode(
+export type InvitationResult = {
+  clerkUserId: string;
+  signInUrl: string;
+  expiresAt: string;
+};
+
+/**
+ * Invite a new user by email.
+ *
+ * With Clerk in charge of identity, the invitation flow is:
+ *   1. Create a Clerk user for the email (or look one up if they already
+ *      exist on this Clerk instance).
+ *   2. Mint a one-time sign-in token scoped to that user. Visiting the
+ *      token URL signs them in directly without a password, which is the
+ *      closest equivalent to the legacy email-code flow.
+ *   3. Pre-provision the matching `auth.users` row in Supabase so the
+ *      foreign keys in our application tables resolve as soon as they
+ *      make their first authenticated request. The before_user_created
+ *      hook stamps `app_metadata.clerk_user_id` with the Clerk user id.
+ *
+ * `invitedBy` is the Clerk user id of the inviter, kept for audit.
+ */
+export async function inviteUserByEmail(
   email: string,
   invitedBy: string,
-) {
+): Promise<InvitationResult> {
+  const clients = await clerkClient();
+
+  // Step 1 — look up or create the Clerk user.
+  let clerkUserId: string;
+  const existing = await clients.users.getUserList({ emailAddress: [email] });
+  if (existing.data.length > 0) {
+    clerkUserId = existing.data[0]!.id;
+  } else {
+    const created = await clients.users.createUser({
+      emailAddress: [email],
+      skipPasswordRequirement: true,
+    });
+    clerkUserId = created.id;
+  }
+
+  // Step 2 — pre-provision the Supabase auth.users row. A row inserted via
+  // the admin client bypasses RLS, so we go through the `profiles` table
+  // (which the on_auth_user_created trigger mirrors). If the row already
+  // exists the upsert is a no-op.
   const admin = createAdminClient();
-  const { error: createError } = await admin.auth.admin.createUser({
-    email,
-    // With public signup disabled, GoTrue only sends an OTP when the address
-    // already belongs to a confirmed account. The OTP still proves ownership
-    // before a browser session is issued.
-    email_confirm: true,
-    app_metadata: { invited_by: invitedBy },
-  });
-
-  if (
-    createError &&
-    createError.code !== "email_exists" &&
-    createError.code !== "user_already_exists"
-  ) {
-    throw createError;
+  const { error: provisionError } = await admin
+    .from("profiles")
+    .upsert({ id: clerkUserId }, { onConflict: "id", ignoreDuplicates: true });
+  if (provisionError && provisionError.code !== "23505") {
+    throw provisionError;
   }
 
-  if (createError) {
-    // Repair accounts left unconfirmed by an earlier failed invitation.
-    // Supabase has no admin get-by-email method, so use its paginated list.
-    let existingUser: User | null = null;
-    for (let page = 1; page <= 20 && !existingUser; page += 1) {
-      const { data, error } = await admin.auth.admin.listUsers({
-        page,
-        perPage: 1000,
-      });
-      if (error) throw error;
-      existingUser =
-        data.users.find(
-          (user) => user.email?.trim().toLowerCase() === email,
-        ) ?? null;
-      if (data.users.length < 1000) break;
-    }
-
-    if (!existingUser) {
-      throw new Error("The invited account could not be found");
-    }
-
-    if (!existingUser.email_confirmed_at) {
-      const { error: confirmError } = await admin.auth.admin.updateUserById(
-        existingUser.id,
-        {
-          email_confirm: true,
-          app_metadata: {
-            ...existingUser.app_metadata,
-            invited_by: invitedBy,
-          },
-        },
-      );
-      if (confirmError) throw confirmError;
-    }
-  }
-
-  const auth = createServerAuthClient();
-  const { error: otpError } = await auth.auth.signInWithOtp({
-    email,
-    options: { shouldCreateUser: false },
+  // Step 3 — mint the one-time sign-in token.
+  const token = await clients.signInTokens.createSignInToken({
+    userId: clerkUserId,
+    expiresInSeconds: INVITATION_TTL_SECONDS,
   });
-  if (otpError) throw otpError;
+
+  // Audit the invitation source on the Clerk user so admin tooling can
+  // see who sent it. This is independent of Supabase RLS.
+  await clients.users.updateUserMetadata(clerkUserId, {
+    publicMetadata: {
+      invited_by: invitedBy,
+      invited_at: new Date().toISOString(),
+    },
+  });
+
+  return {
+    clerkUserId,
+    signInUrl: token.url,
+    expiresAt: new Date(Date.now() + INVITATION_TTL_SECONDS * 1000).toISOString(),
+  };
 }

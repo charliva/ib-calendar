@@ -1,6 +1,5 @@
 "use client";
 
-import type { User } from "@supabase/supabase-js";
 import {
   assignmentProgress,
   formatWorkMinutes,
@@ -59,6 +58,7 @@ import {
   isExtractionResponse,
 } from "@/lib/ai/timetable-parser";
 import { AccountPanel } from "@/components/calendar/AccountPanel";
+import { useUser } from "@clerk/nextjs";
 import { CalendarRail } from "@/components/calendar/CalendarRail";
 import { MobileActionSheets } from "@/components/calendar/MobileActionSheets";
 import { TaskDock } from "@/components/calendar/TaskDock";
@@ -73,7 +73,6 @@ import {
   syncErrorMessage,
 } from "@/lib/db/queries/calendar";
 import { AttentionHome } from "@/app/attention-home";
-import { AccessGate } from "@/app/access-gate";
 import { CalendarFallback } from "@/app/calendar-ui";
 const WeeklyReview = lazy(() =>
   import("@/app/weekly-review").then((mod) => ({ default: mod.WeeklyReview })),
@@ -217,7 +216,7 @@ import {
   type SchoolDaySettings,
   type Subject,
 } from "@/lib/school";
-import { createClient } from "@/lib/supabase/client";
+import { useSupabaseClient } from "@/lib/supabase/client";
 import { compactPendingMutations, prepareMutation } from "@/lib/sync";
 
 type Zoom = "school" | "upcoming" | "day" | "week" | "month" | "semester";
@@ -261,11 +260,6 @@ function defaultViewState(): LastViewState {
   };
 }
 
-const GATE_EMAILS = (process.env.NEXT_PUBLIC_ACCESS_GATE_EMAILS ?? "")
-  .split(",")
-  .map((entry) => entry.trim().toLowerCase())
-  .filter(Boolean);
-
 function commandItem(item: CalendarItem) {
   return {
     id: item.id,
@@ -295,8 +289,10 @@ function commandItem(item: CalendarItem) {
 }
 
 export default function Home() {
-  const supabase = useMemo(() => createClient(), []);
-  const [gateDenied, setGateDenied] = useState(false);
+  const supabase = useSupabaseClient();
+  // Local mirror of the Clerk user so the rest of the page can keep
+  // using the `user` identifier. The Clerk session is the source of
+  // truth; the Supabase OTP-flow is gone.
   const [items, setItems] = useState<CalendarItem[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -315,11 +311,10 @@ export default function Home() {
     DEFAULT_SCHOOL_DAY_SETTINGS,
   );
   const [undoStack, setUndoStack] = useState<HistoryEntry[]>([]);
-  const [user, setUser] = useState<User | null>(null);
-  const gateActive = GATE_EMAILS.length > 0;
-  const gateAllowed =
-    !gateActive ||
-    Boolean(user && GATE_EMAILS.includes((user.email ?? "").toLowerCase()));
+  const { user: clerkUser, isLoaded: clerkLoaded } = useUser();
+  const user = clerkUser
+    ? { id: clerkUser.id, email: clerkUser.primaryEmailAddress?.emailAddress ?? null }
+    : null;
   const [isOnline, setIsOnline] = useState(true);
   const [hydrated, setHydrated] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -378,13 +373,9 @@ export default function Home() {
     minute: number;
   } | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
-  const [email, setEmail] = useState("");
-  const [verificationCode, setVerificationCode] = useState("");
-  const [inviteToken, setInviteToken] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteUrl, setInviteUrl] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
-  const [authSent, setAuthSent] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [nowOpen, setNowOpen] = useState(false);
@@ -572,17 +563,13 @@ export default function Home() {
   );
 
   useEffect(() => {
-    const token = new URLSearchParams(window.location.search).get("invite");
-    if (!token || !/^[a-f0-9]{64}$/.test(token)) return;
-    const timeout = window.setTimeout(() => {
-      setInviteToken(token);
-      setAccountOpen(true);
-    }, 0);
-    return () => window.clearTimeout(timeout);
+    // Clerk delivers invitation acceptance through its own redirect URLs
+    // (the SignInToken issued by the invitations API). The legacy
+    // `?invite=…` deep link is no longer used.
   }, []);
 
   const loadCloud = useCallback(
-    async (activeUser: User) => {
+    async (activeUser: { id: string; email: string | null }) => {
       const writeRevisionAtStart = writeRevisionRef.current;
       setSyncing(true);
       const [
@@ -847,40 +834,8 @@ export default function Home() {
           setViewRestored(true);
         }
       });
-    supabase.auth.getSession().then(({ data }) => {
-      if (!alive) return;
-      const email = (data.session?.user?.email ?? "").toLowerCase();
-      if (GATE_EMAILS.length > 0 && email && !GATE_EMAILS.includes(email)) {
-        setGateDenied(true);
-        void supabase.auth.signOut();
-        setUser(null);
-        return;
-      }
-      setUser(data.session?.user ?? null);
-    });
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!alive) return;
-      const email = (session?.user?.email ?? "").toLowerCase();
-      if (
-        GATE_EMAILS.length > 0 &&
-        event === "SIGNED_IN" &&
-        email &&
-        !GATE_EMAILS.includes(email)
-      ) {
-        setGateDenied(true);
-        void supabase.auth.signOut();
-        setUser(null);
-        setAccountOpen(false);
-        return;
-      }
-      setUser(session?.user ?? null);
-      setAccountOpen(false);
-    });
     return () => {
       alive = false;
-      subscription.unsubscribe();
     };
   }, [applyRestoredScroll, applyViewState, supabase]);
 
@@ -2864,69 +2819,14 @@ export default function Home() {
     setIsCreatingItem(false);
   }
 
-  async function sendVerificationCode(event: FormEvent) {
-    event.preventDefault();
-    if (!email.trim()) return;
-    setAuthBusy(true);
-    let errorMessage = "";
-    if (inviteToken) {
-      const response = await fetch("/api/invitations/claim", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), token: inviteToken }),
-      });
-      const result = (await response.json()) as { error?: string };
-      if (!response.ok)
-        errorMessage = result.error ?? "Could not accept invitation";
-    } else {
-      const { error } = await supabase.auth.signInWithOtp({
-        email: email.trim(),
-        options: { shouldCreateUser: false },
-      });
-      errorMessage = error?.message ?? "";
-    }
-    setAuthBusy(false);
-    if (errorMessage) {
-      setNotice(errorMessage);
-      return;
-    }
-    setAuthSent(true);
-  }
-
-  async function verifyCode(event: FormEvent) {
-    event.preventDefault();
-    if (!email.trim() || !verificationCode.trim()) return;
-    setAuthBusy(true);
-    const { error } = await supabase.auth.verifyOtp({
-      email: email.trim(),
-      token: verificationCode.replace(/\s/g, ""),
-      type: "email",
-    });
-    setAuthBusy(false);
-    if (error) {
-      setNotice(error.message);
-      return;
-    }
-    if (inviteToken) {
-      window.history.replaceState({}, "", window.location.pathname);
-      setInviteToken("");
-    }
-    setVerificationCode("");
-    setAuthSent(false);
-    setNotice("Signed in. Your calendar is syncing now.");
-  }
-
-  async function createInvitation(sendCode: boolean) {
+  async function createInvitation() {
+    if (!inviteEmail.trim()) return;
     setInviteBusy(true);
     setInviteUrl("");
-    const { data } = await supabase.auth.getSession();
     const response = await fetch("/api/invitations", {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${data.session?.access_token ?? ""}`,
-      },
-      body: JSON.stringify({ email: sendCode ? inviteEmail : "" }),
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: inviteEmail.trim() }),
     });
     const result = (await response.json()) as {
       error?: string;
@@ -2937,60 +2837,11 @@ export default function Home() {
       setNotice(result.error ?? "Could not create invitation");
       return;
     }
-    if (sendCode) {
-      setInviteUrl("");
-      setNotice(
-        `Account ready. A verification code was sent to ${inviteEmail.trim()}.`,
-      );
-      setInviteEmail("");
-    } else {
-      setInviteUrl(result.inviteUrl);
-      try {
-        await navigator.clipboard.writeText(result.inviteUrl);
-        setNotice("One-time invite link copied.");
-      } catch {
-        setNotice("Invite link created. Copy it below.");
-      }
-    }
-  }
-
-  async function signOut() {
-    await supabase.auth.signOut();
-    setUser(null);
-    setItems([]);
-    setHistory([]);
-    setSubjects([]);
-    setClasses([]);
-    setClassExceptions([]);
-    setAssignments([]);
-    setAssessments([]);
-    setIntentions([]);
-    setLearningSignals([]);
-    setExplorations([]);
-    setBlockChoices([]);
-    setHomeworkCaptures([]);
-    setSchoolDaySettings(DEFAULT_SCHOOL_DAY_SETTINGS);
-    setUndoStack([]);
-    setCompletedReviewWeeks([]);
-    setWeeklyReviewPromptWeek(null);
-    await saveOfflineState({
-      items: [],
-      history: [],
-      subjects: [],
-      classes: [],
-      classExceptions: [],
-      assignments: [],
-      assessments: [],
-      intentions: [],
-      learningSignals: [],
-      explorations: [],
-      blockChoices: [],
-      homeworkCaptures: [],
-      completedReviewWeeks: [],
-      schoolDaySettings: DEFAULT_SCHOOL_DAY_SETTINGS,
-      ownerKey: "local",
-    });
-    setNotice("Signed out. This device now has a fresh local calendar.");
+    setInviteUrl(result.inviteUrl);
+    setNotice(
+      `Invitation ready for ${inviteEmail.trim()}. We just sent the link to their inbox.`,
+    );
+    setInviteEmail("");
   }
 
   function nowRecommendations(at: Date) {
@@ -3834,10 +3685,6 @@ export default function Home() {
     moveAnchor(direction);
   }
 
-  if (!gateAllowed) {
-    return <AccessGate denied={gateDenied} />;
-  }
-
   return (
     <main id="main-content" className={`flex-shell ${draggingItemId ? "is-dragging" : ""}`}>
       <CalendarRail
@@ -4529,29 +4376,15 @@ export default function Home() {
         />
       )}
 
-      {accountOpen && (
+      {accountOpen && user && (
         <AccountPanel
           user={user}
-          authSent={authSent}
-          authBusy={authBusy}
-          email={email}
-          verificationCode={verificationCode}
           inviteEmail={inviteEmail}
           inviteUrl={inviteUrl}
           inviteBusy={inviteBusy}
-          inviteToken={inviteToken}
           onClose={() => setAccountOpen(false)}
-          onEmailChange={setEmail}
-          onVerificationCodeChange={setVerificationCode}
           onInviteEmailChange={setInviteEmail}
-          onUseAnotherEmail={() => {
-            setAuthSent(false);
-            setVerificationCode("");
-          }}
           onCreateInvitation={createInvitation}
-          onSendVerificationCode={sendVerificationCode}
-          onVerifyCode={verifyCode}
-          onSignOut={signOut}
         />
       )}
     </main>

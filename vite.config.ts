@@ -1,4 +1,5 @@
 import vinext from "vinext";
+import { createRequire } from "node:module";
 import { defineConfig } from "vite";
 import hostingConfig from "./.openai/hosting.json" with { type: "json" };
 import { sites } from "./build/sites-vite-plugin.ts";
@@ -47,7 +48,23 @@ export default defineConfig(async () => {
     server: isCodexSeatbeltSandbox
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,
+    // Keep Clerk's CJS-bundled server helpers (e.g. src/runtime/node/safe-node-apis.js)
+    // out of Vite's ESM pre-bundling. They are server-only; the client only sees the
+    // ESM surface of @clerk/nextjs.
+    optimizeDeps: {
+      exclude: ["@clerk/nextjs"],
+    },
     plugins: [
+      {
+        name: "clerk-cjs-require-shim",
+        transform(code: string, id: string) {
+          if (this.environment?.name === "client") return;
+          if (!id.includes("@clerk") || !id.includes("node_modules")) return;
+          if (!code.includes("__commonJS(") && !code.includes("require(")) return;
+          const requireShim = 'import { createRequire as __createRequire } from "node:module";\nconst require = __createRequire(import.meta.url);\n';
+          return { code: requireShim + code, map: null };
+        },
+      },
       vinext(),
       sites(),
       cloudflare({

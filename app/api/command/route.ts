@@ -109,7 +109,7 @@ const clarificationSchema = z.object({
 const assistantResponseSchema = z.union([proposalSchema, clarificationSchema]);
 
 export async function POST(request: Request) {
-  if (!(await authenticatedUser(request))) {
+  if (!(await authenticatedUser())) {
     return Response.json({ error: "Authentication required" }, { status: 401 });
   }
   if (!process.env.AI_GATEWAY_API_KEY && !process.env.VERCEL_OIDC_TOKEN) {

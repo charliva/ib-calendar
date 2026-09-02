@@ -1,48 +1,44 @@
 "use client";
 
-import { Cloud, Lock, X } from "lucide-react";
-import type { FormEvent } from "react";
-import type { User } from "@supabase/supabase-js";
+import { Check, Copy, UserPlus, X } from "lucide-react";
+import { useState } from "react";
+
+type AccountUser = {
+  id: string;
+  email: string | null;
+};
 
 export function AccountPanel({
   user,
-  authSent,
-  authBusy,
-  email,
-  verificationCode,
   inviteEmail,
   inviteUrl,
   inviteBusy,
-  inviteToken,
   onClose,
-  onEmailChange,
-  onVerificationCodeChange,
   onInviteEmailChange,
-  onUseAnotherEmail,
   onCreateInvitation,
-  onSendVerificationCode,
-  onVerifyCode,
-  onSignOut,
 }: {
-  user: User | null;
-  authSent: boolean;
-  authBusy: boolean;
-  email: string;
-  verificationCode: string;
+  user: AccountUser;
   inviteEmail: string;
   inviteUrl: string;
   inviteBusy: boolean;
-  inviteToken: string;
   onClose: () => void;
-  onEmailChange: (value: string) => void;
-  onVerificationCodeChange: (value: string) => void;
   onInviteEmailChange: (value: string) => void;
-  onUseAnotherEmail: () => void;
-  onCreateInvitation: (sendCode: boolean) => void;
-  onSendVerificationCode: (event: FormEvent) => void;
-  onVerifyCode: (event: FormEvent) => void;
-  onSignOut: () => void;
+  onCreateInvitation: () => void;
 }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copyInviteUrl() {
+    if (!inviteUrl) return;
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // Clipboard might be denied in insecure contexts; the button still
+      // displays the URL so the user can copy by hand.
+    }
+  }
+
   return (
     <section className="account-card" aria-label="Account">
       <button
@@ -53,108 +49,69 @@ export function AccountPanel({
       >
         <X size={14} />
       </button>
-      {user ? (
-        <>
-          <Cloud size={18} />
-          <h2>Calendar synced</h2>
-          <p>{user.email}</p>
-          <div className="account-invites">
-            <h3>Invite someone</h3>
-            <p>
-              Copy a one-time link, or create their account and email a
-              verification code.
+
+      <p className="account-eyebrow">Account</p>
+      <h2 className="account-title">
+        Signed in as <span className="account-title-name">{user.email ?? "you"}</span>
+      </h2>
+      <p className="account-meta">
+        Your calendar syncs to this address across every device. Sign out is in
+        the top right.
+      </p>
+
+      <div className="account-invites">
+        <p className="account-eyebrow">Invite</p>
+        <h3>Bring a friend into the preview</h3>
+        <p>
+          We&apos;ll create their account and email a one-time sign-in link
+          that expires in seven days.
+        </p>
+        <form
+          className="account-invite-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onCreateInvitation();
+          }}
+        >
+          <label className="account-invite-label" htmlFor="invite-email">
+            Friend&apos;s email
+          </label>
+          <input
+            id="invite-email"
+            type="email"
+            value={inviteEmail}
+            onChange={(event) => onInviteEmailChange(event.target.value)}
+            placeholder="friend@example.com"
+            autoComplete="off"
+            required
+          />
+          <button type="submit" disabled={inviteBusy || !inviteEmail.trim()}>
+            {inviteBusy ? "Sending invite…" : "Send invite"}
+          </button>
+        </form>
+
+        {inviteUrl ? (
+          <div className="invite-result" role="status">
+            <p className="invite-result-label">
+              <UserPlus size={12} aria-hidden="true" /> One-time link ready
             </p>
-            <input
-              type="email"
-              value={inviteEmail}
-              onChange={(event) => onInviteEmailChange(event.target.value)}
-              placeholder="friend@example.com"
-              aria-label="Friend's email address"
-            />
-            <div className="account-invite-actions">
-              <button
-                type="button"
-                disabled={inviteBusy}
-                onClick={() => onCreateInvitation(false)}
-              >
-                Copy invite link
-              </button>
-              <button
-                type="button"
-                disabled={inviteBusy || !inviteEmail.trim()}
-                onClick={() => onCreateInvitation(true)}
-              >
-                {inviteBusy ? "Working…" : "Create & send code"}
-              </button>
-            </div>
-            {inviteUrl && (
-              <button
-                className="invite-url"
-                type="button"
-                onClick={() => navigator.clipboard.writeText(inviteUrl)}
-                title={inviteUrl}
-              >
-                {inviteUrl}
-              </button>
-            )}
+            <button
+              className="invite-url"
+              type="button"
+              onClick={copyInviteUrl}
+              title={inviteUrl}
+            >
+              <span className="invite-url-text">{inviteUrl}</span>
+              <span className="invite-url-action" aria-hidden="true">
+                {copied ? <Check size={12} /> : <Copy size={12} />}
+              </span>
+            </button>
+            <p className="invite-result-help">
+              {copied ? "Copied to clipboard." : "Tap to copy the link."}
+            </p>
           </div>
-          <button type="button" onClick={onSignOut}>
-            Sign out
-          </button>
-        </>
-      ) : authSent ? (
-        <>
-          <Lock size={18} />
-          <h2>Enter your code</h2>
-          <p>We sent a single-use verification code to {email}.</p>
-          <form onSubmit={onVerifyCode}>
-            <input
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              value={verificationCode}
-              onChange={(event) => onVerificationCodeChange(event.target.value)}
-              placeholder="Verification code"
-              minLength={6}
-              maxLength={8}
-              required
-              autoFocus
-              aria-label="Verification code"
-            />
-            <button type="submit" disabled={authBusy}>
-              {authBusy ? "Checking…" : "Verify & sign in"}
-            </button>
-          </form>
-          <button type="button" onClick={onUseAnotherEmail}>
-            Use another email
-          </button>
-        </>
-      ) : (
-        <>
-          <Cloud size={18} />
-          <h2>
-            {inviteToken ? "Accept your invitation" : "Sync every device"}
-          </h2>
-          <p>
-            {inviteToken
-              ? "Enter your email and we'll create your account with a single-use code."
-              : "Enter your email to receive a single-use sign-in code."}
-          </p>
-          <form onSubmit={onSendVerificationCode}>
-            <input
-              type="email"
-              value={email}
-              onChange={(event) => onEmailChange(event.target.value)}
-              placeholder="you@example.com"
-              required
-              aria-label="Email address"
-            />
-            <button type="submit" disabled={authBusy}>
-              {authBusy ? "Sending…" : "Send verification code"}
-            </button>
-          </form>
-        </>
-      )}
+        ) : null}
+      </div>
     </section>
   );
 }
