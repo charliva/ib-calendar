@@ -1825,7 +1825,7 @@ kbd {
 .proposal-sheet > header p {
   margin: 0;
   color: #77716d;
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.45;
 }
 
@@ -1849,7 +1849,7 @@ kbd {
   background: #ece8ff;
   border-radius: 5px;
   font-family: var(--font-mono), monospace;
-  font-size: 7px;
+  font-size: 9px;
   font-weight: 750;
   text-transform: uppercase;
 }
@@ -1866,13 +1866,13 @@ kbd {
 
 .proposal-list h3 {
   margin: 0 0 4px;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .proposal-list p {
   margin: 0 0 8px;
   color: #79736c;
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -1889,7 +1889,7 @@ kbd {
   background: #f0eee9;
   border-radius: 4px;
   font-family: var(--font-mono), monospace;
-  font-size: 7px;
+  font-size: 10px;
 }
 
 .validation-error,
@@ -1897,7 +1897,7 @@ kbd {
   display: block;
   margin-top: 6px;
   color: #ba4057;
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .validation-warning {
@@ -4772,7 +4772,7 @@ body {
 
 .proposal-sheet {
   width: min(690px, calc(100vw - var(--rail) - 36px));
-  max-height: 46vh;
+  max-height: min(70vh, 640px);
   pointer-events: auto;
   background: rgb(246 247 243 / 97%);
   border: 1px solid #cfd2cb;
@@ -4823,14 +4823,14 @@ body {
 .subject-review-intro p {
   margin: 0;
   color: #777972;
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
 .subject-review-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: 10px;
 }
 
 .subject-review-card {
@@ -4850,7 +4850,7 @@ body {
 
 .subject-review-card > header strong {
   color: #777972;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 620;
 }
 
@@ -4870,7 +4870,7 @@ body {
   display: block;
   margin: 0 0 4px 1px;
   color: #898b85;
-  font-size: 7px;
+  font-size: 10px;
   font-weight: 620;
   letter-spacing: .04em;
   text-transform: uppercase;
@@ -4885,13 +4885,13 @@ body {
   border: 1px solid #d7dad3;
   border-radius: 6px;
   outline: 0;
-  font-size: 9px;
+  font-size: 13px;
 }
 
 .subject-review-name input {
   height: 38px;
   background: #fff;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 620;
 }
 
@@ -4924,7 +4924,7 @@ body {
   background: #fff;
   border: 1px solid #d6d9d2;
   border-radius: 7px;
-  font-size: 8px;
+  font-size: 12px;
   font-weight: 620;
 }
 
@@ -4940,8 +4940,8 @@ body {
 
 .proposal-list {
   display: grid;
-  padding: 5px 13px;
-  gap: 0;
+  padding: 10px 15px;
+  gap: 2px;
 }
 
 .proposal-subject-preview {
@@ -4992,7 +4992,7 @@ body {
 
 .proposal-subject-list strong {
   overflow: hidden;
-  font-size: 9px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -5000,7 +5000,7 @@ body {
 .proposal-subject-list small,
 .proposal-subject-preview > p {
   color: #85847f;
-  font-size: 7px;
+  font-size: 10px;
 }
 
 .proposal-subject-preview > p {
@@ -5008,8 +5008,8 @@ body {
 }
 
 .proposal-list article {
-  grid-template-columns: 48px 1fr 20px;
-  padding: 8px 0;
+  grid-template-columns: 52px 1fr 22px;
+  padding: 12px 0;
 }
 
 .proposal-sheet footer {
@@ -5024,7 +5024,7 @@ body {
   align-items: center;
   gap: 6px;
   color: #81837e;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .proposal-sheet footer .approve {
@@ -5645,7 +5645,7 @@ body {
 
   .proposal-sheet {
     width: 100%;
-    max-height: 64vh;
+    max-height: 80vh;
   }
 
   .proposal-sheet footer > div {
@@ -7596,7 +7596,7 @@ body {
   background: #eeebfa;
   border: 1px solid #d7d1ed;
   border-radius: 7px;
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 650;
   white-space: nowrap;
 }
@@ -7656,20 +7656,20 @@ body {
 }
 
 .timetable-import-note span {
-  font-size: 8px;
+  font-size: 11px;
   line-height: 1.45;
 }
 
 .timetable-import-note strong {
   margin-bottom: 1px;
   color: #484750;
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .timetable-import-note small {
   color: #6559b1;
   font-family: var(--font-mono), monospace;
-  font-size: 7px;
+  font-size: 10px;
   white-space: nowrap;
 }
 
@@ -7762,7 +7762,7 @@ body {
 .lesson-card > button:first-child > span {
   color: color-mix(in srgb, var(--subject) 68%, #62635f);
   font-family: var(--font-mono), monospace;
-  font-size: 7px;
+  font-size: 9px;
 }
 
 .lesson-card strong {
@@ -7781,7 +7781,7 @@ body {
 .lesson-card small {
   overflow: hidden;
   color: #898b85;
-  font-size: 7px;
+  font-size: 9px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -8718,7 +8718,7 @@ body {
   }
 
   .subject-review-fields {
-    grid-template-columns: 74px 48px minmax(100px, 1fr) 72px;
+    grid-template-columns: 1fr 1fr;
   }
 
   .subject-review-actions {
@@ -8728,6 +8728,10 @@ body {
     padding: 10px 12px;
     background: rgb(246 247 243 / 96%);
     border-top: 1px solid #dfe2db;
+  }
+
+  .proposal-subject-list {
+    grid-template-columns: 1fr;
   }
 
   .school-period-subject {
