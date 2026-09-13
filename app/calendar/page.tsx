@@ -1,5 +1,6 @@
 "use client";
 
+import type { User } from "@supabase/supabase-js";
 import {
   assignmentProgress,
   formatWorkMinutes,
@@ -58,7 +59,6 @@ import {
   isExtractionResponse,
 } from "@/lib/ai/timetable-parser";
 import { AccountPanel } from "@/components/calendar/AccountPanel";
-import { useUser } from "@clerk/nextjs";
 import { CalendarRail } from "@/components/calendar/CalendarRail";
 import { MobileActionSheets } from "@/components/calendar/MobileActionSheets";
 import { TaskDock } from "@/components/calendar/TaskDock";
@@ -73,6 +73,7 @@ import {
   syncErrorMessage,
 } from "@/lib/db/queries/calendar";
 import { AttentionHome } from "@/app/attention-home";
+import { AccessGate } from "@/app/access-gate";
 import { CalendarFallback } from "@/app/calendar-ui";
 const WeeklyReview = lazy(() =>
   import("@/app/weekly-review").then((mod) => ({ default: mod.WeeklyReview })),
@@ -189,6 +190,7 @@ import {
   type PendingMutation,
 } from "@/lib/offline";
 import { calendarSwipeDirection, type SwipePoint } from "@/lib/week-swipe";
+import { calendarViewFromSearch } from "@/lib/calendar/view-state";
 import {
   assessmentToRow,
   assignmentToRow,
@@ -216,7 +218,7 @@ import {
   type SchoolDaySettings,
   type Subject,
 } from "@/lib/school";
-import { useSupabaseClient } from "@/lib/supabase/client";
+import { createClient } from "@/lib/supabase/client";
 import { compactPendingMutations, prepareMutation } from "@/lib/sync";
 
 type Zoom = "school" | "upcoming" | "day" | "week" | "month" | "semester";
@@ -260,6 +262,11 @@ function defaultViewState(): LastViewState {
   };
 }
 
+const GATE_EMAILS = (process.env.NEXT_PUBLIC_ACCESS_GATE_EMAILS ?? "")
+  .split(",")
+  .map((entry) => entry.trim().toLowerCase())
+  .filter(Boolean);
+
 function commandItem(item: CalendarItem) {
   return {
     id: item.id,
@@ -289,10 +296,8 @@ function commandItem(item: CalendarItem) {
 }
 
 export default function Home() {
-  const supabase = useSupabaseClient();
-  // Local mirror of the Clerk user so the rest of the page can keep
-  // using the `user` identifier. The Clerk session is the source of
-  // truth; the Supabase OTP-flow is gone.
+  const supabase = useMemo(() => createClient(), []);
+  const [gateDenied, setGateDenied] = useState(false);
   const [items, setItems] = useState<CalendarItem[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -311,10 +316,11 @@ export default function Home() {
     DEFAULT_SCHOOL_DAY_SETTINGS,
   );
   const [undoStack, setUndoStack] = useState<HistoryEntry[]>([]);
-  const { user: clerkUser, isLoaded: clerkLoaded } = useUser();
-  const user = clerkUser
-    ? { id: clerkUser.id, email: clerkUser.primaryEmailAddress?.emailAddress ?? null }
-    : null;
+  const [user, setUser] = useState<User | null>(null);
+  const gateActive = GATE_EMAILS.length > 0;
+  const gateAllowed =
+    !gateActive ||
+    Boolean(user && GATE_EMAILS.includes((user.email ?? "").toLowerCase()));
   const [isOnline, setIsOnline] = useState(true);
   const [hydrated, setHydrated] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -326,6 +332,8 @@ export default function Home() {
   const [paletteMode, setPaletteMode] = useState<PaletteMode>("command");
   const [commandText, setCommandText] = useState("");
   const [commandBusy, setCommandBusy] = useState(false);
+  const [commandError, setCommandError] = useState("");
+  const [commandTargetId, setCommandTargetId] = useState<string | null>(null);
   const [commandConversation, setCommandConversation] = useState<CommandTurn[]>(
     [],
   );
@@ -373,9 +381,13 @@ export default function Home() {
     minute: number;
   } | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [inviteToken, setInviteToken] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteUrl, setInviteUrl] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
+  const [authSent, setAuthSent] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [nowOpen, setNowOpen] = useState(false);
@@ -469,9 +481,11 @@ export default function Home() {
 
   const applyViewState = useCallback((state: LastViewState | null) => {
     const next = state ?? defaultViewState();
-    if (isRestorableZoom(next.zoom)) setZoom(next.zoom);
-    setAnchorDate(next.anchorDate);
-    setSelectedDay(next.selectedDay);
+    const { view: urlView, date: urlDate } = calendarViewFromSearch(window.location.search);
+    if (urlView && isRestorableZoom(urlView)) setZoom(urlView);
+    else if (isRestorableZoom(next.zoom)) setZoom(next.zoom);
+    setAnchorDate(urlDate ?? next.anchorDate);
+    setSelectedDay(urlDate ?? next.selectedDay);
     setNowOpen(next.nowOpen);
     setInboxOpen(next.inboxOpen);
     setHomeworkOpen(next.homeworkOpen);
@@ -481,6 +495,27 @@ export default function Home() {
     setWeeklyReviewOpen(Boolean(next.weeklyReviewOpen));
     setWeeklyReviewPromptWeek(next.weeklyReviewPromptWeek ?? null);
   }, []);
+
+  const urlReady = useRef(false);
+  const urlRestoring = useRef(false);
+  useEffect(() => {
+    if (!viewRestored) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", zoom === "upcoming" ? "home" : zoom);
+    url.searchParams.set("date", zoom === "day" ? selectedDay : anchorDate);
+    if (url.toString() !== window.location.href) {
+      if (!urlReady.current || urlRestoring.current) window.history.replaceState(null, "", url);
+      else window.history.pushState(null, "", url);
+    }
+    urlReady.current = true;
+    urlRestoring.current = false;
+  }, [viewRestored, zoom, anchorDate, selectedDay]);
+
+  useEffect(() => {
+    const restore = () => { urlRestoring.current = true; applyViewState(defaultViewState()); };
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
+  }, [applyViewState]);
 
   const applyRestoredScroll = useCallback((state: LastViewState | null) => {
     if (!state) return;
@@ -563,13 +598,17 @@ export default function Home() {
   );
 
   useEffect(() => {
-    // Clerk delivers invitation acceptance through its own redirect URLs
-    // (the SignInToken issued by the invitations API). The legacy
-    // `?invite=…` deep link is no longer used.
+    const token = new URLSearchParams(window.location.search).get("invite");
+    if (!token || !/^[a-f0-9]{64}$/.test(token)) return;
+    const timeout = window.setTimeout(() => {
+      setInviteToken(token);
+      setAccountOpen(true);
+    }, 0);
+    return () => window.clearTimeout(timeout);
   }, []);
 
   const loadCloud = useCallback(
-    async (activeUser: { id: string; email: string | null }) => {
+    async (activeUser: User) => {
       const writeRevisionAtStart = writeRevisionRef.current;
       setSyncing(true);
       const [
@@ -768,10 +807,12 @@ export default function Home() {
 
   useEffect(() => {
     const updateClock = () => setClockNow(new Date());
-    const today = dateKey(new Date());
+    const initialView = calendarViewFromSearch(window.location.search);
+    const today = initialView.date ?? dateKey(new Date());
     // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration-safe: server and client must agree on the initial date
     setAnchorDate(today);
     setSelectedDay(today);
+    if (initialView.view && isRestorableZoom(initialView.view)) setZoom(initialView.view);
     updateClock();
     const timer = window.setInterval(updateClock, 60_000);
     return () => window.clearInterval(timer);
@@ -834,8 +875,40 @@ export default function Home() {
           setViewRestored(true);
         }
       });
+    supabase.auth.getSession().then(({ data }) => {
+      if (!alive) return;
+      const email = (data.session?.user?.email ?? "").toLowerCase();
+      if (GATE_EMAILS.length > 0 && email && !GATE_EMAILS.includes(email)) {
+        setGateDenied(true);
+        void supabase.auth.signOut();
+        setUser(null);
+        return;
+      }
+      setUser(data.session?.user ?? null);
+    });
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!alive) return;
+      const email = (session?.user?.email ?? "").toLowerCase();
+      if (
+        GATE_EMAILS.length > 0 &&
+        event === "SIGNED_IN" &&
+        email &&
+        !GATE_EMAILS.includes(email)
+      ) {
+        setGateDenied(true);
+        void supabase.auth.signOut();
+        setUser(null);
+        setAccountOpen(false);
+        return;
+      }
+      setUser(session?.user ?? null);
+      setAccountOpen(false);
+    });
     return () => {
       alive = false;
+      subscription.unsubscribe();
     };
   }, [applyRestoredScroll, applyViewState, supabase]);
 
@@ -1495,12 +1568,17 @@ export default function Home() {
   }
 
   async function submitCommand(
-    event: FormEvent,
+    event: FormEvent | null,
     mode: PaletteMode = paletteMode,
+    instruction?: string,
+    targetId?: string,
   ) {
-    event.preventDefault();
-    const clean = commandText.trim();
-    if (!clean) return;
+    event?.preventDefault();
+    const clean = (instruction ?? commandText).trim();
+    if (!clean || commandBusy) return;
+    const target = targetId ?? commandTargetId;
+    const scopedCommand = target ? `For calendar item id ${target}, ${clean}` : clean;
+    setCommandError("");
     if (mode === "filter") {
       setFilterText(clean);
       setPaletteOpen(false);
@@ -1508,7 +1586,7 @@ export default function Home() {
     }
     const continuingConversation = commandConversation.length > 0;
     const homework = parseHomework(clean, subjects, new Date());
-    if (!continuingConversation && looksLikeHomeworkCommand(clean, homework)) {
+    if (!target && !continuingConversation && looksLikeHomeworkCommand(clean, homework)) {
       captureHomework(clean);
       setPaletteOpen(false);
       setCommandText("");
@@ -1523,7 +1601,7 @@ export default function Home() {
       );
       return;
     }
-    const intentionDraft = continuingConversation
+    const intentionDraft = continuingConversation || target
       ? null
       : intentionFromCommand(clean);
     if (intentionDraft) {
@@ -1550,10 +1628,10 @@ export default function Home() {
         },
         signal: controller.signal,
         body: JSON.stringify({
-          command: clean,
+          command: scopedCommand,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           items: relevantCommandItems(
-            [...commandConversation.map((turn) => turn.text), clean].join(" "),
+            [...commandConversation.map((turn) => turn.text), scopedCommand].join(" "),
             items,
           ).map(commandItem),
           subjects: subjects.map((subject) => ({
@@ -1595,17 +1673,34 @@ export default function Home() {
       if (!isCommandResponse(raw)) {
         throw new Error("AI returned an invalid calendar proposal");
       }
-      setProposal(proposalFromCommandResponse(raw, items));
+      const commandProposal = proposalFromCommandResponse(raw, items);
+      const validation = validateProposal(commandProposal, items);
+      if (!validation.valid) {
+        setNotice("That change conflicts with your schedule. Try another time or edit the event manually.");
+      } else {
+        recordHistory(commandProposal.title);
+        const next = applyProposal(commandProposal, items).map((item) => ({ ...item, syncStatus: "pending" as const }));
+        transitionState(() => setItems(next));
+        syncSnapshotDiff(items, next);
+        setNotice(`Applied: ${commandProposal.title}. Undo is available.`);
+      }
       setCommandConversation([]);
       setCommandQuestions([]);
     } catch {
       if (
-        /^(?:add|create|schedule|new)\b/i.test(clean) &&
+        !target && /^(?:add|create|schedule|new)\b/i.test(clean) &&
         !/(?:move|delete|remove|cancel)\b/i.test(clean)
       ) {
-        setProposal(simpleFallbackProposal(clean));
+        const fallback = simpleFallbackProposal(clean);
+        recordHistory(fallback.title);
+        const next = applyProposal(fallback, items).map((item) => ({ ...item, syncStatus: "pending" as const }));
+        setItems(next);
+        syncSnapshotDiff(items, next);
+        setNotice("Saved to Flexible work. AI is unavailable, so no time was assigned. Undo is available.");
       } else {
-        setNotice(
+        keepConversationOpen = true;
+        setPaletteOpen(true);
+        setCommandError(
           user
             ? "I couldn't interpret that safely. Try a more specific command."
             : "Sign in to use AI schedule changes. Local captures and intentions still work.",
@@ -1617,6 +1712,7 @@ export default function Home() {
       if (!keepConversationOpen) {
         setPaletteOpen(false);
         setCommandText("");
+        setCommandTargetId(null);
       }
     }
   }
@@ -2819,14 +2915,69 @@ export default function Home() {
     setIsCreatingItem(false);
   }
 
-  async function createInvitation() {
-    if (!inviteEmail.trim()) return;
+  async function sendVerificationCode(event: FormEvent) {
+    event.preventDefault();
+    if (!email.trim()) return;
+    setAuthBusy(true);
+    let errorMessage = "";
+    if (inviteToken) {
+      const response = await fetch("/api/invitations/claim", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), token: inviteToken }),
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok)
+        errorMessage = result.error ?? "Could not accept invitation";
+    } else {
+      const { error } = await supabase.auth.signInWithOtp({
+        email: email.trim(),
+        options: { shouldCreateUser: false },
+      });
+      errorMessage = error?.message ?? "";
+    }
+    setAuthBusy(false);
+    if (errorMessage) {
+      setNotice(errorMessage);
+      return;
+    }
+    setAuthSent(true);
+  }
+
+  async function verifyCode(event: FormEvent) {
+    event.preventDefault();
+    if (!email.trim() || !verificationCode.trim()) return;
+    setAuthBusy(true);
+    const { error } = await supabase.auth.verifyOtp({
+      email: email.trim(),
+      token: verificationCode.replace(/\s/g, ""),
+      type: "email",
+    });
+    setAuthBusy(false);
+    if (error) {
+      setNotice(error.message);
+      return;
+    }
+    if (inviteToken) {
+      window.history.replaceState({}, "", window.location.pathname);
+      setInviteToken("");
+    }
+    setVerificationCode("");
+    setAuthSent(false);
+    setNotice("Signed in. Your calendar is syncing now.");
+  }
+
+  async function createInvitation(sendCode: boolean) {
     setInviteBusy(true);
     setInviteUrl("");
+    const { data } = await supabase.auth.getSession();
     const response = await fetch("/api/invitations", {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: inviteEmail.trim() }),
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${data.session?.access_token ?? ""}`,
+      },
+      body: JSON.stringify({ email: sendCode ? inviteEmail : "" }),
     });
     const result = (await response.json()) as {
       error?: string;
@@ -2837,11 +2988,60 @@ export default function Home() {
       setNotice(result.error ?? "Could not create invitation");
       return;
     }
-    setInviteUrl(result.inviteUrl);
-    setNotice(
-      `Invitation ready for ${inviteEmail.trim()}. We just sent the link to their inbox.`,
-    );
-    setInviteEmail("");
+    if (sendCode) {
+      setInviteUrl("");
+      setNotice(
+        `Account ready. A verification code was sent to ${inviteEmail.trim()}.`,
+      );
+      setInviteEmail("");
+    } else {
+      setInviteUrl(result.inviteUrl);
+      try {
+        await navigator.clipboard.writeText(result.inviteUrl);
+        setNotice("One-time invite link copied.");
+      } catch {
+        setNotice("Invite link created. Copy it below.");
+      }
+    }
+  }
+
+  async function signOut() {
+    await supabase.auth.signOut();
+    setUser(null);
+    setItems([]);
+    setHistory([]);
+    setSubjects([]);
+    setClasses([]);
+    setClassExceptions([]);
+    setAssignments([]);
+    setAssessments([]);
+    setIntentions([]);
+    setLearningSignals([]);
+    setExplorations([]);
+    setBlockChoices([]);
+    setHomeworkCaptures([]);
+    setSchoolDaySettings(DEFAULT_SCHOOL_DAY_SETTINGS);
+    setUndoStack([]);
+    setCompletedReviewWeeks([]);
+    setWeeklyReviewPromptWeek(null);
+    await saveOfflineState({
+      items: [],
+      history: [],
+      subjects: [],
+      classes: [],
+      classExceptions: [],
+      assignments: [],
+      assessments: [],
+      intentions: [],
+      learningSignals: [],
+      explorations: [],
+      blockChoices: [],
+      homeworkCaptures: [],
+      completedReviewWeeks: [],
+      schoolDaySettings: DEFAULT_SCHOOL_DAY_SETTINGS,
+      ownerKey: "local",
+    });
+    setNotice("Signed out. This device now has a fresh local calendar.");
   }
 
   function nowRecommendations(at: Date) {
@@ -3685,8 +3885,12 @@ export default function Home() {
     moveAnchor(direction);
   }
 
+  if (!gateAllowed) {
+    return <AccessGate denied={gateDenied} />;
+  }
+
   return (
-    <main id="main-content" className={`flex-shell ${draggingItemId ? "is-dragging" : ""}`}>
+    <main id="main-content" className={`flex-shell calendar-redesign ${draggingItemId ? "is-dragging" : ""}`}>
       <CalendarRail
         zoom={zoom}
         inboxOpen={inboxOpen}
@@ -3698,6 +3902,7 @@ export default function Home() {
         activeHomeworkCount={activeHomework.length}
         inboxCount={inboxItems.length}
         userEmail={user?.email}
+        onCalendar={() => { setInboxOpen(false); setHomeworkOpen(false); setHudOpen(false); setZoom("week"); }}
         onToday={() => {
           const today = dateKey(new Date());
           setAnchorDate(today);
@@ -3787,10 +3992,12 @@ export default function Home() {
           className="mobile-create-button"
           type="button"
           aria-label="Add something"
-          aria-expanded={mobileCreateOpen}
+          aria-expanded={paletteOpen}
           onClick={() => {
             setMobileMenuOpen(false);
-            setMobileCreateOpen((current) => !current);
+            setMobileCreateOpen(false);
+            setPaletteMode("command");
+            setPaletteOpen(true);
           }}
         >
           <Plus size={23} />
@@ -4018,6 +4225,7 @@ export default function Home() {
         onWheel={onWeekWheel}
       >
         <CalendarHeader
+          onCapture={() => { setPaletteMode("command"); setPaletteOpen(true); }}
           zoom={zoom}
           anchor={anchor}
           anchorDate={anchorDate}
@@ -4041,6 +4249,7 @@ export default function Home() {
         {notice && (
           <div className="toast" role="status">
             <span>{notice}</span>
+            {undoStack.length > 0 && <button type="button" onClick={undoLast}>Undo</button>}
             <button
               type="button"
               onClick={() => setNotice("")}
@@ -4108,6 +4317,13 @@ export default function Home() {
           </Suspense>
         ) : zoom === "upcoming" ? (
           <AttentionHome
+            now={now}
+            loading={!hydrated}
+            blockChoice={currentBlockChoice}
+            onSelectBlockSuggestion={selectBlockSuggestion}
+            onBlockStatus={setBlockChoiceStatus}
+            onChangeBlockSuggestion={changeBlockSuggestion}
+            onOpenBlockSuggestion={openBlockSuggestion}
             snapshot={attentionSnapshot}
             commandText={commandText}
             commandBusy={commandBusy}
@@ -4137,11 +4353,6 @@ export default function Home() {
               setIntentionsOpen(true);
             }}
             onOpenCalendar={() => transitionState(() => setZoom("week"))}
-            blockChoice={currentBlockChoice}
-            onSelectBlockSuggestion={selectBlockSuggestion}
-            onBlockStatus={setBlockChoiceStatus}
-            onChangeBlockSuggestion={changeBlockSuggestion}
-            onOpenBlockSuggestion={openBlockSuggestion}
           />
         ) : isCompact && zoom === "week" ? (
           <Suspense fallback={<CalendarFallback />}>
@@ -4305,6 +4516,7 @@ export default function Home() {
       )}
 
       <CommandPalette
+        error={commandError}
         open={paletteOpen}
         mode={paletteMode}
         commandText={commandText}
@@ -4314,7 +4526,7 @@ export default function Home() {
         commandPreview={commandPreview}
         homeworkCommandPreview={homeworkCommandPreview}
         commandIsHomework={commandIsHomework}
-        onClose={() => setPaletteOpen(false)}
+        onClose={() => { setPaletteOpen(false); setCommandTargetId(null); }}
         onModeChange={setPaletteMode}
         onCommandTextChange={setCommandText}
         onSubmit={(event) => submitCommand(event, "command")}
@@ -4347,6 +4559,15 @@ export default function Home() {
       />
       {selectedItem && draftItem && (
         <EventModal
+          onNaturalEdit={(instruction) => {
+            setCommandText(instruction);
+            setCommandTargetId(selectedItem.id);
+            setSelectedItem(null);
+            setDraftItem(null);
+            setPaletteMode("command");
+            setPaletteOpen(true);
+            void submitCommand(null, "command", instruction, selectedItem.id);
+          }}
           selectedItem={selectedItem}
           draftItem={draftItem}
           subjects={subjects}
@@ -4376,15 +4597,29 @@ export default function Home() {
         />
       )}
 
-      {accountOpen && user && (
+      {accountOpen && (
         <AccountPanel
           user={user}
+          authSent={authSent}
+          authBusy={authBusy}
+          email={email}
+          verificationCode={verificationCode}
           inviteEmail={inviteEmail}
           inviteUrl={inviteUrl}
           inviteBusy={inviteBusy}
+          inviteToken={inviteToken}
           onClose={() => setAccountOpen(false)}
+          onEmailChange={setEmail}
+          onVerificationCodeChange={setVerificationCode}
           onInviteEmailChange={setInviteEmail}
+          onUseAnotherEmail={() => {
+            setAuthSent(false);
+            setVerificationCode("");
+          }}
           onCreateInvitation={createInvitation}
+          onSendVerificationCode={sendVerificationCode}
+          onVerifyCode={verifyCode}
+          onSignOut={signOut}
         />
       )}
     </main>

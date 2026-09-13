@@ -2,8 +2,9 @@
 
 import {
   Activity,
+  CalendarDays,
+  House,
   BookOpen,
-  CalendarClock,
   ClipboardCheck,
   Command,
   GraduationCap,
@@ -14,12 +15,7 @@ import {
 } from "lucide-react";
 
 export type CalendarZoom =
-  | "school"
-  | "upcoming"
-  | "day"
-  | "week"
-  | "month"
-  | "semester";
+  "school" | "upcoming" | "day" | "week" | "month" | "semester";
 
 function initials(value?: string | null) {
   if (!value) return <UserRound size={16} />;
@@ -44,6 +40,7 @@ export function CalendarRail({
   userEmail,
   onToday,
   onHome,
+  onCalendar,
   onSchool,
   onToggleHomework,
   onToggleInbox,
@@ -65,6 +62,7 @@ export function CalendarRail({
   userEmail?: string | null;
   onToday: () => void;
   onHome: () => void;
+  onCalendar: () => void;
   onSchool: () => void;
   onToggleHomework: () => void;
   onToggleInbox: () => void;
@@ -88,16 +86,29 @@ export function CalendarRail({
       <nav aria-label="Calendar tools">
         <button
           className={
-            !inboxOpen && !homeworkOpen && !hudOpen && zoom !== "school"
+            !inboxOpen && !homeworkOpen && !hudOpen && zoom === "upcoming"
               ? "active"
               : ""
           }
           type="button"
           aria-label="Attention home"
+          aria-current={zoom === "upcoming" ? "page" : undefined}
           onClick={onHome}
         >
-          <CalendarClock size={19} />
+          <House size={19} />
           <small className="rail-label">Home</small>
+        </button>
+        <button
+          type="button"
+          aria-label="Calendar"
+          aria-current={
+            !["upcoming", "school"].includes(zoom) ? "page" : undefined
+          }
+          className={!["upcoming", "school"].includes(zoom) ? "active" : ""}
+          onClick={onCalendar}
+        >
+          <CalendarDays size={19} />
+          <small className="rail-label">Calendar</small>
         </button>
         <button
           className={zoom === "school" ? "active" : ""}

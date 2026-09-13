@@ -22,6 +22,9 @@ import type {
 } from "./school.ts";
 import type { LearningSignal } from "./study-intelligence.ts";
 import { isImportedTimetableItem } from "./timetable-import.ts";
+import { timetableRoomForItem } from "./timetable-import.ts";
+import { lessonOccurrences } from "./school-day-engine.ts";
+import { dateKey, startOfWeek } from "./calendar-engine.ts";
 
 const DAY = 86_400_000;
 
@@ -44,6 +47,7 @@ export type AttentionCard = {
   startsAt: string | null;
   endsAt: string | null;
   deadline: string | null;
+  room?: string;
 };
 
 export type IntentionOpportunity = {
@@ -60,6 +64,8 @@ export type AttentionSnapshot = {
   intentionOpportunity: IntentionOpportunity | null;
   availableMinutes: number;
   freeTimeIsValid: boolean;
+  todayClasses: AttentionCard[];
+  obligations: AttentionCard[];
 };
 
 export type AttentionInput = {
@@ -111,51 +117,53 @@ function intentionOpportunity(
   const clock = `${String(input.now.getHours()).padStart(2, "0")}:${String(
     input.now.getMinutes(),
   ).padStart(2, "0")}`;
-  return input.intentions
-    .filter(
-      (intention) =>
-        intention.status === "active" &&
-        intention.horizonStart <= today &&
-        (!intention.horizonEnd || intention.horizonEnd >= today) &&
-        intention.allowedWeekdays.includes(weekday) &&
-        intention.allowedWindowStart <= clock &&
-        intention.allowedWindowEnd > clock &&
-        contextFits(intention.taskContext, input.currentLocation) &&
-        energyFits(intention.requiredEnergy, input.currentEnergy) &&
-        intention.preferredSessionMinutes <= availableMinutes,
-    )
-    .map((intention) => {
-      const progress = intentionProgress(intention, input.items, input.now);
-      const horizonUrgency = intention.horizonEnd
-        ? Math.max(
-            0,
-            14 -
-              Math.ceil(
-                (new Date(`${intention.horizonEnd}T23:59:59`).getTime() -
-                  input.now.getTime()) /
-                  DAY,
-              ),
-          )
-        : 0;
-      return {
-        intention,
-        durationMinutes: Math.min(
-          availableMinutes,
-          intention.preferredSessionMinutes,
-          progress.remainingMinutes || intention.preferredSessionMinutes,
-        ),
-        reason:
-          progress.completedMinutes > 0
-            ? `${progress.completedMinutes} minutes toward this intention in the current period.`
-            : "This intention fits the time and context you have now.",
-        score:
-          priorityScore(intention.priority) +
-          horizonUrgency +
-          (progress.completedSessions < intention.targetSessions ? 8 : 0),
-      };
-    })
-    .filter((entry) => entry.durationMinutes >= 5)
-    .sort((a, b) => b.score - a.score)[0] ?? null;
+  return (
+    input.intentions
+      .filter(
+        (intention) =>
+          intention.status === "active" &&
+          intention.horizonStart <= today &&
+          (!intention.horizonEnd || intention.horizonEnd >= today) &&
+          intention.allowedWeekdays.includes(weekday) &&
+          intention.allowedWindowStart <= clock &&
+          intention.allowedWindowEnd > clock &&
+          contextFits(intention.taskContext, input.currentLocation) &&
+          energyFits(intention.requiredEnergy, input.currentEnergy) &&
+          intention.preferredSessionMinutes <= availableMinutes,
+      )
+      .map((intention) => {
+        const progress = intentionProgress(intention, input.items, input.now);
+        const horizonUrgency = intention.horizonEnd
+          ? Math.max(
+              0,
+              14 -
+                Math.ceil(
+                  (new Date(`${intention.horizonEnd}T23:59:59`).getTime() -
+                    input.now.getTime()) /
+                    DAY,
+                ),
+            )
+          : 0;
+        return {
+          intention,
+          durationMinutes: Math.min(
+            availableMinutes,
+            intention.preferredSessionMinutes,
+            progress.remainingMinutes || intention.preferredSessionMinutes,
+          ),
+          reason:
+            progress.completedMinutes > 0
+              ? `${progress.completedMinutes} minutes toward this intention in the current period.`
+              : "This intention fits the time and context you have now.",
+          score:
+            priorityScore(intention.priority) +
+            horizonUrgency +
+            (progress.completedSessions < intention.targetSessions ? 8 : 0),
+        };
+      })
+      .filter((entry) => entry.durationMinutes >= 5)
+      .sort((a, b) => b.score - a.score)[0] ?? null
+  );
 }
 
 type CalendarCardPosition = "now" | "next" | "later";
@@ -203,15 +211,18 @@ function cardForCalendarItem(
       : allDay
         ? "An all-day event on your calendar."
         : item.flexibility === "fixed"
-        ? "A fixed commitment on your calendar."
-        : "A study session already placed on your calendar.",
+          ? "A fixed commitment on your calendar."
+          : "A study session already placed on your calendar.",
     startsAt: item.startsAt,
     endsAt: item.endsAt,
     deadline: item.deadline,
+    room: timetableRoomForItem(item) || item.room || "",
   };
 }
 
-function cardForRecommendation(recommendation: NowRecommendation): AttentionCard {
+function cardForRecommendation(
+  recommendation: NowRecommendation,
+): AttentionCard {
   return {
     id: recommendation.id,
     source: "recommendation",
@@ -226,7 +237,9 @@ function cardForRecommendation(recommendation: NowRecommendation): AttentionCard
   };
 }
 
-export function buildAttentionSnapshot(input: AttentionInput): AttentionSnapshot {
+export function buildAttentionSnapshot(
+  input: AttentionInput,
+): AttentionSnapshot {
   const result = recommendNow(input);
   const activeCalendar = input.items
     .filter(
@@ -242,7 +255,8 @@ export function buildAttentionSnapshot(input: AttentionInput): AttentionSnapshot
     );
   const currentItem = activeCalendar.find(
     (item) =>
-      new Date(item.startsAt!) <= input.now && new Date(item.endsAt!) > input.now,
+      new Date(item.startsAt!) <= input.now &&
+      new Date(item.endsAt!) > input.now,
   );
   const upcomingItems = activeCalendar.filter(
     (item) => new Date(item.startsAt!) > input.now,
@@ -316,14 +330,23 @@ export function buildAttentionSnapshot(input: AttentionInput): AttentionSnapshot
   }
 
   const later: Array<AttentionCard & { score: number }> = [];
-  for (const item of upcomingItems.slice(next?.source === "calendar_item" ? 1 : 0, 5)) {
+  for (const item of upcomingItems.slice(
+    next?.source === "calendar_item" ? 1 : 0,
+    5,
+  )) {
     later.push({
       ...cardForCalendarItem(item, "later"),
-      score: 100 - Math.min(90, (new Date(item.startsAt!).getTime() - input.now.getTime()) / DAY),
+      score:
+        100 -
+        Math.min(
+          90,
+          (new Date(item.startsAt!).getTime() - input.now.getTime()) / DAY,
+        ),
     });
   }
   for (const assignment of input.assignments) {
-    if (["completed", "submitted", "archived"].includes(assignment.status)) continue;
+    if (["completed", "submitted", "archived"].includes(assignment.status))
+      continue;
     const progress = assignmentProgress(assignment, input.items);
     if (progress.completedMinutes >= assignment.estimatedMinutes) continue;
     const due = assignment.dueAt ? new Date(assignment.dueAt) : null;
@@ -334,16 +357,26 @@ export function buildAttentionSnapshot(input: AttentionInput): AttentionSnapshot
       sourceId: assignment.id,
       title: assignment.title,
       label: "Assignment",
-      detail: due ? `Due ${due.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}` : "No hard deadline",
+      detail: due
+        ? `Due ${due.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}`
+        : "No hard deadline",
       reason: `${Math.max(0, assignment.estimatedMinutes - progress.completedMinutes)} minutes remain.`,
       startsAt: null,
       endsAt: null,
       deadline: assignment.dueAt,
-      score: priorityScore(assignment.priority) + (due ? Math.max(0, 21 - (due.getTime() - input.now.getTime()) / DAY) : 0),
+      score:
+        priorityScore(assignment.priority) +
+        (due
+          ? Math.max(0, 21 - (due.getTime() - input.now.getTime()) / DAY)
+          : 0),
     });
   }
   for (const assessment of input.assessments) {
-    if (assessment.status !== "upcoming" || new Date(assessment.scheduledAt) <= input.now) continue;
+    if (
+      assessment.status !== "upcoming" ||
+      new Date(assessment.scheduledAt) <= input.now
+    )
+      continue;
     const progress = revisionProgress(assessment, input.items);
     later.push({
       id: `assessment:${assessment.id}`,
@@ -356,11 +389,16 @@ export function buildAttentionSnapshot(input: AttentionInput): AttentionSnapshot
       startsAt: null,
       endsAt: null,
       deadline: assessment.scheduledAt,
-      score: priorityScore(assessment.importance) + Math.max(0, 21 - examCountdown(assessment, input.now)),
+      score:
+        priorityScore(assessment.importance) +
+        Math.max(0, 21 - examCountdown(assessment, input.now)),
     });
   }
-  for (const intention of input.intentions.filter((entry) => entry.status === "active")) {
-    if (now?.sourceId === intention.id || next?.sourceId === intention.id) continue;
+  for (const intention of input.intentions.filter(
+    (entry) => entry.status === "active",
+  )) {
+    if (now?.sourceId === intention.id || next?.sourceId === intention.id)
+      continue;
     const progress = intentionProgress(intention, input.items, input.now);
     later.push({
       id: `intention:${intention.id}`,
@@ -368,7 +406,10 @@ export function buildAttentionSnapshot(input: AttentionInput): AttentionSnapshot
       sourceId: intention.id,
       title: intention.title,
       label: "Active intention",
-      detail: intention.cadence === "flexible" ? "When it fits" : `${intention.targetSessions}× ${intention.cadence}`,
+      detail:
+        intention.cadence === "flexible"
+          ? "When it fits"
+          : `${intention.targetSessions}× ${intention.cadence}`,
       reason: `${progress.remainingMinutes} target minutes remain in this period.`,
       startsAt: null,
       endsAt: null,
@@ -399,5 +440,78 @@ export function buildAttentionSnapshot(input: AttentionInput): AttentionSnapshot
     intentionOpportunity: opportunity,
     availableMinutes: result.availableMinutes,
     freeTimeIsValid: result.freeTimeIsValid && !opportunity,
+    todayClasses: todayClasses(input),
+    obligations: later
+      .filter(
+        (card) =>
+          card.source === "assignment" ||
+          card.source === "assessment" ||
+          (card.source === "calendar_item" &&
+            dateKey(new Date(card.startsAt!)) === dateKey(input.now) &&
+            !input.items.some(
+              (item) =>
+                item.id === card.sourceId && isImportedTimetableItem(item),
+            )),
+      )
+      .concat(
+        firstUpcoming &&
+          !isImportedTimetableItem(firstUpcoming) &&
+          dateKey(new Date(firstUpcoming.startsAt!)) === dateKey(input.now)
+          ? [{ ...cardForCalendarItem(firstUpcoming, "next"), score: 101 }]
+          : [],
+      )
+      .sort((a, b) => b.score - a.score)
+      .map(({ score, ...card }) => {
+        void score;
+        return card;
+      }),
   };
+}
+
+function todayClasses(input: AttentionInput): AttentionCard[] {
+  const imported = input.items.filter(
+    (item) =>
+      item.status === "scheduled" &&
+      item.startsAt &&
+      item.endsAt &&
+      isImportedTimetableItem(item),
+  );
+  const importedWeek = imported.some(
+    (item) =>
+      dateKey(startOfWeek(new Date(item.startsAt!))) ===
+      dateKey(startOfWeek(input.now)),
+  );
+  if (importedWeek)
+    return imported
+      .filter(
+        (item) => dateKey(new Date(item.startsAt!)) === dateKey(input.now),
+      )
+      .sort((a, b) => a.startsAt!.localeCompare(b.startsAt!))
+      .map((item) => cardForCalendarItem(item, "later"));
+  return lessonOccurrences(
+    input.classes,
+    input.classExceptions,
+    input.now,
+    input.now,
+  ).map((occurrence) => {
+    const lesson = input.classes.find(
+      (entry) => entry.id === occurrence.classId,
+    )!;
+    const subject = input.subjects.find(
+      (entry) => entry.id === lesson.subjectId,
+    );
+    return {
+      id: `class:${lesson.id}:${dateKey(input.now)}`,
+      source: "class",
+      sourceId: lesson.id,
+      title: subject?.name || "Class",
+      label: "Class",
+      room: lesson.room || subject?.room || "",
+      detail: `${formatClock(occurrence.start.toISOString())}–${formatClock(occurrence.end.toISOString())}`,
+      reason: "",
+      startsAt: occurrence.start.toISOString(),
+      endsAt: occurrence.end.toISOString(),
+      deadline: null,
+    };
+  });
 }

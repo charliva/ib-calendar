@@ -1,9 +1,8 @@
-import { ClerkProvider } from "@clerk/nextjs";
-import { clerkVariables } from "@/components/auth/clerk-appearance";
 import type { Metadata, Viewport } from "next";
 import { Outfit, Space_Grotesk } from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
+import "./calendar-redesign.css";
 
 const displaySans = Outfit({
   variable: "--font-sans",
@@ -25,7 +24,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const origin = host ? `${protocol}://${host}` : "http://localhost:3000";
   const description =
     "A tactile, constraint-based calendar for fixed events, flexible tasks, and intentions.";
-  const socialImage = `${origin}/og-almanac.png`;
+  const socialImage = `${origin}/og-flex.png`;
 
   return {
     title: "Syllabi — time, without the rigidity",
@@ -54,7 +53,7 @@ export async function generateMetadata(): Promise<Metadata> {
           url: socialImage,
           width: 1731,
           height: 909,
-          alt: "Syllabi Japanese almanac-inspired weekly calendar preview",
+          alt: "Syllabi weekly calendar preview",
         },
       ],
     },
@@ -84,10 +83,8 @@ export default function RootLayout({
         <meta name="format-detection" content="telephone=no" />
       </head>
       <body className={`${displaySans.variable} ${monoSans.variable}`}>
-        <ClerkProvider appearance={{ variables: clerkVariables }}>
-          <a href="#main-content" className="skip-link">Skip to content</a>
-          {children}
-        </ClerkProvider>
+        <a href="#main-content" className="skip-link">Skip to content</a>
+        {children}
       </body>
     </html>
   );

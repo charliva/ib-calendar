@@ -81,7 +81,7 @@ const extractionSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  if (!(await authenticatedUser())) {
+  if (!(await authenticatedUser(request))) {
     return Response.json({ error: "Authentication required" }, { status: 401 });
   }
   if (!process.env.AI_GATEWAY_API_KEY && !process.env.VERCEL_OIDC_TOKEN) {

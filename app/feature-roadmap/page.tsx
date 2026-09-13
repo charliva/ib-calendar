@@ -98,6 +98,38 @@ const roadmap = [
       "Impossible workloads surface early.",
     ],
   },
+  // Open questions to resolve before implementation:
+  //   - Should personal deadlines (the student's self-set soft date) be
+  //     editable independently from the school's hard date, or always coupled?
+  //   - When a teacher grants an extension, do we ingest it automatically
+  //     from the school platform, or is the student always the one who types
+  //     the new date?
+  {
+    id: "deadline-extension",
+    priority: "P1",
+    status: "Next",
+    title: "Extend deadlines for homeworks and assignments",
+    promise:
+      "Move a due date forward or back and have the study plan re-flow in one step, with a clear preview of what changes.",
+    problem:
+      "Deadlines shift in real life: a teacher grants an extension, a personal appointment makes a date impossible, or the student realizes the workload is unrealistic. Today changing an assignment's dueAt leaves the existing study blocks anchored to the old date, so the planner and the calendar disagree. Manually re-planning every related block is friction most students will not do, and the result is a calendar full of stale work sessions.",
+    solution: [
+      "Offer 'Extend' on any homework or assignment card, with both a date picker and a quick '+1 day / +3 days / +1 week' affordance.",
+      "Before committing, show a preview of every block that will move, drop, or be created, and every assessment or test that will slide with it.",
+      "Default to confirm-before-apply. The user has final say; silent reschedules violate the product's 'no autonomous calendar changes' rule.",
+      "Cascade the new deadline to related assessments the student has linked, and surface a separate confirmation when the cascade affects a fixed school event (e.g. a real test date) so the user can opt out.",
+      "Re-run the assignment planner against the new dueAt, keeping the existing energy and study-type rules rather than replacing the plan wholesale.",
+      "Record the extension as a small audit trail on the assignment (previous dueAt, new dueAt, timestamp, reason text optional) so the student can see why the plan changed.",
+      "Suggest the inverse: 'You finished this two days early on the last one, want to keep the original date?' when usage data supports it. Not in v1; v1 only extends.",
+    ],
+    acceptance: [
+      "A single confirmation moves every related block, no manual cleanup required.",
+      "Cascading to a linked assessment is explicit and reversible, never silent.",
+      "The audit trail on the assignment shows previous and new deadlines, with timestamps.",
+      "Reverting the extension within the same session restores the original plan exactly.",
+      "Quick '+1 / +3 / +7' buttons work without opening a date picker.",
+    ],
+  },
   {
     id: "capture-console",
     priority: "P2",

@@ -1,4 +1,4 @@
-import { openDB } from "idb";
+import { openDB, type IDBPDatabase } from "idb";
 import type { CalendarItem, HistoryEntry } from "@/lib/calendar-engine";
 import type { Intention } from "@/lib/intentions";
 import type { Exploration, LearningSignal } from "@/lib/study-intelligence";
@@ -61,10 +61,12 @@ export type LastViewState = {
   visibleMinute?: number;
 };
 
-const dbPromise =
+const DEAD_LETTER_STORE = "calendar-mutations-dead-letter";
+
+const dbPromise: Promise<IDBPDatabase> | null =
   typeof window === "undefined"
     ? null
-    : openDB("syllabi-offline", 7, {
+    : openDB("syllabi-offline", 8, {
         upgrade(database) {
           if (!database.objectStoreNames.contains("calendar-state")) {
             database.createObjectStore("calendar-state");
@@ -75,7 +77,11 @@ const dbPromise =
               autoIncrement: true,
             });
           }
+          if (!database.objectStoreNames.contains(DEAD_LETTER_STORE)) {
+            database.createObjectStore(DEAD_LETTER_STORE, { keyPath: "id", autoIncrement: true });
+          }
         },
+        blocking() { void dbPromise?.then((database) => database.close()); },
       });
 
 export async function saveOfflineState(state: OfflineState) {
@@ -168,35 +174,7 @@ export type DeadLetterMutation = PendingMutation & {
   lastError: string;
 };
 
-const DEAD_LETTER_STORE = "calendar-mutations-dead-letter";
-
-const dbWithDeadLetterPromise =
-  typeof window === "undefined"
-    ? null
-    : openDB("syllabi-offline", 8, {
-        upgrade(database, oldVersion) {
-          if (oldVersion < 7) {
-            if (!database.objectStoreNames.contains("calendar-state")) {
-              database.createObjectStore("calendar-state");
-            }
-            if (!database.objectStoreNames.contains("calendar-mutations")) {
-              database.createObjectStore("calendar-mutations", {
-                keyPath: "id",
-                autoIncrement: true,
-              });
-            }
-          }
-          if (
-            oldVersion < 8 &&
-            !database.objectStoreNames.contains(DEAD_LETTER_STORE)
-          ) {
-            database.createObjectStore(DEAD_LETTER_STORE, {
-              keyPath: "id",
-              autoIncrement: true,
-            });
-          }
-        },
-      });
+const dbWithDeadLetterPromise = dbPromise;
 
 export function shouldDeadLetter(mutation: PendingMutation): boolean {
   return (mutation.failureCount ?? 0) >= MAX_PENDING_FAILURES;

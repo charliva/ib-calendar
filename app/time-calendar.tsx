@@ -37,7 +37,6 @@ import {
   formatTime,
   urgencyClass,
 } from "@/app/calendar-format";
-import { JapaneseDateExplanation } from "@/app/japanese-date-explanation";
 import {
   addDays,
   capacityForDay,
@@ -51,7 +50,6 @@ import {
   type CalendarItem,
   type CalendarProposal,
 } from "@/lib/calendar-engine";
-import { getJapaneseCalendarDetails } from "@/lib/japanese-calendar";
 import type { Subject } from "@/lib/school";
 import {
   isImportedTimetableItem,
@@ -125,7 +123,6 @@ export function TimeCalendar({
   compact?: boolean;
 }) {
   const hours = DAY_HOURS;
-  const [explainingDay, setExplainingDay] = useState<string | null>(null);
   const [creationRange, setCreationRange] = useState<{
     day: string;
     startMinute: number;
@@ -222,23 +219,6 @@ export function TimeCalendar({
       days.some((day) => itemOverlapsDay(item, dateKey(day))),
   );
 
-  useEffect(() => {
-    if (!explainingDay) return;
-    function closeOnOutsidePointer(event: PointerEvent) {
-      if (!dayHeadRef.current?.contains(event.target as Node)) {
-        setExplainingDay(null);
-      }
-    }
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setExplainingDay(null);
-    }
-    document.addEventListener("pointerdown", closeOnOutsidePointer);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsidePointer);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [explainingDay]);
 
   useEffect(() => {
     if (!compact || days.length !== 1) return;
@@ -722,7 +702,7 @@ export function TimeCalendar({
       style={{ "--row-height": `${rowHeight}px` } as CSSProperties}
     >
       <div
-        className={`day-head ${explainingDay ? "has-date-popover" : ""}`}
+        className="day-head"
         ref={dayHeadRef}
         style={{
           gridTemplateColumns: `${axisWidth}px repeat(${days.length}, minmax(${compact ? 0 : 110}px, 1fr))`,
@@ -732,7 +712,6 @@ export function TimeCalendar({
         {days.map((day) => {
           const key = dateKey(day);
           const capacity = capacityForDay(items, key);
-          const japaneseDate = getJapaneseCalendarDetails(day);
           return (
             <button
               className={`${key === selectedDay ? "selected" : ""} ${
@@ -740,37 +719,24 @@ export function TimeCalendar({
               }`}
               type="button"
               key={key}
-              aria-expanded={explainingDay === key}
+              aria-pressed={selectedDay === key}
               onClick={() => {
                 onSelectDay(key);
-                setExplainingDay((current) => (current === key ? null : key));
               }}
               aria-label={`${formatDate(day, {
                 weekday: "long",
                 month: "long",
                 day: "numeric",
-              })}, ${japaneseDate.era}, ${japaneseDate.rokuyo}`}
+              })}`}
             >
               <span>{formatDate(day, { weekday: "short" })}</span>
               <strong>{day.getDate()}</strong>
-              <span className="day-cultural-meta">
-                <small>{japaneseDate.era}</small>
-                <b className={`rokuyo-tag tone-${japaneseDate.tone}`}>
-                  {japaneseDate.rokuyo}
-                </b>
-              </span>
               <i>
                 <b style={{ width: `${capacity.load}%` }} />
               </i>
             </button>
           );
         })}
-        {explainingDay && (
-          <JapaneseDateExplanation
-            date={dateFromKey(explainingDay)}
-            onClose={() => setExplainingDay(null)}
-          />
-        )}
       </div>
       <div
         className="multi-day-strip"
@@ -1223,6 +1189,10 @@ export function TimeCalendar({
                           ? "compact"
                           : "roomy"
                     }
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`${item.title}, ${formatTime(item.startsAt)} to ${formatTime(item.endsAt)}${item.room ? `, Room ${item.room}` : ""}`}
+                    onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onOpenItem(item); } }}
                     data-lanes={Math.min(3, placement.lanes)}
                     onPointerDown={(event) => beginDesktopMove(event, item)}
                     onPointerMove={moveDesktopEvent}
@@ -1287,8 +1257,7 @@ export function TimeCalendar({
                       item={item}
                       onRename={onRenameItem}
                     />
-                    {isImportedTimetableItem(item) &&
-                      timetableRoomForItem(item) && (
+                    {timetableRoomForItem(item) && displayHeight >= 32 && (
                         <span className="calendar-class-room">
                           Room {timetableRoomForItem(item)}
                         </span>

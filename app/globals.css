@@ -11337,83 +11337,6 @@ button.mobile-cultural-date {
   min-height: min(58vh, 480px);
   opacity: 0.7;
 }
-.access-gate {
-  display: grid;
-  place-items: center;
-  min-height: 100dvh;
-  padding: 24px;
-  background: var(--paper, #fffdf8);
-}
-
-.access-gate-card {
-  width: min(420px, 100%);
-  padding: 32px;
-  border: 1px solid var(--line, #e3e2dc);
-  border-radius: 18px;
-  background: #fffefb;
-  box-shadow: 0 18px 48px rgb(23 32 28 / 8%);
-  text-align: center;
-}
-
-.access-gate-mark {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  margin: 0 auto 14px;
-  border-radius: 12px;
-  color: #fff;
-  background: var(--lilac, #8b84c9);
-}
-
-.access-gate-card h1 {
-  margin: 0 0 8px;
-  font-size: 24px;
-  letter-spacing: -0.03em;
-}
-
-.access-gate-card p {
-  margin: 0 0 18px;
-  color: #494b50;
-  font-size: 14px;
-}
-
-.access-gate-error {
-  color: #b3423a;
-}
-
-.access-gate-card form {
-  display: grid;
-  gap: 10px;
-}
-
-.access-gate-card input {
-  padding: 12px 14px;
-  border: 1px solid var(--line, #e3e2dc);
-  border-radius: 10px;
-  font: inherit;
-}
-
-.access-gate-card button {
-  padding: 12px 16px;
-  border: none;
-  border-radius: 10px;
-  color: #fff;
-  background: var(--ink, #17201c);
-  font-weight: 650;
-  cursor: pointer;
-}
-
-.access-gate-card button:disabled {
-  opacity: 0.6;
-  cursor: wait;
-}
-
-.access-gate-secondary {
-  background: transparent !important;
-  color: #494b50 !important;
-  text-decoration: underline;
-}
 
 /* --- Weekly Review --- */
 .weekly-review-overlay {
@@ -11790,12 +11713,6 @@ button.mobile-cultural-date {
   line-height: 1.5;
 }
 
-.auth-shell-form {
-  display: grid;
-  gap: 16px;
-  margin-top: 8px;
-}
-
 .auth-shell-footnote {
   margin: 0;
   color: color-mix(in srgb, currentColor 55%, transparent);
@@ -11814,140 +11731,107 @@ button.mobile-cultural-date {
   text-underline-offset: 2px;
 }
 
-/* Clerk component overrides — applied to everything rendered by the
-   hosted SignIn / SignUp widgets. Targets the data-clerk-* hooks that
-   Clerk sets, plus a few legacy class names. */
-.cl-socialButtons,
-.cl-dividerRow,
-.cl-alternativeMethods,
-.cl-formFieldRow__actionButtons {
-  display: none !important;
+.auth-shell-page {
+  min-height: 100dvh;
+  background: var(--paper, #fffefa);
 }
 
-.cl-formButtonPrimary {
-  background: var(--ink, #151419) !important;
-  color: var(--paper, #fffefa) !important;
-  border: 1px solid var(--ink, #151419) !important;
-  border-radius: 10px !important;
-  font-size: 14px !important;
-  font-weight: 500 !important;
-  height: 44px !important;
-  letter-spacing: -0.005em !important;
-  box-shadow: none !important;
-  transition: background 0.15s ease, border-color 0.15s ease !important;
+.auth-shell-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 12px;
 }
 
-.cl-formButtonPrimary:hover {
-  background: #29272e !important;
-  border-color: #29272e !important;
+.auth-shell-field {
+  display: grid;
+  gap: 6px;
 }
 
-.cl-formButtonPrimary:focus-visible {
-  box-shadow: 0 0 0 3px rgba(139, 132, 201, 0.32) !important;
-  outline: none !important;
+.auth-shell-field-label {
+  color: color-mix(in srgb, currentColor 60%, transparent);
+  font: 600 10px/1 var(--font-mono), "Space Grotesk", monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
-.cl-formFieldInput,
-.cl-otpCodeFieldInput {
-  background: #ffffff !important;
-  border: 1px solid var(--line, #dedbd3) !important;
-  border-radius: 8px !important;
-  color: var(--ink, #151419) !important;
-  box-shadow: none !important;
-  font-size: 14px !important;
-  height: 40px !important;
-  padding: 0 12px !important;
+.auth-shell-input {
+  width: 100%;
+  padding: 12px 14px;
+  background: #ffffff;
+  border: 1px solid var(--line, #dedbd3);
+  border-radius: 10px;
+  color: var(--ink, #151419);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.cl-formFieldInput:focus,
-.cl-otpCodeFieldInput:focus {
-  border-color: #5c5590 !important;
-  box-shadow: 0 0 0 3px rgba(139, 132, 201, 0.18) !important;
-  outline: none !important;
+.auth-shell-input::placeholder {
+  color: color-mix(in srgb, currentColor 38%, transparent);
 }
 
-.cl-formFieldLabel {
-  color: var(--ink, #151419) !important;
-  font-size: 12px !important;
-  font-weight: 500 !important;
-  letter-spacing: 0.01em !important;
-  text-transform: none !important;
+.auth-shell-input:focus {
+  outline: none;
+  border-color: #5c5590;
+  box-shadow: 0 0 0 3px rgb(139 132 201 / 22%);
 }
 
-.cl-formFieldHintText,
-.cl-footerActionText,
-.cl-formFieldErrorText {
-  font-size: 12px !important;
+.auth-shell-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
-.cl-footerAction,
-.cl-formResendCodeLink,
-.cl-identityPreviewEditButton,
-.cl-footerActionLink {
-  color: #5c5590 !important;
-  font-size: 13px !important;
-  font-weight: 500 !important;
+.auth-shell-submit {
+  padding: 12px 16px;
+  background: var(--ink, #151419);
+  color: var(--paper, #fffefa);
+  border: 1px solid var(--ink, #151419);
+  border-radius: 10px;
+  font: 500 14px/1 var(--font-sans), "Outfit", system-ui, sans-serif;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.cl-card,
-.cl-cardBox,
-.cl-main,
-.cl-rootBox {
-  background: transparent !important;
-  box-shadow: none !important;
-  border: 0 !important;
-  padding: 0 !important;
+.auth-shell-submit:hover:not(:disabled) {
+  background: #29272e;
+  border-color: #29272e;
 }
 
-.cl-alert {
-  border-radius: 10px !important;
-  font-size: 13px !important;
+.auth-shell-submit:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(139 132 201 / 32%);
 }
 
-.cl-formFieldErrorText {
-  color: #9a2436 !important;
+.auth-shell-submit:disabled {
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  border-color: transparent;
+  color: color-mix(in srgb, currentColor 45%, transparent);
+  cursor: not-allowed;
 }
 
-.cl-formFieldSuccessText {
-  color: #3b7a5c !important;
+.auth-shell-error {
+  margin: 0;
+  color: #b3423a;
+}
+
+.auth-shell-foot {
+  margin: 0;
+  align-self: end;
+  text-align: center;
+  color: color-mix(in srgb, currentColor 50%, transparent);
 }
 
 @media (prefers-color-scheme: dark) {
-  .auth-shell {
-    color: #f4f2ed;
-    background: #151419;
+  .auth-shell-input {
+    background: #1c1b21;
+    border-color: #2d2b34;
+    color: var(--paper, #fffefa);
   }
-  .auth-shell-mark-glyph {
-    background: #f4f2ed;
-    color: #151419;
-  }
-  .auth-shell-link {
-    color: #b6afde;
-  }
-  .cl-formButtonPrimary {
-    background: #f4f2ed !important;
-    color: #151419 !important;
-    border-color: #f4f2ed !important;
-  }
-  .cl-formButtonPrimary:hover {
-    background: #e6e2d9 !important;
-    border-color: #e6e2d9 !important;
-  }
-  .cl-formFieldInput,
-  .cl-otpCodeFieldInput {
-    background: #1c1b21 !important;
-    border-color: #2d2b34 !important;
-    color: #f4f2ed !important;
-  }
-  .cl-formFieldLabel,
-  .cl-footerActionText {
-    color: #f4f2ed !important;
-  }
-  .cl-footerAction,
-  .cl-formResendCodeLink,
-  .cl-identityPreviewEditButton,
-  .cl-footerActionLink {
-    color: #b6afde !important;
+  .auth-shell-input:focus {
+    border-color: #b6afde;
+    box-shadow: 0 0 0 3px rgb(139 132 201 / 28%);
   }
 }
 
@@ -12106,6 +11990,75 @@ button.mobile-cultural-date {
   cursor: not-allowed;
 }
 
+.account-invite-primary {
+  background: var(--ink, #151419) !important;
+  color: var(--paper, #fffefa) !important;
+  border-color: var(--ink, #151419) !important;
+}
+
+.account-invite-primary:hover:not(:disabled) {
+  background: #29272e !important;
+  border-color: #29272e !important;
+}
+
+.account-invite-primary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(139 132 201 / 32%);
+}
+
+.account-otp {
+  display: grid;
+  gap: 10px;
+  margin: 4px 0 6px;
+}
+
+.account-otp input {
+  width: 100%;
+  padding: 11px 13px;
+  background: var(--canvas, #f4f2ed);
+  border: 1px solid var(--line, #dedbd3);
+  border-radius: 9px;
+  color: var(--ink, #151419);
+  font: inherit;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.account-otp input::placeholder {
+  color: color-mix(in srgb, currentColor 40%, transparent);
+}
+
+.account-otp input:focus {
+  outline: none;
+  border-color: #5c5590;
+  box-shadow: 0 0 0 3px rgb(139 132 201 / 22%);
+}
+
+.account-link,
+.account-signout {
+  align-self: start;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: #5c5590;
+  font: 500 12px/1.4 var(--font-sans), "Outfit", system-ui, sans-serif;
+  letter-spacing: 0.01em;
+  text-align: left;
+  cursor: pointer;
+}
+
+.account-link:hover,
+.account-signout:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.account-signout {
+  margin-top: 4px;
+  color: color-mix(in srgb, currentColor 50%, transparent);
+}
+
 .invite-result {
   display: grid;
   gap: 4px;
@@ -12194,5 +12147,26 @@ button.mobile-cultural-date {
     background: #e6e2d9;
     border-color: #e6e2d9;
   }
+  .account-invite-primary {
+    background: #f4f2ed !important;
+    color: #151419 !important;
+    border-color: #f4f2ed !important;
+  }
+  .account-invite-primary:hover:not(:disabled) {
+    background: #e6e2d9 !important;
+    border-color: #e6e2d9 !important;
+  }
+  .account-otp input {
+    background: #1c1b21;
+    border-color: #2d2b34;
+    color: #f4f2ed;
+  }
+  .account-otp input:focus {
+    border-color: #b6afde;
+    box-shadow: 0 0 0 3px rgb(139 132 201 / 28%);
+  }
+  .account-link,
+  .account-signout {
+    color: #b6afde;
+  }
 }
-
