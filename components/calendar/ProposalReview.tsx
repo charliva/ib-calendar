@@ -72,7 +72,7 @@ export function ProposalReview({
               </div>
               <button
                 type="button"
-          onClick={onClose}
+                onClick={onClose}
                 aria-label="Close proposal"
               >
                 <X size={16} />
