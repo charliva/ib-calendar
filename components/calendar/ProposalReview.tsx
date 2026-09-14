@@ -52,6 +52,13 @@ export function ProposalReview({
   if (!proposal) return null;
 
   return (
+    <div
+      className="overlay proposal-overlay"
+      role="presentation"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
           <section
             className={`proposal-sheet${
               timetableSubjectProposal?.proposalId === proposal.id &&
@@ -367,6 +374,7 @@ export function ProposalReview({
               </>
             )}
           </section>
+    </div>
 
   );
 }
