@@ -26,6 +26,11 @@ export function rowToItem(row: Record<string, unknown>): CalendarItem {
       windowStart: (row.window_start as string | null) ?? null,
       windowEnd: (row.window_end as string | null) ?? null,
       energyType: row.energy_type as EnergyType,
+      energyUsage:
+        row.energy_usage == null ? undefined : Number(row.energy_usage),
+      linkedClassId: (row.linked_class_id as string | null) ?? null,
+      linkedOccurrenceDate:
+        (row.linked_occurrence_date as string | null) ?? null,
       priority: row.priority as Priority,
       splittable: Boolean(row.splittable),
       flexibility: row.flexibility as Flexibility,

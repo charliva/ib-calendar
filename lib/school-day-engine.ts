@@ -255,7 +255,7 @@ export function protectedSchoolRanges(
   settings: SchoolDaySettings,
   from: Date,
   to: Date,
-  task?: { energyType: EnergyType },
+  task?: { energyType: EnergyType; energyUsage?: number },
   calendarItems: CalendarItem[] = [],
 ): TimeRange[] {
   const lessons = schoolLessonRanges(
@@ -280,8 +280,7 @@ export function protectedSchoolRanges(
     if (!settings.allowCommuteScheduling) {
       ranges.push({
         start: new Date(
-          first.start.getTime() -
-            settings.travelBeforeSchoolMinutes * MINUTE,
+          first.start.getTime() - settings.travelBeforeSchoolMinutes * MINUTE,
         ),
         end: first.start,
         kind: "commute",
@@ -293,14 +292,15 @@ export function protectedSchoolRanges(
       });
     }
     if (
-      task?.energyType === "deep_focus" &&
+      (task?.energyUsage != null
+        ? task.energyUsage >= 4
+        : task?.energyType === "deep_focus") &&
       settings.recoveryAfterHomeMinutes > 0
     ) {
       ranges.push({
         start: arriveHome,
         end: new Date(
-          arriveHome.getTime() +
-            settings.recoveryAfterHomeMinutes * MINUTE,
+          arriveHome.getTime() + settings.recoveryAfterHomeMinutes * MINUTE,
         ),
         kind: "recovery",
       });
@@ -326,6 +326,7 @@ export function studySlotSuitability(
     taskContext: TaskContext;
     computerRequired: boolean;
     energyType: EnergyType;
+    energyUsage?: number;
   },
   classes: SchoolClass[],
   exceptions: ClassException[],
@@ -412,8 +413,7 @@ export function studySlotSuitability(
     const last = dayLessons.at(-1)!;
     const commuteTo = {
       start: new Date(
-        first.start.getTime() -
-          settings.travelBeforeSchoolMinutes * MINUTE,
+        first.start.getTime() - settings.travelBeforeSchoolMinutes * MINUTE,
       ),
       end: first.start,
       kind: "commute" as const,
@@ -449,7 +449,9 @@ export function studySlotSuitability(
       arriveHome.getTime() + settings.recoveryAfterHomeMinutes * MINUTE,
     );
     if (
-      task.energyType === "deep_focus" &&
+      (task.energyUsage != null
+        ? task.energyUsage >= 4
+        : task.energyType === "deep_focus") &&
       start < recoveryEnd &&
       end > arriveHome
     ) {
@@ -474,7 +476,9 @@ export function studySlotSuitability(
     suitable: true,
     context: "home",
     preferred,
-    reason: preferred ? "Inside the preferred study window." : "Suitable home study time.",
+    reason: preferred
+      ? "Inside the preferred study window."
+      : "Suitable home study time.",
   };
 }
 
@@ -495,8 +499,7 @@ export function suggestAssignmentForFreePeriod(
         (!assignment.dueAt || new Date(assignment.dueAt) > period.start),
     )
     .sort((a, b) => {
-      const priority =
-        priorityRank[a.priority] - priorityRank[b.priority];
+      const priority = priorityRank[a.priority] - priorityRank[b.priority];
       if (priority) return priority;
       return (
         new Date(a.dueAt ?? "9999-12-31").getTime() -
@@ -566,8 +569,7 @@ export function recommendationsForFreePeriod(
         !item.assignmentId &&
         !item.assessmentId &&
         item.durationMin <= period.durationMinutes &&
-        (item.taskContext === "school" ||
-          item.taskContext === "anywhere") &&
+        (item.taskContext === "school" || item.taskContext === "anywhere") &&
         (!item.computerRequired || settings.schoolComputerAccess) &&
         (!item.deadline || new Date(item.deadline) > period.start) &&
         (!item.windowStart || new Date(item.windowStart) <= period.start) &&
@@ -610,11 +612,8 @@ export function recommendForFreePeriod(
   items: CalendarItem[],
   settings: SchoolDaySettings,
 ): FreePeriodRecommendation | null {
-  return recommendationsForFreePeriod(
-    period,
-    assignments,
-    items,
-    settings,
-    1,
-  )[0] ?? null;
+  return (
+    recommendationsForFreePeriod(period, assignments, items, settings, 1)[0] ??
+    null
+  );
 }

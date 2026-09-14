@@ -13,7 +13,7 @@ export function classColorStyle(
   item: CalendarItem,
   subjects: Subject[],
 ): CSSProperties | undefined {
-  if (!isImportedTimetableItem(item)) return undefined;
+  if (!item.classId && !isImportedTimetableItem(item)) return undefined;
   const subject = subjects.find(
     (candidate) =>
       candidate.id === item.subjectId ||

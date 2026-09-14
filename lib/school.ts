@@ -8,12 +8,7 @@ import type {
 export type { TaskContext } from "@/lib/calendar-engine";
 export type WeekPattern = "every" | "a" | "b";
 export type AssignmentStatus =
-  | "inbox"
-  | "planned"
-  | "in_progress"
-  | "submitted"
-  | "completed"
-  | "archived";
+  "inbox" | "planned" | "in_progress" | "submitted" | "completed" | "archived";
 export type AssessmentStatus = "upcoming" | "completed" | "cancelled";
 export type LessonExceptionStatus = "cancelled" | "rescheduled";
 export type HomeworkTaskType =
@@ -25,11 +20,7 @@ export type HomeworkTaskType =
   | "project"
   | "other";
 export type HomeworkCaptureStatus =
-  | "captured"
-  | "scheduled"
-  | "converted"
-  | "completed"
-  | "archived";
+  "captured" | "scheduled" | "converted" | "completed" | "archived";
 
 export type SchoolDaySettings = {
   schoolLocation: string;
@@ -64,10 +55,7 @@ export const WORK_TYPE_LABELS: Record<SchoolWorkType, string> = {
   creative_project: "Creative / project",
 };
 
-export const DEFAULT_FOCUS_TEMPLATES: Record<
-  SchoolWorkType,
-  FocusTemplate
-> = {
+export const DEFAULT_FOCUS_TEMPLATES: Record<SchoolWorkType, FocusTemplate> = {
   deep_focus: { durationMin: 45, durationMax: 60 },
   light_work: { durationMin: 25, durationMax: 25 },
   reading: { durationMin: 25, durationMax: 25 },
@@ -110,6 +98,8 @@ export type Subject = {
 };
 
 export type SchoolClass = {
+  energyUsage?: number;
+  locationContext?: "school" | "home" | "library" | "city" | "anywhere";
   id: string;
   subjectId: string;
   weekday: number;
@@ -124,6 +114,9 @@ export type SchoolClass = {
 };
 
 export type ClassException = {
+  replacementTitle?: string;
+  energyUsage?: number;
+  locationContext?: string;
   id: string;
   classId: string;
   occurrenceDate: string;
@@ -208,9 +201,7 @@ export type SchoolState = {
   schoolDaySettings: SchoolDaySettings;
 };
 
-export function normalizeAssignment(
-  assignment: Assignment,
-): Assignment {
+export function normalizeAssignment(assignment: Assignment): Assignment {
   return {
     ...assignment,
     allowedWeekdays:
@@ -339,10 +330,8 @@ export function rowToSchoolDaySettings(
     travelHomeMinutes: numeric(row.travel_home_minutes, 30),
     recoveryAfterHomeMinutes: numeric(row.recovery_after_home_minutes, 30),
     schoolworkCutoff: text(row.schoolwork_cutoff).slice(0, 5) || "21:00",
-    preferredStudyStart:
-      text(row.preferred_study_start).slice(0, 5) || "16:00",
-    preferredStudyEnd:
-      text(row.preferred_study_end).slice(0, 5) || "19:00",
+    preferredStudyStart: text(row.preferred_study_start).slice(0, 5) || "16:00",
+    preferredStudyEnd: text(row.preferred_study_end).slice(0, 5) || "19:00",
     allowCommuteScheduling: Boolean(row.allow_commute_scheduling),
     schoolComputerAccess: Boolean(row.school_computer_access),
     minimumFreePeriodMinutes: numeric(row.minimum_free_period_minutes, 20),
@@ -384,6 +373,9 @@ export function schoolDaySettingsToRow(settings: SchoolDaySettings) {
 
 export function rowToClass(row: Record<string, unknown>): SchoolClass {
   return {
+    energyUsage: numeric(row.energy_usage, 3),
+    locationContext:
+      (row.location_context as SchoolClass["locationContext"]) ?? "school",
     id: text(row.id),
     subjectId: text(row.subject_id),
     weekday: numeric(row.weekday, 1),
@@ -400,6 +392,8 @@ export function rowToClass(row: Record<string, unknown>): SchoolClass {
 
 export function classToRow(schoolClass: SchoolClass) {
   return {
+    energy_usage: schoolClass.energyUsage ?? 3,
+    location_context: schoolClass.locationContext ?? "school",
     id: schoolClass.id,
     subject_id: schoolClass.subjectId,
     weekday: schoolClass.weekday,
@@ -417,13 +411,19 @@ export function rowToClassException(
   row: Record<string, unknown>,
 ): ClassException {
   return {
+    replacementTitle: text(row.replacement_title),
+    energyUsage:
+      row.energy_usage == null ? undefined : numeric(row.energy_usage, 3),
+    locationContext: text(row.location_context),
     id: text(row.id),
     classId: text(row.class_id),
     occurrenceDate: text(row.occurrence_date),
     status: (text(row.status) || "cancelled") as LessonExceptionStatus,
     replacementDate: nullableText(row.replacement_date),
-    replacementStartTime: nullableText(row.replacement_start_time)?.slice(0, 5) ?? null,
-    replacementEndTime: nullableText(row.replacement_end_time)?.slice(0, 5) ?? null,
+    replacementStartTime:
+      nullableText(row.replacement_start_time)?.slice(0, 5) ?? null,
+    replacementEndTime:
+      nullableText(row.replacement_end_time)?.slice(0, 5) ?? null,
     replacementRoom: text(row.replacement_room),
     notes: text(row.notes),
     createdAt: text(row.created_at) || new Date().toISOString(),
@@ -432,6 +432,9 @@ export function rowToClassException(
 
 export function classExceptionToRow(exception: ClassException) {
   return {
+    replacement_title: exception.replacementTitle || null,
+    energy_usage: exception.energyUsage ?? null,
+    location_context: exception.locationContext || null,
     id: exception.id,
     class_id: exception.classId,
     occurrence_date: exception.occurrenceDate,
@@ -470,8 +473,8 @@ export function rowToAssignment(row: Record<string, unknown>): Assignment {
     taskContext: (text(row.task_context) || "anywhere") as TaskContext,
     computerRequired: Boolean(row.computer_required),
     workType: nullableText(row.work_type) as SchoolWorkType | null,
-    requiredEnergy:
-      (text(row.required_energy) || "medium") as EnergyRequirement,
+    requiredEnergy: (text(row.required_energy) ||
+      "medium") as EnergyRequirement,
     allowedWeekdays: numericArray(row.allowed_weekdays, [1, 2, 3, 4, 5, 6, 7]),
     allowedWindowStart: text(row.allowed_window_start).slice(0, 5) || "15:00",
     allowedWindowEnd: text(row.allowed_window_end).slice(0, 5) || "21:00",

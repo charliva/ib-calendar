@@ -170,19 +170,19 @@ export function QuickHud({
               </div>
               <div>
                 <dt>
-                  <span className="capacity-dot focus" /> Deep focus
+                  <span className="capacity-dot focus" /> High energy
                 </dt>
                 <dd>{dayCapacity.deep}m</dd>
               </div>
               <div>
                 <dt>
-                  <span className="capacity-dot social" /> Social
+                  <span className="capacity-dot social" /> Moderate
                 </dt>
                 <dd>{dayCapacity.social}m</dd>
               </div>
               <div>
                 <dt>
-                  <span className="capacity-dot recovery" /> Recovery
+                  <span className="capacity-dot recovery" /> Light
                 </dt>
                 <dd>{dayCapacity.recovery}m</dd>
               </div>

@@ -16,7 +16,10 @@
 -- backward-compatible.
 
 alter table public.time_block_choices
-  drop constraint time_block_choices_suggestions_check;
+  drop constraint if exists time_block_choices_suggestions_check;
+
+alter table public.time_block_choices
+  drop constraint if exists time_block_choices_suggestions_length_check;
 
 alter table public.time_block_choices
   add constraint time_block_choices_suggestions_length_check

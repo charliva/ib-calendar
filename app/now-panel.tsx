@@ -45,6 +45,7 @@ export function NowPanel({
     "home",
     "school",
     "library",
+    "city",
     "commute",
   ];
   const energies: EnergyRequirement[] = ["low", "medium", "high"];

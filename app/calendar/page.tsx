@@ -33,8 +33,7 @@ import {
   useState,
   Suspense,
 } from "react";
-import {
-} from "@/app/calendar-format";
+import {} from "@/app/calendar-format";
 import {
   isAttentionQuestion,
   intentionFromCommand,
@@ -65,7 +64,18 @@ import { TaskDock } from "@/components/calendar/TaskDock";
 import { QuickHud } from "@/components/calendar/QuickHud";
 import { CalendarHeader } from "@/components/calendar/CalendarHeader";
 import { ProposalReview } from "@/components/calendar/ProposalReview";
-import { EventModal } from "@/components/calendar/EventModal";
+import { CompactEventEditor } from "@/components/calendar/CompactEventEditor";
+import { SelectionDeleteDialog } from "@/components/calendar/SelectionDeleteDialog";
+import {
+  classCalendarItems,
+  isClassEvent,
+  localTime,
+  snapEventMinutes,
+  type EditorOptions,
+} from "@/lib/calendar/interactions";
+import { parseTemporalText } from "@/lib/temporal-parser";
+import { toLocalInput, fromLocalInput } from "@/lib/calendar/time-inputs";
+import { eventEditSchema } from "@/lib/calendar/event-edit-schema";
 import { CommandPalette } from "@/components/calendar/CommandPalette";
 import {
   rowToItem,
@@ -88,19 +98,29 @@ const TimeCalendar = lazy(() =>
   import("@/app/time-calendar").then((mod) => ({ default: mod.TimeCalendar })),
 );
 const OverviewCalendar = lazy(() =>
-  import("@/app/overview-calendar").then((mod) => ({ default: mod.OverviewCalendar })),
+  import("@/app/overview-calendar").then((mod) => ({
+    default: mod.OverviewCalendar,
+  })),
 );
 const HomeworkInbox = lazy(() =>
-  import("@/app/homework-inbox").then((mod) => ({ default: mod.HomeworkInbox })),
+  import("@/app/homework-inbox").then((mod) => ({
+    default: mod.HomeworkInbox,
+  })),
 );
 const SchoolWorkspace = lazy(() =>
-  import("@/app/school-workspace").then((mod) => ({ default: mod.SchoolWorkspace })),
+  import("@/app/school-workspace").then((mod) => ({
+    default: mod.SchoolWorkspace,
+  })),
 );
 const IntentionsPanel = lazy(() =>
-  import("@/app/intentions-panel").then((mod) => ({ default: mod.IntentionsPanel })),
+  import("@/app/intentions-panel").then((mod) => ({
+    default: mod.IntentionsPanel,
+  })),
 );
 const GoDeeperPanel = lazy(() =>
-  import("@/app/go-deeper-panel").then((mod) => ({ default: mod.GoDeeperPanel })),
+  import("@/app/go-deeper-panel").then((mod) => ({
+    default: mod.GoDeeperPanel,
+  })),
 );
 import {
   buildAttentionSnapshot,
@@ -219,12 +239,15 @@ import {
   type Subject,
 } from "@/lib/school";
 import { createClient } from "@/lib/supabase/client";
-import { compactPendingMutations, prepareMutation } from "@/lib/sync";
+import {
+  compactPendingMutations,
+  prepareMutation,
+  mutationIdentity,
+} from "@/lib/sync";
 
 type Zoom = "school" | "upcoming" | "day" | "week" | "month" | "semester";
 type PaletteMode = "command" | "filter" | "upload";
 type CommandTurn = { role: "user" | "assistant"; text: string };
-
 
 function transitionState(update: () => void) {
   if (typeof document !== "undefined" && "startViewTransition" in document) {
@@ -280,6 +303,7 @@ function commandItem(item: CalendarItem) {
     windowStart: item.windowStart,
     windowEnd: item.windowEnd,
     energyType: item.energyType,
+    energyUsage: item.energyUsage,
     priority: item.priority,
     splittable: item.splittable,
     flexibility: item.flexibility,
@@ -355,12 +379,25 @@ export default function Home() {
   const [selectedItem, setSelectedItem] = useState<CalendarItem | null>(null);
   const [draftItem, setDraftItem] = useState<CalendarItem | null>(null);
   const [isCreatingItem, setIsCreatingItem] = useState(false);
+  const [eventAnchor, setEventAnchor] = useState<DOMRect | null>(null);
+  const [eventSelection, setEventSelection] = useState<string[]>([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [classesOnly, setClassesOnly] = useState(false);
+  const closeCompactEditor = useCallback(() => {
+    setSelectedItem(null);
+    setDraftItem(null);
+    setIsCreatingItem(false);
+  }, []);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [homeworkOpen, setHomeworkOpen] = useState(false);
   const [weeklyReviewOpen, setWeeklyReviewOpen] = useState(false);
-  const [completedReviewWeeks, setCompletedReviewWeeks] = useState<string[]>([]);
-  const [weeklyReviewPromptWeek, setWeeklyReviewPromptWeek] = useState<string | null>(null);
+  const [completedReviewWeeks, setCompletedReviewWeeks] = useState<string[]>(
+    [],
+  );
+  const [weeklyReviewPromptWeek, setWeeklyReviewPromptWeek] = useState<
+    string | null
+  >(null);
   const [intentionsOpen, setIntentionsOpen] = useState(false);
   const [intentionSeed, setIntentionSeed] = useState<Partial<Intention> | null>(
     null,
@@ -461,8 +498,7 @@ export default function Home() {
       viewportHeight,
       visibleDay: zoom === "day" || zoom === "week" ? selectedDay : anchorDate,
       visibleHour: Math.min(23, Math.floor(visiblePosition)),
-      visibleMinute:
-        Math.min(45, Math.round((visiblePosition % 1) * 4) * 15),
+      visibleMinute: Math.min(45, Math.round((visiblePosition % 1) * 4) * 15),
     };
   }, [
     anchorDate,
@@ -481,7 +517,9 @@ export default function Home() {
 
   const applyViewState = useCallback((state: LastViewState | null) => {
     const next = state ?? defaultViewState();
-    const { view: urlView, date: urlDate } = calendarViewFromSearch(window.location.search);
+    const { view: urlView, date: urlDate } = calendarViewFromSearch(
+      window.location.search,
+    );
     if (urlView && isRestorableZoom(urlView)) setZoom(urlView);
     else if (isRestorableZoom(next.zoom)) setZoom(next.zoom);
     setAnchorDate(urlDate ?? next.anchorDate);
@@ -504,7 +542,8 @@ export default function Home() {
     url.searchParams.set("view", zoom === "upcoming" ? "home" : zoom);
     url.searchParams.set("date", zoom === "day" ? selectedDay : anchorDate);
     if (url.toString() !== window.location.href) {
-      if (!urlReady.current || urlRestoring.current) window.history.replaceState(null, "", url);
+      if (!urlReady.current || urlRestoring.current)
+        window.history.replaceState(null, "", url);
       else window.history.pushState(null, "", url);
     }
     urlReady.current = true;
@@ -512,7 +551,10 @@ export default function Home() {
   }, [viewRestored, zoom, anchorDate, selectedDay]);
 
   useEffect(() => {
-    const restore = () => { urlRestoring.current = true; applyViewState(defaultViewState()); };
+    const restore = () => {
+      urlRestoring.current = true;
+      applyViewState(defaultViewState());
+    };
     window.addEventListener("popstate", restore);
     return () => window.removeEventListener("popstate", restore);
   }, [applyViewState]);
@@ -526,7 +568,9 @@ export default function Home() {
     const exactTop = state.scrollTop ?? anchorTop;
     const preferAnchor =
       !state.viewportHeight ||
-      Math.abs((calendarStageRef.current?.clientHeight ?? 0) - state.viewportHeight) > 160;
+      Math.abs(
+        (calendarStageRef.current?.clientHeight ?? 0) - state.viewportHeight,
+      ) > 160;
     const targetTop = preferAnchor ? anchorTop : exactTop;
     let attempts = 0;
     const attempt = () => {
@@ -556,7 +600,13 @@ export default function Home() {
         compactPendingMutations(queued);
       await Promise.all(supersededIds.map(removePendingMutation));
       const failures: string[] = [];
-      for (const mutation of pending) {
+      const failedDependencies = new Set<string>();
+      for (const mutation of [
+        ...pending.filter((entry) => !entry.dependsOn),
+        ...pending.filter((entry) => entry.dependsOn),
+      ]) {
+        if (mutation.dependsOn && failedDependencies.has(mutation.dependsOn))
+          continue;
         try {
           let query;
           const prepared = prepareMutation(mutation, ownerKey);
@@ -582,6 +632,7 @@ export default function Home() {
           if (mutation.id !== undefined)
             await removePendingMutation(mutation.id);
         } catch (error) {
+          failedDependencies.add(mutationIdentity(mutation));
           const message = syncErrorMessage(error);
           failures.push(message);
           await updatePendingMutation({
@@ -812,7 +863,8 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration-safe: server and client must agree on the initial date
     setAnchorDate(today);
     setSelectedDay(today);
-    if (initialView.view && isRestorableZoom(initialView.view)) setZoom(initialView.view);
+    if (initialView.view && isRestorableZoom(initialView.view))
+      setZoom(initialView.view);
     updateClock();
     const timer = window.setInterval(updateClock, 60_000);
     return () => window.clearInterval(timer);
@@ -958,13 +1010,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [
-    applyRestoredScroll,
-    applyViewState,
-    hydrated,
-    user,
-    viewRestored,
-  ]);
+  }, [applyRestoredScroll, applyViewState, hydrated, user, viewRestored]);
 
   const scheduleViewSave = useCallback(() => {
     if (!viewRestored) return;
@@ -979,21 +1025,14 @@ export default function Home() {
         void saveLastViewState(`owner:${user.id}:last-view`, state);
       }
     }, 400);
-  }, [
-    currentViewState,
-    user,
-    viewRestored,
-  ]);
+  }, [currentViewState, user, viewRestored]);
 
   useEffect(() => {
     scheduleViewSave();
   }, [scheduleViewSave]);
 
   useEffect(() => {
-    if (
-      !weeklyReviewAvailable ||
-      weeklyReviewPromptWeek === currentWeekKey
-    ) {
+    if (!weeklyReviewAvailable || weeklyReviewPromptWeek === currentWeekKey) {
       return;
     }
     const timer = window.setTimeout(() => {
@@ -1328,6 +1367,14 @@ export default function Home() {
   }
 
   function deleteItem(item: CalendarItem) {
+    if (item.classId) {
+      void persistClassOccurrence(item, true).catch(() =>
+        setNotice("Could not delete the class. Try again."),
+      );
+      closeCompactEditor();
+      setEventSelection([]);
+      return;
+    }
     recordHistory(`Delete “${item.title}”`);
     setItems((current) =>
       current.filter((candidate) => candidate.id !== item.id),
@@ -1339,12 +1386,14 @@ export default function Home() {
       action: "delete",
       recordId: item.id,
     }).catch(() => undefined);
-    setNotice(`Deleted “${item.title}”. Cmd+Z to undo.`);
+    setEventSelection([]);
   }
 
   function scheduleAt(itemId: string, day: string, hour: number, minute = 0) {
-    const item = items.find((candidate) => candidate.id === itemId);
-    if (!item || item.flexibility === "fixed") return;
+    const item = calendarDisplayItems.find(
+      (candidate) => candidate.id === itemId,
+    );
+    if (!item) return;
     const start = dateFromKey(day);
     start.setHours(hour, minute, 0, 0);
     const minutes = Math.max(item.durationMin, durationMinutes(item));
@@ -1353,10 +1402,19 @@ export default function Home() {
       item,
       start.toISOString(),
       end.toISOString(),
-      items,
+      [],
+      { allowFixedChange: true },
     );
     if (!validation.valid) {
       setNotice(validation.errors[0]);
+      return;
+    }
+    if (item.classId) {
+      void persistClassOccurrence({
+        ...item,
+        startsAt: start.toISOString(),
+        endsAt: end.toISOString(),
+      });
       return;
     }
     transitionState(() =>
@@ -1371,7 +1429,6 @@ export default function Home() {
       ),
     );
     setSelectedDay(day);
-    if (validation.warnings.length) setNotice(validation.warnings[0]);
   }
 
   function unscheduleItem(itemId: string) {
@@ -1500,10 +1557,11 @@ export default function Home() {
 
       const deltaMinutes = ((moveEvent.clientY - startY) / rowHeight) * 60;
 
+      const step = moveEvent.altKey ? 5 : 15;
       nextMinutes =
         edge === "end"
-          ? Math.round((original + deltaMinutes) / 15) * 15
-          : Math.round((original - deltaMinutes) / 15) * 15;
+          ? Math.round((original + deltaMinutes) / step) * step
+          : Math.round((original - deltaMinutes) / step) * step;
 
       nextMinutes = Math.max(minimum, Math.min(maximum, nextMinutes));
 
@@ -1516,6 +1574,18 @@ export default function Home() {
         edge === "end"
           ? new Date(originalStart.getTime() + nextMinutes * 60_000)
           : originalEnd;
+
+      if (isClassEvent(item) && !moveEvent.altKey) {
+        const snap = snapEventMinutes(
+          nextStart.getHours() * 60 + nextStart.getMinutes(),
+          nextMinutes,
+          true,
+        );
+        nextStart = new Date(nextStart);
+        nextStart.setHours(Math.floor(snap.start / 60), snap.start % 60, 0, 0);
+        nextEnd = new Date(nextStart.getTime() + snap.duration * 60000);
+        nextMinutes = snap.duration;
+      }
 
       setResizing({
         id: item.id,
@@ -1543,7 +1613,7 @@ export default function Home() {
         resizedItem,
         nextStart.toISOString(),
         nextEnd.toISOString(),
-        items,
+        [],
         { allowFixedChange: true },
       );
 
@@ -1552,6 +1622,14 @@ export default function Home() {
         return;
       }
 
+      if (item.classId) {
+        void persistClassOccurrence({
+          ...item,
+          startsAt: nextStart.toISOString(),
+          endsAt: nextEnd.toISOString(),
+        });
+        return;
+      }
       updateItem(
         {
           ...resizedItem,
@@ -1577,7 +1655,9 @@ export default function Home() {
     const clean = (instruction ?? commandText).trim();
     if (!clean || commandBusy) return;
     const target = targetId ?? commandTargetId;
-    const scopedCommand = target ? `For calendar item id ${target}, ${clean}` : clean;
+    const scopedCommand = target
+      ? `For calendar item id ${target}, ${clean}`
+      : clean;
     setCommandError("");
     if (mode === "filter") {
       setFilterText(clean);
@@ -1586,7 +1666,11 @@ export default function Home() {
     }
     const continuingConversation = commandConversation.length > 0;
     const homework = parseHomework(clean, subjects, new Date());
-    if (!target && !continuingConversation && looksLikeHomeworkCommand(clean, homework)) {
+    if (
+      !target &&
+      !continuingConversation &&
+      looksLikeHomeworkCommand(clean, homework)
+    ) {
       captureHomework(clean);
       setPaletteOpen(false);
       setCommandText("");
@@ -1601,9 +1685,8 @@ export default function Home() {
       );
       return;
     }
-    const intentionDraft = continuingConversation || target
-      ? null
-      : intentionFromCommand(clean);
+    const intentionDraft =
+      continuingConversation || target ? null : intentionFromCommand(clean);
     if (intentionDraft) {
       setIntentionSeed(intentionDraft);
       setIntentionsOpen(true);
@@ -1631,7 +1714,10 @@ export default function Home() {
           command: scopedCommand,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           items: relevantCommandItems(
-            [...commandConversation.map((turn) => turn.text), scopedCommand].join(" "),
+            [
+              ...commandConversation.map((turn) => turn.text),
+              scopedCommand,
+            ].join(" "),
             items,
           ).map(commandItem),
           subjects: subjects.map((subject) => ({
@@ -1676,10 +1762,15 @@ export default function Home() {
       const commandProposal = proposalFromCommandResponse(raw, items);
       const validation = validateProposal(commandProposal, items);
       if (!validation.valid) {
-        setNotice("That change conflicts with your schedule. Try another time or edit the event manually.");
+        setNotice(
+          "That change conflicts with your schedule. Try another time or edit the event manually.",
+        );
       } else {
         recordHistory(commandProposal.title);
-        const next = applyProposal(commandProposal, items).map((item) => ({ ...item, syncStatus: "pending" as const }));
+        const next = applyProposal(commandProposal, items).map((item) => ({
+          ...item,
+          syncStatus: "pending" as const,
+        }));
         transitionState(() => setItems(next));
         syncSnapshotDiff(items, next);
         setNotice(`Applied: ${commandProposal.title}. Undo is available.`);
@@ -1688,15 +1779,21 @@ export default function Home() {
       setCommandQuestions([]);
     } catch {
       if (
-        !target && /^(?:add|create|schedule|new)\b/i.test(clean) &&
+        !target &&
+        /^(?:add|create|schedule|new)\b/i.test(clean) &&
         !/(?:move|delete|remove|cancel)\b/i.test(clean)
       ) {
         const fallback = simpleFallbackProposal(clean);
         recordHistory(fallback.title);
-        const next = applyProposal(fallback, items).map((item) => ({ ...item, syncStatus: "pending" as const }));
+        const next = applyProposal(fallback, items).map((item) => ({
+          ...item,
+          syncStatus: "pending" as const,
+        }));
         setItems(next);
         syncSnapshotDiff(items, next);
-        setNotice("Saved to Flexible work. AI is unavailable, so no time was assigned. Undo is available.");
+        setNotice(
+          "Saved to Flexible work. AI is unavailable, so no time was assigned. Undo is available.",
+        );
       } else {
         keepConversationOpen = true;
         setPaletteOpen(true);
@@ -2075,7 +2172,363 @@ export default function Home() {
     );
   }
 
+  async function persistClassOccurrence(item: CalendarItem, cancelled = false) {
+    const existing = classExceptions.find(
+      (entry) =>
+        entry.classId === item.classId &&
+        entry.occurrenceDate === item.occurrenceDate,
+    );
+    const exception: ClassException = {
+      id: existing?.id ?? crypto.randomUUID(),
+      classId: item.classId!,
+      occurrenceDate: item.occurrenceDate!,
+      status: cancelled ? "cancelled" : "rescheduled",
+      replacementDate: item.startsAt ? dateKey(new Date(item.startsAt)) : null,
+      replacementStartTime: item.startsAt
+        ? localTime(new Date(item.startsAt))
+        : null,
+      replacementEndTime: item.endsAt ? localTime(new Date(item.endsAt)) : null,
+      replacementRoom: item.room,
+      replacementTitle: item.title,
+      energyUsage: item.energyUsage,
+      locationContext: item.taskContext,
+      notes: existing?.notes ?? "",
+      createdAt: existing?.createdAt ?? new Date().toISOString(),
+    };
+    await persistMutation({
+      table: "class_exceptions",
+      action: "upsert",
+      recordId: exception.id,
+      payload: classExceptionToRow(exception),
+    });
+    setClassExceptions((current) => [
+      ...current.filter((entry) => entry.id !== exception.id),
+      exception,
+    ]);
+  }
+
+  async function saveCompactEvent(
+    input: CalendarItem,
+    options: EditorOptions,
+  ): Promise<CalendarItem> {
+    if (!input.title.trim()) throw new Error("Give this a title first.");
+    if (input.room.length > 80)
+      throw new Error("Keep location details under 80 characters.");
+    if (
+      input.startsAt &&
+      input.endsAt &&
+      new Date(input.endsAt) <= new Date(input.startsAt)
+    )
+      throw new Error("End time must be after start time.");
+    const minutes =
+      input.startsAt && input.endsAt
+        ? durationMinutes(input)
+        : input.durationMin;
+    let next = {
+      ...input,
+      title: input.title.trim(),
+      durationMin: minutes,
+      durationMax: minutes,
+      requiredEnergy:
+        (input.energyUsage ?? 3) <= 2
+          ? ("low" as const)
+          : (input.energyUsage ?? 3) >= 4
+            ? ("high" as const)
+            : ("medium" as const),
+    };
+    if (options.isClass) {
+      if (!next.startsAt || !next.endsAt)
+        throw new Error("Choose a time for the class.");
+      const start = new Date(next.startsAt);
+      const end = new Date(next.endsAt);
+      if (dateKey(start) !== dateKey(end))
+        throw new Error("A class must start and end on the same day.");
+      const original = classes.find((entry) => entry.id === next.classId);
+      if (original && options.scope === "occurrence") {
+        await persistClassOccurrence(next);
+        return next;
+      }
+      let subject = subjects.find(
+        (entry) =>
+          entry.name.toLowerCase() === next.title.toLowerCase() ||
+          entry.shortName.toLowerCase() === next.title.toLowerCase(),
+      );
+      if (!subject) {
+        subject = {
+          id: crypto.randomUUID(),
+          name: next.title,
+          shortName: next.title.slice(0, 12),
+          teacher: "",
+          room: next.room,
+          color: "#8b7abb",
+          icon: "book",
+          createdAt: new Date().toISOString(),
+        };
+        await persistMutation({
+          table: "subjects",
+          action: "upsert",
+          recordId: subject.id,
+          payload: subjectToRow(subject),
+        });
+        setSubjects((current) => [...current, subject!]);
+      }
+      const day = dateKey(start);
+      const reuse =
+        original && original.validFrom >= (next.occurrenceDate ?? day);
+      const lesson: SchoolClass = {
+        id: reuse ? original.id : next.classId ? crypto.randomUUID() : next.id,
+        subjectId: subject.id,
+        weekday: start.getDay() || 7,
+        startTime: localTime(start),
+        endTime: localTime(end),
+        weekPattern: options.repeat === "once" ? "every" : options.repeat,
+        teacher: subject.teacher,
+        room: next.room,
+        validFrom: day,
+        validUntil:
+          options.repeat === "once"
+            ? day
+            : original?.validUntil === original?.validFrom
+              ? null
+              : (original?.validUntil ?? null),
+        energyUsage: next.energyUsage,
+        locationContext: next.taskContext,
+        createdAt: original?.createdAt ?? new Date().toISOString(),
+      };
+      const classSynced = await persistMutation({
+        table: "classes",
+        action: "upsert",
+        recordId: lesson.id,
+        payload: classToRow(lesson),
+      });
+      if (user && isOnline && !classSynced)
+        throw new Error(
+          "Class queued for sync. The original event is preserved until the class can be saved.",
+        );
+      // Keep the old series intact until its replacement has been saved.
+      if (original && original.validFrom < (next.occurrenceDate ?? day)) {
+        const until = dateFromKey(next.occurrenceDate ?? day);
+        until.setDate(until.getDate() - 1);
+        const previous = { ...original, validUntil: dateKey(until) };
+        await persistMutation({
+          table: "classes",
+          action: "upsert",
+          recordId: previous.id,
+          payload: classToRow(previous),
+        });
+        setClasses((current) =>
+          current.map((entry) => (entry.id === previous.id ? previous : entry)),
+        );
+      }
+      setClasses((current) => [
+        ...current.filter((entry) => entry.id !== lesson.id),
+        lesson,
+      ]);
+      if (!next.classId && items.some((entry) => entry.id === next.id)) {
+        await persistMutation({
+          table: "calendar_items",
+          action: "delete",
+          recordId: next.id,
+          dependsOn: `classes:record:${lesson.id}`,
+        });
+        setItems((current) => current.filter((entry) => entry.id !== next.id));
+      }
+      next = {
+        ...next,
+        id: `class:${lesson.id}:${day}`,
+        classId: lesson.id,
+        occurrenceDate: day,
+        subjectId: subject.id,
+        flexibility: "fixed",
+      };
+    } else {
+      next = {
+        ...next,
+        constraints: next.constraints.filter(
+          (value) => value !== "Weekly timetable screenshot",
+        ),
+        source: isImportedTimetableItem(next) ? "manual" : next.source,
+      };
+      if (next.classId) {
+        await persistClassOccurrence(next, true);
+        next = {
+          ...next,
+          id: crypto.randomUUID(),
+          classId: null,
+          occurrenceDate: null,
+          flexibility: "flexible",
+        };
+      }
+      const existing = items.some((entry) => entry.id === next.id);
+      await persistMutation({
+        table: "calendar_items",
+        action: "upsert",
+        recordId: next.id,
+        payload: itemToRow(next),
+      });
+      recordHistory(`${existing ? "Edit" : "Create"} “${next.title}”`);
+      setItems((current) => [
+        ...current.filter((entry) => entry.id !== next.id),
+        next,
+      ]);
+      if (next.homeworkCaptureId) {
+        const capture = homeworkCaptures.find(
+          (entry) => entry.id === next.homeworkCaptureId,
+        );
+        if (capture) {
+          const updated = {
+            ...capture,
+            status:
+              next.status === "completed"
+                ? ("completed" as const)
+                : ("scheduled" as const),
+            subjectId: next.subjectId,
+          };
+          await persistMutation({
+            table: "homework_captures",
+            action: "upsert",
+            recordId: updated.id,
+            payload: homeworkCaptureToRow(updated),
+          });
+          setHomeworkCaptures((current) =>
+            current.map((entry) => (entry.id === updated.id ? updated : entry)),
+          );
+        }
+      }
+    }
+    setEventSelection([next.id]);
+    return next;
+  }
+
+  async function editEventNaturally(
+    text: string,
+    item: CalendarItem,
+    options: EditorOptions,
+  ) {
+    if (/\b(delete|remove|cancel)\b/i.test(text))
+      throw new Error("Use Delete below to confirm removal.");
+    const { data } = await supabase.auth.getSession();
+    if (data.session?.access_token) {
+      const response = await fetch("/api/event-edit", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${data.session.access_token}`,
+        },
+        body: JSON.stringify({
+          instruction: text,
+          item,
+          options,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+      const patch: unknown = await response.json();
+      if (!response.ok)
+        throw new Error(
+          "AI editing is unavailable. Use the fields below or try again.",
+        );
+      const { isClass, repeat, scope, ...fields } =
+        eventEditSchema.parse(patch);
+      return {
+        item: { ...item, ...fields },
+        options: {
+          ...options,
+          ...(isClass !== undefined ? { isClass } : {}),
+          ...(repeat ? { repeat } : {}),
+          ...(scope ? { scope } : {}),
+        },
+      };
+    }
+    // Common edits work offline. Anything outside this grammar stays unchanged.
+    let next = { ...item };
+    const nextOptions = { ...options };
+    let understood = false;
+    const temporal = parseTemporalText(
+      text,
+      "datetime",
+      new Date(),
+      toLocalInput(item.startsAt),
+    );
+    if (
+      temporal &&
+      /\b(move|at|to|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(
+        text,
+      )
+    ) {
+      const start = fromLocalInput(temporal)!;
+      next = {
+        ...next,
+        startsAt: start,
+        endsAt: new Date(
+          new Date(start).getTime() +
+            Math.max(5, durationMinutes(item)) * 60000,
+        ).toISOString(),
+      };
+      understood = true;
+    }
+    const duration = text.match(/\b(\d+)\s*(minutes?|mins?|hours?|hrs?)\b/i);
+    if (duration && next.startsAt) {
+      const minutes = Number(duration[1]) * (/h/i.test(duration[2]) ? 60 : 1);
+      next.endsAt = new Date(
+        new Date(next.startsAt).getTime() + minutes * 60000,
+      ).toISOString();
+      understood = true;
+    }
+    const context = text.match(/\b(school|home|city|library)\b/i);
+    if (context) {
+      next.taskContext =
+        context[1].toLowerCase() as CalendarItem["taskContext"];
+      understood = true;
+    }
+    const room = text.match(/\broom\s+([\w-]+)/i);
+    if (room) {
+      next.room = room[1];
+      understood = true;
+    }
+    const energy = text.match(
+      /\b(?:energy(?: usage)?\s*(?:to|of|is)?\s*)([1-5])\b/i,
+    );
+    if (energy || /\b(low|high) energy\b/i.test(text)) {
+      next.energyUsage = energy
+        ? Number(energy[1])
+        : /low energy/i.test(text)
+          ? 2
+          : 5;
+      understood = true;
+    }
+    if (/\bclass\b/i.test(text)) {
+      nextOptions.isClass = true;
+      next.taskContext = "school";
+      understood = true;
+    }
+    const repeat = text.match(
+      /\b(week a|week b|weekly|every week|once|one.off)\b/i,
+    );
+    if (repeat) {
+      nextOptions.repeat = /week a/i.test(repeat[1])
+        ? "a"
+        : /week b/i.test(repeat[1])
+          ? "b"
+          : /once|one.off/i.test(repeat[1])
+            ? "once"
+            : "every";
+      nextOptions.scope = "future";
+      understood = true;
+    }
+    if (!understood)
+      throw new Error(
+        "Sign in for AI editing, or try ‘Friday at 3pm’, ‘room G4’, or ‘energy 2’.",
+      );
+    return { item: next, options: nextOptions };
+  }
+
   function openItem(item: CalendarItem) {
+    const element = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-event-id]"),
+    ).find((entry) => entry.dataset.eventId === item.id);
+    setEventAnchor(element?.getBoundingClientRect() ?? null);
+    setEventSelection([item.id]);
     const editableItem = structuredClone(item);
     if (isImportedTimetableItem(editableItem) && !editableItem.room) {
       editableItem.room = timetableRoomForItem(editableItem);
@@ -2101,6 +2554,8 @@ export default function Home() {
     minute?: number,
     duration = 60,
   ) {
+    setEventAnchor(null);
+    setEventSelection([]);
     const start = dateFromKey(day);
     if (hour === undefined) {
       const now = new Date();
@@ -2859,62 +3314,6 @@ export default function Home() {
     setNotice(`Scheduled “${capture.title}”.`);
   }
 
-  function saveDraft(event: FormEvent) {
-    event.preventDefault();
-    if (!draftItem) return;
-    let nextDraft =
-      isCreatingItem && !isImportedTimetableItem(draftItem)
-        ? {
-            ...draftItem,
-            flexibility: flexibilityForNewItem(draftItem),
-          }
-        : draftItem;
-    if (
-      nextDraft.flexibility === "fixed" &&
-      nextDraft.startsAt &&
-      nextDraft.endsAt
-    ) {
-      const minutes = Math.max(15, durationMinutes(nextDraft));
-      nextDraft = {
-        ...nextDraft,
-        durationMin: minutes,
-        durationMax: minutes,
-      };
-    }
-    if (
-      nextDraft.status === "scheduled" &&
-      nextDraft.startsAt &&
-      nextDraft.endsAt
-    ) {
-      const validation = validatePlacement(
-        nextDraft.flexibility === "fixed"
-          ? {
-              ...(selectedItem ?? nextDraft),
-              durationMin: nextDraft.durationMin,
-              durationMax: nextDraft.durationMax,
-            }
-          : (selectedItem ?? nextDraft),
-        nextDraft.startsAt,
-        nextDraft.endsAt,
-        items,
-        { allowFixedChange: true },
-      );
-      if (!validation.valid) {
-        setNotice(validation.errors[0]);
-        return;
-      }
-    }
-    if (isCreatingItem) {
-      createItem(nextDraft);
-      setNotice(`Created “${nextDraft.title}”.`);
-    } else {
-      updateItem(nextDraft, `Edit “${nextDraft.title}”`);
-    }
-    setSelectedItem(null);
-    setDraftItem(null);
-    setIsCreatingItem(false);
-  }
-
   async function sendVerificationCode(event: FormEvent) {
     event.preventDefault();
     if (!email.trim()) return;
@@ -3280,27 +3679,6 @@ export default function Home() {
     return subjects.find((subject) => subject.id === subjectId)?.name ?? null;
   }
 
-  function sourceForCalendarItem(item: CalendarItem): LearningSource {
-    const assignment = item.assignmentId
-      ? assignments.find((entry) => entry.id === item.assignmentId)
-      : null;
-    const assessment = item.assessmentId
-      ? assessments.find((entry) => entry.id === item.assessmentId)
-      : null;
-    const subjectId =
-      item.subjectId ?? assignment?.subjectId ?? assessment?.subjectId ?? null;
-    return {
-      type: "calendar_item",
-      id: item.id,
-      title: item.title,
-      subjectId,
-      subjectName: subjectName(subjectId),
-      context: [item.description, item.revisionStage, item.workType]
-        .filter(Boolean)
-        .join(" · "),
-    };
-  }
-
   function recordChallenge(
     source: LearningSource,
     challengeLevel: ChallengeLevel,
@@ -3607,6 +3985,44 @@ export default function Home() {
     zoom === "day"
       ? [dateFromKey(selectedDay)]
       : Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
+  const classOccurrences = classCalendarItems(
+    classes,
+    classExceptions,
+    subjects,
+    visibleDays[0],
+    visibleDays.at(-1)!,
+  );
+  const calendarDisplayItems = [
+    ...filteredItems.filter(
+      (entry) => !classes.some((lesson) => lesson.id === entry.id),
+    ),
+    ...classOccurrences,
+  ].filter((entry) => !classesOnly || isClassEvent(entry));
+  useEffect(() => {
+    const handle = (event: KeyboardEvent) => {
+      if (
+        event.target instanceof Element &&
+        event.target.closest(
+          "input, textarea, select, [contenteditable=true], [role=dialog]",
+        )
+      )
+        return;
+      if (event.key === "Escape") {
+        setEventSelection([]);
+        setBulkDeleteOpen(false);
+        closeCompactEditor();
+      }
+      if (
+        (event.key === "Delete" || event.key === "Backspace") &&
+        eventSelection.length > 1
+      ) {
+        event.preventDefault();
+        setBulkDeleteOpen(true);
+      }
+    };
+    window.addEventListener("keydown", handle);
+    return () => window.removeEventListener("keydown", handle);
+  }, [eventSelection, closeCompactEditor]);
   const dayCapacity = capacityForDay(items, selectedDay);
   const insights = scheduleInsights(items, selectedDay);
   const now = clockNow;
@@ -3778,18 +4194,6 @@ export default function Home() {
     homeworkCommandPreview,
   );
   const nowResult = nowMoment ? nowRecommendations(new Date(nowMoment)) : null;
-  const draftTimingError =
-    draftItem?.startsAt &&
-    draftItem.endsAt &&
-    new Date(draftItem.endsAt) <= new Date(draftItem.startsAt)
-      ? "End must be after start."
-      : null;
-  const draftDurationOptions = draftItem
-    ? Array.from(
-        new Set([15, 30, 45, 60, 90, 120, durationMinutes(draftItem)]),
-      ).sort((a, b) => a - b)
-    : [];
-
   function moveAnchor(amount: number) {
     const next =
       zoom === "month" || zoom === "semester"
@@ -3890,7 +4294,10 @@ export default function Home() {
   }
 
   return (
-    <main id="main-content" className={`flex-shell calendar-redesign ${draggingItemId ? "is-dragging" : ""}`}>
+    <main
+      id="main-content"
+      className={`flex-shell calendar-redesign ${draggingItemId ? "is-dragging" : ""}`}
+    >
       <CalendarRail
         zoom={zoom}
         inboxOpen={inboxOpen}
@@ -3902,7 +4309,12 @@ export default function Home() {
         activeHomeworkCount={activeHomework.length}
         inboxCount={inboxItems.length}
         userEmail={user?.email}
-        onCalendar={() => { setInboxOpen(false); setHomeworkOpen(false); setHudOpen(false); setZoom("week"); }}
+        onCalendar={() => {
+          setInboxOpen(false);
+          setHomeworkOpen(false);
+          setHudOpen(false);
+          setZoom("week");
+        }}
         onToday={() => {
           const today = dateKey(new Date());
           setAnchorDate(today);
@@ -4119,7 +4531,9 @@ export default function Home() {
             onConvert={convertHomeworkToAssignment}
             onComplete={completeHomeworkCapture}
             onDelete={deleteHomeworkCapture}
-            onDragState={(id) => setDraggingItemId(id ? `homework:${id}` : null)}
+            onDragState={(id) =>
+              setDraggingItemId(id ? `homework:${id}` : null)
+            }
             onOpenWeek={() => {
               setHomeworkOpen(false);
               setInboxOpen(false);
@@ -4225,7 +4639,10 @@ export default function Home() {
         onWheel={onWeekWheel}
       >
         <CalendarHeader
-          onCapture={() => { setPaletteMode("command"); setPaletteOpen(true); }}
+          onCapture={() => {
+            setPaletteMode("command");
+            setPaletteOpen(true);
+          }}
           zoom={zoom}
           anchor={anchor}
           anchorDate={anchorDate}
@@ -4249,7 +4666,11 @@ export default function Home() {
         {notice && (
           <div className="toast" role="status">
             <span>{notice}</span>
-            {undoStack.length > 0 && <button type="button" onClick={undoLast}>Undo</button>}
+            {undoStack.length > 0 && (
+              <button type="button" onClick={undoLast}>
+                Undo
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setNotice("")}
@@ -4263,10 +4684,7 @@ export default function Home() {
         {weeklyReviewAvailable && !weeklyReviewOpen && (
           <aside className="toast weekly-review-toast" role="status">
             <span>Weekly review is ready.</span>
-            <button
-              type="button"
-              onClick={() => setWeeklyReviewOpen(true)}
-            >
+            <button type="button" onClick={() => setWeeklyReviewOpen(true)}>
               Open
             </button>
           </aside>
@@ -4388,9 +4806,68 @@ export default function Home() {
           </Suspense>
         ) : (
           <Suspense fallback={<CalendarFallback />}>
+            <div className="calendar-class-filter" aria-label="Calendar filter">
+              <button
+                type="button"
+                aria-pressed={!classesOnly}
+                onClick={() => {
+                  setClassesOnly(false);
+                  setEventSelection([]);
+                }}
+              >
+                All events
+              </button>
+              <button
+                type="button"
+                aria-pressed={classesOnly}
+                onClick={() => {
+                  setClassesOnly(true);
+                  setEventSelection([]);
+                }}
+              >
+                Classes only
+              </button>
+              {eventSelection.length > 1 && (
+                <div className="calendar-selection-bar">
+                  <span>{eventSelection.length} selected</span>
+                  <button type="button" onClick={() => setBulkDeleteOpen(true)}>
+                    Delete selection
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Clear selection"
+                    onClick={() => setEventSelection([])}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
+            </div>
             <TimeCalendar
               days={visibleDays}
-              items={filteredItems}
+              items={calendarDisplayItems}
+              selectedIds={eventSelection}
+              onSelectItem={(item, shift) => {
+                if (shift) {
+                  closeCompactEditor();
+                  setEventSelection((current) =>
+                    current.includes(item.id)
+                      ? current.filter((id) => id !== item.id)
+                      : [...current, item.id],
+                  );
+                } else openItem(item);
+              }}
+              onClearSelection={() => setEventSelection([])}
+              onCompleteItem={(item) =>
+                void saveCompactEvent(
+                  {
+                    ...item,
+                    status:
+                      item.status === "completed" ? "scheduled" : "completed",
+                  },
+                  { isClass: false, repeat: "once", scope: "occurrence" },
+                )
+              }
               subjects={subjects}
               proposal={proposal}
               rowHeight={zoom === "day" ? 72 : 52}
@@ -4411,10 +4888,26 @@ export default function Home() {
               onResize={beginResize}
               onCreateAt={openNewEvent}
               onCreateSpan={openNewSpan}
-              onMoveAt={(item, day, hour, minute) =>
-                scheduleAt(item.id, day, hour, minute)
-              }
+              onMoveAt={(item, day, hour, minute, duration) => {
+                if (duration != null) {
+                  const start = dateFromKey(day);
+                  start.setHours(hour, minute, 0, 0);
+                  const next = {
+                    ...item,
+                    startsAt: start.toISOString(),
+                    endsAt: new Date(
+                      start.getTime() + duration * 60000,
+                    ).toISOString(),
+                    durationMin: duration,
+                    durationMax: duration,
+                  };
+                  if (item.classId) void persistClassOccurrence(next);
+                  else updateItem(next, `Move “${item.title}”`);
+                } else scheduleAt(item.id, day, hour, minute);
+                closeCompactEditor();
+              }}
               compact={isCompact && zoom === "day"}
+              touchMode={isCompact}
             />
           </Suspense>
         )}
@@ -4526,7 +5019,10 @@ export default function Home() {
         commandPreview={commandPreview}
         homeworkCommandPreview={homeworkCommandPreview}
         commandIsHomework={commandIsHomework}
-        onClose={() => { setPaletteOpen(false); setCommandTargetId(null); }}
+        onClose={() => {
+          setPaletteOpen(false);
+          setCommandTargetId(null);
+        }}
         onModeChange={setPaletteMode}
         onCommandTextChange={setCommandText}
         onSubmit={(event) => submitCommand(event, "command")}
@@ -4558,42 +5054,47 @@ export default function Home() {
         timetableImportIssues={timetableImportIssues}
       />
       {selectedItem && draftItem && (
-        <EventModal
-          onNaturalEdit={(instruction) => {
-            setCommandText(instruction);
-            setCommandTargetId(selectedItem.id);
-            setSelectedItem(null);
-            setDraftItem(null);
-            setPaletteMode("command");
-            setPaletteOpen(true);
-            void submitCommand(null, "command", instruction, selectedItem.id);
-          }}
-          selectedItem={selectedItem}
-          draftItem={draftItem}
+        <CompactEventEditor
+          key={selectedItem.id}
+          item={draftItem}
+          creating={isCreatingItem}
+          anchor={eventAnchor}
           subjects={subjects}
-          assessments={assessments}
-          learningSource={sourceForCalendarItem(selectedItem)}
-          challengeLevel={latestSignalFor(
-            sourceForCalendarItem(selectedItem),
-            learningSignals,
-          )?.challengeLevel ?? null}
-          isCreatingItem={isCreatingItem}
-          draftTimingError={draftTimingError}
-          durationOptions={draftDurationOptions}
-          focusTemplates={schoolDaySettings.focusTemplates}
-          onDraftChange={setDraftItem}
-          onClose={() => {
-            setSelectedItem(null);
-            setDraftItem(null);
-            setIsCreatingItem(false);
-          }}
-          onSubmit={saveDraft}
+          classes={classes}
+          occurrences={classOccurrences}
+          onSave={saveCompactEvent}
+          onClose={closeCompactEditor}
           onDelete={deleteItem}
-          onUnschedule={unscheduleItem}
-          onToggleAssignmentSession={toggleAssignmentSession}
-          onMarkRevisionLearned={markRevisionLearned}
-          onChallenge={recordChallenge}
-          onGoDeeper={openGoDeeper}
+          onNaturalEdit={editEventNaturally}
+        />
+      )}
+      {bulkDeleteOpen && (
+        <SelectionDeleteDialog
+          count={eventSelection.length}
+          onClose={() => setBulkDeleteOpen(false)}
+          onDelete={async () => {
+            const selection = calendarDisplayItems.filter((item) =>
+              eventSelection.includes(item.id),
+            );
+            recordHistory(`Delete ${selection.length} events`);
+            for (const item of selection) {
+              if (item.classId) await persistClassOccurrence(item, true);
+              else {
+                await persistMutation({
+                  table: "calendar_items",
+                  action: "delete",
+                  recordId: item.id,
+                });
+                setItems((current) =>
+                  current.filter((entry) => entry.id !== item.id),
+                );
+              }
+              setEventSelection((current) =>
+                current.filter((id) => id !== item.id),
+              );
+            }
+            closeCompactEditor();
+          }}
         />
       )}
 

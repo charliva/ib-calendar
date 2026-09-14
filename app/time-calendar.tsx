@@ -26,11 +26,7 @@ import {
   timeAtOffset,
   timeOffset,
 } from "@/app/calendar-geometry";
-import {
-  classColorStyle,
-  InlineItemTitle,
-  NowLine,
-} from "@/app/calendar-ui";
+import { classColorStyle, InlineItemTitle, NowLine } from "@/app/calendar-ui";
 import {
   formatDate,
   formatSpan,
@@ -43,7 +39,6 @@ import {
   dateFromKey,
   dateKey,
   durationMinutes,
-  energyLabels,
   isCalendarSpanItem,
   itemOverlapsDay,
   validatePlacement,
@@ -51,6 +46,11 @@ import {
   type CalendarProposal,
 } from "@/lib/calendar-engine";
 import type { Subject } from "@/lib/school";
+import {
+  ENERGY_USAGE_LABELS,
+  isClassEvent,
+  snapEventMinutes,
+} from "@/lib/calendar/interactions";
 import {
   isImportedTimetableItem,
   timetableRoomForItem,
@@ -76,7 +76,16 @@ export function TimeCalendar({
   onCreateSpan,
   onMoveAt,
   compact = false,
+  touchMode = compact,
+  selectedIds = [],
+  onSelectItem,
+  onClearSelection,
+  onCompleteItem,
 }: {
+  selectedIds?: string[];
+  onSelectItem?: (item: CalendarItem, shift: boolean) => void;
+  onClearSelection?: () => void;
+  onCompleteItem?: (item: CalendarItem) => void;
   days: Date[];
   items: CalendarItem[];
   subjects: Subject[];
@@ -119,8 +128,10 @@ export function TimeCalendar({
     day: string,
     hour: number,
     minute: number,
+    duration?: number,
   ) => void;
   compact?: boolean;
+  touchMode?: boolean;
 }) {
   const hours = DAY_HOURS;
   const [creationRange, setCreationRange] = useState<{
@@ -219,7 +230,6 @@ export function TimeCalendar({
       days.some((day) => itemOverlapsDay(item, dateKey(day))),
   );
 
-
   useEffect(() => {
     if (!compact || days.length !== 1) return;
     const day = dateKey(days[0]);
@@ -294,6 +304,7 @@ export function TimeCalendar({
     gesture: NonNullable<typeof desktopMoveGesture.current>,
     clientX: number,
     clientY: number,
+    precise = false,
   ) {
     const body = calendarRef.current?.querySelector<HTMLElement>(".time-body");
     if (!body || days.length === 0) return null;
@@ -305,16 +316,20 @@ export function TimeCalendar({
       Math.min(columnsWidth - 1, clientX - rect.left - axisWidth),
     );
     const day = dateKey(days[Math.floor(relativeX / dayWidth)] ?? days[0]);
-    const pointerTime = timeAtOffset(clientY - rect.top, rowHeight);
-    const pointerMinute = pointerTime.hour * 60 + pointerTime.minute;
-    const duration = Math.max(15, durationMinutes(gesture.item));
-    const startMinute = Math.max(
-      0,
-      Math.min(
-        24 * 60 - duration,
-        Math.round((pointerMinute - gesture.grabOffsetMinutes) / 15) * 15,
-      ),
+    const pointerTime = timeAtOffset(
+      clientY - rect.top,
+      rowHeight,
+      precise ? 5 : 15,
     );
+    const pointerMinute = pointerTime.hour * 60 + pointerTime.minute;
+    const snap = snapEventMinutes(
+      pointerMinute - gesture.grabOffsetMinutes,
+      Math.max(5, durationMinutes(gesture.item)),
+      isClassEvent(gesture.item),
+      precise,
+    );
+    const duration = snap.duration;
+    const startMinute = snap.start;
     const start = dateFromKey(day);
     start.setHours(Math.floor(startMinute / 60), startMinute % 60, 0, 0);
     return {
@@ -333,9 +348,9 @@ export function TimeCalendar({
       compact ||
       event.pointerType === "touch" ||
       event.button !== 0 ||
-      item.flexibility === "fixed" ||
+      event.shiftKey ||
       (event.target instanceof Element &&
-        event.target.closest(".resize-handle"))
+        event.target.closest("button, input, .resize-handle"))
     ) {
       return;
     }
@@ -368,7 +383,12 @@ export function TimeCalendar({
     }
     event.preventDefault();
     event.stopPropagation();
-    const preview = desktopMovePosition(gesture, event.clientX, event.clientY);
+    const preview = desktopMovePosition(
+      gesture,
+      event.clientX,
+      event.clientY,
+      event.altKey,
+    );
     if (preview) {
       gesture.preview = {
         day: preview.day,
@@ -389,7 +409,13 @@ export function TimeCalendar({
     event.stopPropagation();
     suppressDesktopMoveClickUntil.current = event.timeStamp + 500;
     const start = new Date(preview.startsAt);
-    onMoveAt(gesture.item, preview.day, start.getHours(), start.getMinutes());
+    onMoveAt(
+      gesture.item,
+      preview.day,
+      start.getHours(),
+      start.getMinutes(),
+      (new Date(preview.endsAt).getTime() - start.getTime()) / 60000,
+    );
   }
 
   function cancelDesktopMove() {
@@ -421,7 +447,7 @@ export function TimeCalendar({
     event: ReactTouchEvent<HTMLButtonElement>,
     day: string,
   ) {
-    if (!compact || event.touches.length !== 1) return;
+    if (!touchMode || event.touches.length !== 1) return;
     clearMobileMove();
     clearMobileCreation();
     const touch = event.touches[0];
@@ -483,7 +509,15 @@ export function TimeCalendar({
     mobileCreationGesture.current = null;
     unlockMobileCreationScroll();
     setCreationRange(null);
-    if (!gesture.activated) return;
+    if (!gesture.activated) {
+      onCreateAt(
+        gesture.day,
+        Math.floor(gesture.anchorMinute / 60),
+        gesture.anchorMinute % 60,
+        60,
+      );
+      return;
+    }
 
     event.preventDefault();
     const startMinute = Math.min(gesture.anchorMinute, gesture.currentMinute);
@@ -503,8 +537,13 @@ export function TimeCalendar({
     gesture: NonNullable<typeof mobileMoveGesture.current>,
     startMinute: number,
   ) {
-    const duration = Math.max(15, durationMinutes(gesture.item));
-    const boundedStart = Math.max(0, Math.min(24 * 60 - duration, startMinute));
+    const snapped = snapEventMinutes(
+      startMinute,
+      Math.max(5, durationMinutes(gesture.item)),
+      isClassEvent(gesture.item),
+    );
+    const duration = snapped.duration;
+    const boundedStart = snapped.start;
     gesture.currentStartMinute = boundedStart;
     const start = dateFromKey(gesture.day);
     start.setHours(Math.floor(boundedStart / 60), boundedStart % 60, 0, 0);
@@ -520,11 +559,7 @@ export function TimeCalendar({
     item: CalendarItem,
     day: string,
   ) {
-    if (
-      !compact ||
-      item.flexibility === "fixed" ||
-      event.touches.length !== 1
-    ) {
+    if (!touchMode || event.touches.length !== 1) {
       return;
     }
     clearMobileCreation();
@@ -567,6 +602,21 @@ export function TimeCalendar({
     }
     event.preventDefault();
     const touchMinute = minuteFromClientY(event.currentTarget, touch.clientY);
+    const body = calendarRef.current?.querySelector<HTMLElement>(".time-body");
+    if (body && days.length > 1) {
+      const rect = body.getBoundingClientRect();
+      const index = Math.max(
+        0,
+        Math.min(
+          days.length - 1,
+          Math.floor(
+            (touch.clientX - rect.left - axisWidth) /
+              ((rect.width - axisWidth) / days.length),
+          ),
+        ),
+      );
+      gesture.day = dateKey(days[index]);
+    }
     const startMinute =
       Math.round((touchMinute - gesture.grabOffsetMinutes) / 15) * 15;
     setMobileMovePosition(gesture, startMinute);
@@ -587,6 +637,11 @@ export function TimeCalendar({
       gesture.day,
       Math.floor(gesture.currentStartMinute / 60),
       gesture.currentStartMinute % 60,
+      mobileMovePreview
+        ? (new Date(mobileMovePreview.endsAt).getTime() -
+            new Date(mobileMovePreview.startsAt).getTime()) /
+            60000
+        : undefined,
     );
   }
 
@@ -594,7 +649,7 @@ export function TimeCalendar({
     event: ReactPointerEvent<HTMLButtonElement>,
     day: string,
   ) {
-    if (event.button !== 0 || (compact && event.pointerType !== "mouse"))
+    if (event.button !== 0 || (touchMode && event.pointerType !== "mouse"))
       return;
     const anchorMinute = minuteFromPointer(event);
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -607,7 +662,7 @@ export function TimeCalendar({
   }
 
   function moveCreation(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (compact && event.pointerType !== "mouse") return;
+    if (touchMode && event.pointerType !== "mouse") return;
     const gesture = creationGesture.current;
     if (!gesture) return;
     const currentMinute = minuteFromPointer(event);
@@ -625,7 +680,7 @@ export function TimeCalendar({
   }
 
   function finishCreation(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (compact && event.pointerType !== "mouse") return;
+    if (touchMode && event.pointerType !== "mouse") return;
     const gesture = creationGesture.current;
     if (!gesture) return;
     const currentMinute = minuteFromPointer(event);
@@ -699,6 +754,13 @@ export function TimeCalendar({
     <section
       ref={calendarRef}
       className={`time-calendar ${compact ? "mobile-day-calendar" : ""}`}
+      onClick={(event) => {
+        if (
+          event.target instanceof Element &&
+          !event.target.closest("[data-event-id], .multi-day-item")
+        )
+          onClearSelection?.();
+      }}
       style={{ "--row-height": `${rowHeight}px` } as CSSProperties}
     >
       <div
@@ -799,7 +861,14 @@ export function TimeCalendar({
               }`}
               type="button"
               key={`${proposed ? "proposal-" : ""}${item.id}`}
-              onClick={() => !proposed && onOpenItem(item)}
+              data-event-id={proposed ? undefined : item.id}
+              data-selected={selectedIds.includes(item.id)}
+              onClick={(event) => {
+                if (!proposed) {
+                  if (onSelectItem) onSelectItem(item, event.shiftKey);
+                  else onOpenItem(item);
+                }
+              }}
               aria-label={`${item.title}, ${formatSpan(item)}${
                 continuesBefore || continuesAfter
                   ? ", continues beyond this week"
@@ -854,7 +923,7 @@ export function TimeCalendar({
             (item) =>
               item.startsAt &&
               item.endsAt &&
-              item.status === "scheduled" &&
+              (item.status === "scheduled" || item.status === "completed") &&
               !isCalendarSpanItem(item) &&
               dateKey(new Date(item.startsAt)) === key,
           );
@@ -926,10 +995,11 @@ export function TimeCalendar({
               endsAt: previewSource.endsAt,
             };
             const validation = validatePlacement(
-              previewItem,
+              { ...previewItem, durationMin: 5, durationMax: 525600 },
               candidate.startsAt,
               candidate.endsAt,
-              items,
+              [],
+              { allowFixedChange: true },
             );
             const geometry = itemGeometry(candidate, rowHeight);
             desktopDropPreview = {
@@ -968,12 +1038,16 @@ export function TimeCalendar({
                       day: "numeric",
                     })} ${hour}:00`}
                     onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
-                      if (compact) {
+                      if (touchMode) {
                         event.preventDefault();
                         return;
                       }
                       if (suppressCreateClick.current) {
                         event.preventDefault();
+                        return;
+                      }
+                      if (event.detail !== 0) {
+                        onClearSelection?.();
                         return;
                       }
                       const rect = event.currentTarget.getBoundingClientRect();
@@ -984,6 +1058,15 @@ export function TimeCalendar({
                         ) * 15,
                       );
                       onCreateAt(key, hour, minute);
+                    }}
+                    onDoubleClick={(event) => {
+                      if (!compact) {
+                        const minute = minuteFromClientY(
+                          event.currentTarget,
+                          event.clientY,
+                        );
+                        onCreateAt(key, Math.floor(minute / 60), minute % 60);
+                      }
                     }}
                     onPointerDown={(event) => beginCreation(event, key)}
                     onPointerMove={moveCreation}
@@ -1166,6 +1249,11 @@ export function TimeCalendar({
                 const width = 100 / placement.lanes;
                 return (
                   <article
+                    data-event-id={item.id}
+                    aria-pressed={selectedIds.includes(item.id)}
+                    data-selected={selectedIds.includes(item.id)}
+                    data-completed={item.status === "completed"}
+                    data-conflict={placement.lanes > 1}
                     className={`calendar-block ${
                       resizing?.id === item.id ? "is-resizing" : ""
                     } ${
@@ -1192,7 +1280,16 @@ export function TimeCalendar({
                     role="button"
                     tabIndex={0}
                     aria-label={`${item.title}, ${formatTime(item.startsAt)} to ${formatTime(item.endsAt)}${item.room ? `, Room ${item.room}` : ""}`}
-                    onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onOpenItem(item); } }}
+                    onKeyDown={(event) => {
+                      if (
+                        event.target === event.currentTarget &&
+                        (event.key === "Enter" || event.key === " ")
+                      ) {
+                        event.preventDefault();
+                        if (onSelectItem) onSelectItem(item, event.shiftKey);
+                        else onOpenItem(item);
+                      }
+                    }}
                     data-lanes={Math.min(3, placement.lanes)}
                     onPointerDown={(event) => beginDesktopMove(event, item)}
                     onPointerMove={moveDesktopEvent}
@@ -1208,7 +1305,9 @@ export function TimeCalendar({
                         event.stopPropagation();
                         return;
                       }
-                      onOpenItem(item);
+                      event.stopPropagation();
+                      if (onSelectItem) onSelectItem(item, event.shiftKey);
+                      else onOpenItem(item);
                     }}
                     onTouchStart={(event) => beginMobileMove(event, item, key)}
                     onTouchMove={moveMobileEvent}
@@ -1226,7 +1325,7 @@ export function TimeCalendar({
                       } as CSSProperties
                     }
                   >
-                    {!compact && (
+                    {!compact && selectedIds.includes(item.id) && (
                       <button
                         className="resize-handle resize-handle-start"
                         type="button"
@@ -1252,16 +1351,40 @@ export function TimeCalendar({
                       )}
                       <time>{formatTime(item.startsAt)}</time>
                     </div>
-                    <InlineItemTitle
-                      key={item.title}
-                      item={item}
-                      onRename={onRenameItem}
-                    />
+                    <strong className="event-block-title">
+                      {item.status === "completed" ? "✓ " : ""}
+                      {item.title}
+                    </strong>
+                    {item.kind === "task" && (
+                      <button
+                        type="button"
+                        className="event-hover-complete"
+                        aria-label={`${item.status === "completed" ? "Reopen" : "Complete"} ${item.title}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onCompleteItem?.(item);
+                        }}
+                      >
+                        ✓
+                      </button>
+                    )}
+                    {item.kind === "task" && item.subjectId && (
+                      <span className="homework-subject-label">
+                        {
+                          subjects.find(
+                            (subject) => subject.id === item.subjectId,
+                          )?.shortName
+                        }
+                        {item.linkedOccurrenceDate
+                          ? ` · ${item.linkedOccurrenceDate.slice(5)}`
+                          : ""}
+                      </span>
+                    )}
                     {timetableRoomForItem(item) && displayHeight >= 32 && (
-                        <span className="calendar-class-room">
-                          Room {timetableRoomForItem(item)}
-                        </span>
-                      )}
+                      <span className="calendar-class-room">
+                        Room {timetableRoomForItem(item)}
+                      </span>
+                    )}
                     {mobileMovePreview?.id === item.id && (
                       <span className="mobile-move-time-badge">
                         {formatTime(previewItem.startsAt)}–
@@ -1271,7 +1394,7 @@ export function TimeCalendar({
                     <small>
                       {isImportedTimetableItem(item)
                         ? item.description || "Click to edit this period"
-                        : `${energyLabels[item.energyType]}${
+                        : `${ENERGY_USAGE_LABELS[(item.energyUsage ?? 3) - 1]}${
                             item.constraints.length
                               ? ` · ${item.constraints.length} constraint${
                                   item.constraints.length === 1 ? "" : "s"
@@ -1279,7 +1402,7 @@ export function TimeCalendar({
                               : ""
                           }`}
                     </small>
-                    {!compact && (
+                    {!compact && selectedIds.includes(item.id) && (
                       <button
                         className="resize-handle resize-handle-end"
                         type="button"

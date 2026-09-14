@@ -1,15 +1,10 @@
 export type ItemKind = "event" | "task" | "intention";
 export type EnergyType =
-  | "deep_focus"
-  | "light_work"
-  | "social"
-  | "movement"
-  | "recovery"
-  | "transit";
+  "deep_focus" | "light_work" | "social" | "movement" | "recovery" | "transit";
 export type Priority = "low" | "medium" | "high";
 export type Flexibility = "fixed" | "flexible" | "elastic";
 export type ItemStatus = "inbox" | "scheduled" | "completed" | "archived";
-export type TaskContext = "school" | "home" | "library" | "anywhere";
+export type TaskContext = "school" | "home" | "library" | "city" | "anywhere";
 export type SchoolWorkType =
   | "deep_focus"
   | "light_work"
@@ -45,6 +40,11 @@ export type CalendarItem = {
   windowStart: string | null;
   windowEnd: string | null;
   energyType: EnergyType;
+  energyUsage?: number;
+  classId?: string | null;
+  occurrenceDate?: string | null;
+  linkedClassId?: string | null;
+  linkedOccurrenceDate?: string | null;
   priority: Priority;
   splittable: boolean;
   flexibility: Flexibility;
@@ -311,7 +311,10 @@ export function validateProposal(
         proposal.source === "document" &&
         existing?.source === "document" &&
         existing.constraints.includes(TIMETABLE_IMPORT_MARKER);
-      if (existing?.flexibility === "fixed" && !isApprovedTimetableReplacement) {
+      if (
+        existing?.flexibility === "fixed" &&
+        !isApprovedTimetableReplacement
+      ) {
         return {
           changeId: change.id,
           valid: false,
@@ -387,7 +390,10 @@ export function capacityForDay(items: CalendarItem[], day: string) {
       new Date(item.endsAt) > dayStart,
   );
   const minutesWithinDay = (item: CalendarItem) => {
-    const start = Math.max(new Date(item.startsAt!).getTime(), dayStart.getTime());
+    const start = Math.max(
+      new Date(item.startsAt!).getTime(),
+      dayStart.getTime(),
+    );
     const end = Math.min(new Date(item.endsAt!).getTime(), dayEnd.getTime());
     return Math.max(0, Math.round((end - start) / 60_000));
   };
@@ -396,12 +402,9 @@ export function capacityForDay(items: CalendarItem[], day: string) {
       .filter(predicate)
       .reduce((total, item) => total + minutesWithinDay(item), 0);
   const total = sum(() => true);
-  const deep = sum((item) => item.energyType === "deep_focus");
-  const social = sum((item) => item.energyType === "social");
-  const recovery = sum(
-    (item) =>
-      item.energyType === "recovery" || item.energyType === "movement",
-  );
+  const deep = sum((item) => (item.energyUsage ?? 3) >= 4);
+  const social = sum((item) => (item.energyUsage ?? 3) === 3);
+  const recovery = sum((item) => (item.energyUsage ?? 3) <= 2);
   return {
     total,
     deep,
@@ -443,14 +446,10 @@ export function scheduleInsights(items: CalendarItem[], day: string) {
           new Date(previous.endsAt!).getTime()) /
         60_000
       : Infinity;
-    if (
-      previous &&
-      gap <= 30 &&
-      previous.energyType !== item.energyType
-    ) {
+    if (previous && gap <= 30 && previous.energyUsage !== item.energyUsage) {
       switches += 1;
     }
-    if (item.energyType === "deep_focus") {
+    if ((item.energyUsage ?? 3) >= 4) {
       const effectiveStart = Math.max(
         new Date(item.startsAt!).getTime(),
         dayStart.getTime(),
@@ -463,7 +462,7 @@ export function scheduleInsights(items: CalendarItem[], day: string) {
         0,
         Math.round((effectiveEnd - effectiveStart) / 60_000),
       );
-      if (!previous || previous.energyType !== "deep_focus" || gap > 15) {
+      if (!previous || (previous.energyUsage ?? 3) < 4 || gap > 15) {
         consecutiveFocus = 0;
       }
       consecutiveFocus += focusedMinutes;
@@ -507,6 +506,27 @@ export function makeItem(
     windowStart: input.windowStart ?? null,
     windowEnd: input.windowEnd ?? null,
     energyType: input.energyType ?? "light_work",
+    energyUsage: Math.max(
+      1,
+      Math.min(
+        5,
+        Math.round(
+          input.energyUsage ??
+            {
+              deep_focus: 5,
+              light_work: 2,
+              social: 3,
+              movement: 3,
+              recovery: 1,
+              transit: 2,
+            }[input.energyType ?? "light_work"],
+        ),
+      ),
+    ),
+    classId: input.classId ?? null,
+    occurrenceDate: input.occurrenceDate ?? null,
+    linkedClassId: input.linkedClassId ?? null,
+    linkedOccurrenceDate: input.linkedOccurrenceDate ?? null,
     priority: input.priority ?? "medium",
     splittable: input.splittable ?? false,
     flexibility: input.flexibility ?? "flexible",
@@ -522,7 +542,14 @@ export function makeItem(
     taskContext: input.taskContext ?? "anywhere",
     computerRequired: input.computerRequired ?? false,
     workType: input.workType ?? null,
-    requiredEnergy: input.requiredEnergy ?? "medium",
+    requiredEnergy:
+      input.energyUsage != null
+        ? input.energyUsage <= 2
+          ? "low"
+          : input.energyUsage >= 4
+            ? "high"
+            : "medium"
+        : (input.requiredEnergy ?? "medium"),
     status: input.status ?? (input.startsAt ? "scheduled" : "inbox"),
     source: input.source ?? "manual",
     createdAt: input.createdAt ?? now,
@@ -545,6 +572,9 @@ export function itemToRow(item: CalendarItem) {
     window_start: item.windowStart,
     window_end: item.windowEnd,
     energy_type: item.energyType,
+    energy_usage: item.energyUsage ?? 3,
+    linked_class_id: item.linkedClassId ?? null,
+    linked_occurrence_date: item.linkedOccurrenceDate ?? null,
     priority: item.priority,
     splittable: item.splittable,
     flexibility: item.flexibility,
@@ -563,7 +593,6 @@ export function itemToRow(item: CalendarItem) {
     required_energy: item.requiredEnergy,
     status: item.status,
     source: item.source,
-    completed_at:
-      item.status === "completed" ? new Date().toISOString() : null,
+    completed_at: item.status === "completed" ? new Date().toISOString() : null,
   };
 }

@@ -18,6 +18,7 @@ export type OfflineState = SchoolState & {
 };
 
 export type PendingMutation = {
+  dependsOn?: string;
   id?: number;
   table:
     | "calendar_items"
@@ -78,10 +79,15 @@ const dbPromise: Promise<IDBPDatabase> | null =
             });
           }
           if (!database.objectStoreNames.contains(DEAD_LETTER_STORE)) {
-            database.createObjectStore(DEAD_LETTER_STORE, { keyPath: "id", autoIncrement: true });
+            database.createObjectStore(DEAD_LETTER_STORE, {
+              keyPath: "id",
+              autoIncrement: true,
+            });
           }
         },
-        blocking() { void dbPromise?.then((database) => database.close()); },
+        blocking() {
+          void dbPromise?.then((database) => database.close());
+        },
       });
 
 export async function saveOfflineState(state: OfflineState) {
@@ -96,10 +102,7 @@ export async function getOfflineState(): Promise<OfflineState | null> {
   return (await database.get("calendar-state", "current")) ?? null;
 }
 
-export async function saveLastViewState(
-  key: string,
-  state: LastViewState,
-) {
+export async function saveLastViewState(key: string, state: LastViewState) {
   const database = await dbPromise;
   if (!database) return;
   await database.put("calendar-state", state, key);
@@ -116,10 +119,7 @@ export async function getLastViewState(
 export async function queueMutation(mutation: PendingMutation) {
   const database = await dbPromise;
   if (!database) return;
-  const transaction = database.transaction(
-    "calendar-mutations",
-    "readwrite",
-  );
+  const transaction = database.transaction("calendar-mutations", "readwrite");
   const store = transaction.objectStore("calendar-mutations");
   const existing = (await store.getAll()).filter(
     (candidate) =>
@@ -135,7 +135,9 @@ export async function queueMutation(mutation: PendingMutation) {
       .filter((candidate) => candidate.id !== undefined)
       .map((candidate) => store.delete(candidate.id!)),
   );
-  await store.add({ ...compacted, id: undefined });
+  const queued = { ...compacted };
+  delete queued.id;
+  await store.add(queued);
   await transaction.done;
 }
 
@@ -198,7 +200,9 @@ export async function moveToDeadLetter(
     attempts: mutation.failureCount ?? 0,
     lastError,
   };
-  await deadLetterStore.add({ ...dead, id: undefined });
+  const queuedDead = { ...dead };
+  delete queuedDead.id;
+  await deadLetterStore.add(queuedDead);
   await liveStore.delete(mutation.id);
   await transaction.done;
 }

@@ -1,7 +1,4 @@
-import {
-  assignmentProgress,
-  formatWorkMinutes,
-} from "./assignment-planner.ts";
+import { assignmentProgress, formatWorkMinutes } from "./assignment-planner.ts";
 import {
   dateKey,
   durationMinutes,
@@ -31,16 +28,16 @@ import {
   type SchoolDaySettings,
   type Subject,
 } from "./school.ts";
-import { subjectChallengeSummary, type LearningSignal } from "./study-intelligence.ts";
+import {
+  subjectChallengeSummary,
+  type LearningSignal,
+} from "./study-intelligence.ts";
 
 const MINUTE = 60_000;
 const DAY = 86_400_000;
 
 export type CurrentStudyLocation =
-  | "home"
-  | "school"
-  | "library"
-  | "commute";
+  "home" | "school" | "library" | "city" | "commute";
 
 export type NowRecommendation = {
   id: string;
@@ -118,15 +115,13 @@ function dueReason(deadline: string | null, now: Date) {
   tomorrow.setDate(tomorrow.getDate() + 1);
   if (dateKey(due) === dateKey(tomorrow)) return "Due tomorrow";
   const hours = Math.ceil(milliseconds / (60 * MINUTE));
-  if (hours <= 24) return hours === 1 ? "Due in 1 hour" : `Due in ${hours} hours`;
+  if (hours <= 24)
+    return hours === 1 ? "Due in 1 hour" : `Due in ${hours} hours`;
   const days = Math.ceil(milliseconds / DAY);
   return days === 1 ? "Due tomorrow" : `Due in ${days} days`;
 }
 
-function contextFits(
-  context: TaskContext,
-  location: CurrentStudyLocation,
-) {
+function contextFits(context: TaskContext, location: CurrentStudyLocation) {
   if (context === "anywhere") return true;
   if (location === "commute") return false;
   return context === location;
@@ -139,11 +134,7 @@ function timeValue(day: Date, value: string) {
   return result;
 }
 
-function overlaps(
-  start: Date,
-  end: Date,
-  range: { start: Date; end: Date },
-) {
+function overlaps(start: Date, end: Date, range: { start: Date; end: Date }) {
   return start < range.end && end > range.start;
 }
 
@@ -171,20 +162,17 @@ function fixedCommitments(input: NowRecommendationInput) {
     input.now,
     horizon,
   )
-    .filter(
-      (lesson) =>
-        !importedWeeks.has(dateKey(startOfWeek(lesson.start))),
-    )
+    .filter((lesson) => !importedWeeks.has(dateKey(startOfWeek(lesson.start))))
     .map((lesson) => {
-    const schoolClass = classById.get(lesson.classId);
-    const subject = schoolClass
-      ? subjectById.get(schoolClass.subjectId)
-      : undefined;
-    return {
-      title: subject?.name ?? "Class",
-      start: lesson.start,
-      end: lesson.end,
-    };
+      const schoolClass = classById.get(lesson.classId);
+      const subject = schoolClass
+        ? subjectById.get(schoolClass.subjectId)
+        : undefined;
+      return {
+        title: subject?.name ?? "Class",
+        start: lesson.start,
+        end: lesson.end,
+      };
     });
   const calendar = input.items
     .filter(
@@ -216,24 +204,17 @@ function durationFor(
   splittable = true,
 ) {
   const template = workType
-    ? (settings.focusTemplates?.[workType] ??
-      DEFAULT_FOCUS_TEMPLATES[workType])
+    ? (settings.focusTemplates?.[workType] ?? DEFAULT_FOCUS_TEMPLATES[workType])
     : DEFAULT_FOCUS_TEMPLATES.light_work;
   const preferredMin = Math.max(5, minimum || template.durationMin);
-  const preferredMax = Math.max(
-    preferredMin,
-    maximum || template.durationMax,
-  );
+  const preferredMax = Math.max(preferredMin, maximum || template.durationMax);
   const targetDuration = Math.max(
     preferredMin,
     Math.min(preferredMax, template.durationMax),
   );
   if (!splittable && remaining > available) return 0;
   if (available < Math.min(preferredMin, remaining)) return 0;
-  return Math.max(
-    5,
-    Math.min(remaining, available, targetDuration),
-  );
+  return Math.max(5, Math.min(remaining, available, targetDuration));
 }
 
 function protectedReason(
@@ -242,6 +223,7 @@ function protectedReason(
   energyType: EnergyType,
   requiredEnergy: EnergyRequirement,
   input: NowRecommendationInput,
+  energyUsage?: number,
 ) {
   const cutoff = timeValue(start, input.settings.schoolworkCutoff);
   if (end > cutoff) {
@@ -255,7 +237,9 @@ function protectedReason(
   }
   if (
     input.currentLocation === "commute" &&
-    (energyType === "deep_focus" || requiredEnergy === "high")
+    (energyUsage != null
+      ? energyUsage >= 4
+      : energyType === "deep_focus" || requiredEnergy === "high")
   ) {
     return "High-focus work does not fit a commute.";
   }
@@ -265,7 +249,7 @@ function protectedReason(
     input.settings,
     start,
     end,
-    { energyType },
+    { energyType, energyUsage },
     input.items,
   );
   const lesson = ranges.find(
@@ -284,7 +268,7 @@ function protectedReason(
   if (
     recovery &&
     input.currentLocation === "home" &&
-    energyType === "deep_focus"
+    (energyUsage != null ? energyUsage >= 4 : energyType === "deep_focus")
   ) {
     return "Deep work is protected during after-school recovery.";
   }
@@ -369,7 +353,8 @@ export function recommendNow(
   const currentFixed = commitments.find(
     (entry) => entry.start <= input.now && entry.end > input.now,
   );
-  const next = currentFixed ?? commitments.find((entry) => entry.start > input.now);
+  const next =
+    currentFixed ?? commitments.find((entry) => entry.start > input.now);
   const nextFixed = next
     ? {
         title: next.title,
@@ -407,7 +392,10 @@ export function recommendNow(
           ? `Schoolwork ends at ${input.settings.schoolworkCutoff}.`
           : "There is not enough time before the next fixed event.",
       freeTimeIsValid: availableMinutes > 0,
-      freeTimeReason: availableMinutes > 0 ? "This gap is too short to use deliberately." : null,
+      freeTimeReason:
+        availableMinutes > 0
+          ? "This gap is too short to use deliberately."
+          : null,
     };
   }
 
@@ -416,18 +404,24 @@ export function recommendNow(
   const recentSubjectIds = new Set(
     input.items
       .filter((item) => {
-        if (item.status !== "completed" || !item.subjectId || !item.endsAt) return false;
+        if (item.status !== "completed" || !item.subjectId || !item.endsAt)
+          return false;
         const ended = new Date(item.endsAt).getTime();
-        return ended <= input.now.getTime() && ended >= input.now.getTime() - 6 * 60 * MINUTE;
+        return (
+          ended <= input.now.getTime() &&
+          ended >= input.now.getTime() - 6 * 60 * MINUTE
+        );
       })
       .map((item) => item.subjectId!),
   );
   const challengeAdjustment = (subjectId: string | null) => {
     if (!subjectId) return 0;
     const { counts } = subjectChallengeSummary(subjectId, signals, input.now);
-    return Math.min(18, counts.not_understood * 6 + counts.difficult * 2) -
+    return (
+      Math.min(18, counts.not_understood * 6 + counts.difficult * 2) -
       Math.min(8, counts.too_easy * 2) -
-      (recentSubjectIds.has(subjectId) ? 7 : 0);
+      (recentSubjectIds.has(subjectId) ? 7 : 0)
+    );
   };
   for (const assignment of input.assignments) {
     if (
@@ -457,15 +451,7 @@ export function recommendNow(
     const energyType = energyTypeForWorkType(assignment.workType);
     const requiredEnergy = assignment.requiredEnergy ?? "medium";
     const end = new Date(input.now.getTime() + duration * MINUTE);
-    if (
-      protectedReason(
-        input.now,
-        end,
-        energyType,
-        requiredEnergy,
-        input,
-      )
-    ) {
+    if (protectedReason(input.now, end, energyType, requiredEnergy, input)) {
       continue;
     }
     const progressPercent = assignment.estimatedMinutes
@@ -493,7 +479,8 @@ export function recommendNow(
         input.currentEnergy,
         duration,
         availableMinutes,
-        (progressPercent >= 50 ? 5 : 0) + challengeAdjustment(assignment.subjectId),
+        (progressPercent >= 50 ? 5 : 0) +
+          challengeAdjustment(assignment.subjectId),
       ),
       assignmentId: assignment.id,
       assessmentId: null,
@@ -532,13 +519,7 @@ export function recommendNow(
     const energyType = energyTypeForWorkType(profile.workType);
     const end = new Date(input.now.getTime() + duration * MINUTE);
     if (
-      protectedReason(
-        input.now,
-        end,
-        energyType,
-        profile.requiredEnergy,
-        input,
-      )
+      protectedReason(input.now, end, energyType, profile.requiredEnergy, input)
     ) {
       continue;
     }
@@ -585,12 +566,15 @@ export function recommendNow(
     const linkedAssessment = item.assessmentId
       ? input.assessments.find((entry) => entry.id === item.assessmentId)
       : null;
-    const subjectId = item.subjectId ?? linkedAssignment?.subjectId ?? linkedAssessment?.subjectId ?? null;
+    const subjectId =
+      item.subjectId ??
+      linkedAssignment?.subjectId ??
+      linkedAssessment?.subjectId ??
+      null;
     const startsSoon = Boolean(
       item.startsAt &&
       new Date(item.startsAt).getTime() >= input.now.getTime() - 5 * MINUTE &&
-      new Date(item.startsAt).getTime() <=
-        input.now.getTime() + 20 * MINUTE,
+      new Date(item.startsAt).getTime() <= input.now.getTime() + 20 * MINUTE,
     );
     const movableScheduled = Boolean(
       item.status === "scheduled" &&
@@ -610,8 +594,7 @@ export function recommendNow(
       continue;
     }
     const expectedDuration = durationMinutes(item);
-    const canAdjustDuration =
-      item.flexibility === "elastic" || item.splittable;
+    const canAdjustDuration = item.flexibility === "elastic" || item.splittable;
     const duration = canAdjustDuration
       ? Math.min(availableMinutes, item.durationMax)
       : expectedDuration;
@@ -628,8 +611,15 @@ export function recommendNow(
         input.now,
         end,
         item.energyType,
-        item.requiredEnergy ?? "medium",
+        item.energyUsage != null
+          ? item.energyUsage >= 4
+            ? "high"
+            : item.energyUsage <= 2
+              ? "low"
+              : "medium"
+          : (item.requiredEnergy ?? "medium"),
         input,
+        item.energyUsage,
       )
     ) {
       continue;
@@ -654,7 +644,10 @@ export function recommendNow(
           : "From your task inbox",
       reasons: [
         dueReason(item.deadline, input.now),
-        explanationForEnergy(item.requiredEnergy ?? "medium", input.currentEnergy),
+        explanationForEnergy(
+          item.requiredEnergy ?? "medium",
+          input.currentEnergy,
+        ),
         `${duration} minutes fits now`,
       ],
       score: recommendationScore(
@@ -665,7 +658,8 @@ export function recommendNow(
         input.currentEnergy,
         duration,
         availableMinutes,
-        (startsSoon ? 18 : movableScheduled ? 10 : 0) + challengeAdjustment(subjectId),
+        (startsSoon ? 18 : movableScheduled ? 10 : 0) +
+          challengeAdjustment(subjectId),
       ),
       assignmentId: item.assignmentId,
       assessmentId: item.assessmentId,
@@ -683,7 +677,11 @@ export function recommendNow(
 
   if (input.currentEnergy !== "low" && availableMinutes >= 15) {
     for (const subject of input.subjects) {
-      const { counts } = subjectChallengeSummary(subject.id, signals, input.now);
+      const { counts } = subjectChallengeSummary(
+        subject.id,
+        signals,
+        input.now,
+      );
       if (counts.too_easy < 2) continue;
       recommendations.push({
         id: `exploration:${subject.id}`,
