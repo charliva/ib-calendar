@@ -287,7 +287,16 @@ export function validatePlacement(
     (other) => other.flexibility === "fixed",
   );
   if (fixedCollision) {
-    errors.push(`Conflicts with fixed event “${fixedCollision.title}”.`);
+    const sameTimetableImport =
+      item.source === "document" &&
+      fixedCollision.source === "document" &&
+      item.constraints.includes(TIMETABLE_IMPORT_MARKER) &&
+      fixedCollision.constraints.includes(TIMETABLE_IMPORT_MARKER);
+    if (sameTimetableImport) {
+      warnings.push(`Overlaps imported lesson “${fixedCollision.title}”.`);
+    } else {
+      errors.push(`Conflicts with fixed event “${fixedCollision.title}”.`);
+    }
   } else if (collisions.length) {
     warnings.push(
       `Overlaps ${collisions.length} flexible item${

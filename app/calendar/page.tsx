@@ -191,6 +191,7 @@ import {
 import {
   isImportedTimetableItem,
   isItemInWeek,
+  removeSubjectFromTimetableProposal,
   reconcileTimetableImport,
   timetableRoomForItem,
   type RejectedTimetableCandidate,
@@ -1294,7 +1295,11 @@ export default function Home() {
     setNotice(`Undid: ${latest.label}`);
   }
 
-  function syncSnapshotDiff(before: CalendarItem[], after: CalendarItem[]) {
+  function syncSnapshotDiff(
+    before: CalendarItem[],
+    after: CalendarItem[],
+    dependencyForItem?: (item: CalendarItem) => string | undefined,
+  ) {
     const beforeMap = new Map(before.map((item) => [item.id, item]));
     const afterMap = new Map(after.map((item) => [item.id, item]));
     beforeMap.forEach((_item, id) => {
@@ -1312,6 +1317,7 @@ export default function Home() {
         action: "upsert",
         recordId: item.id,
         payload: itemToRow(item),
+        dependsOn: dependencyForItem?.(item),
       }).catch(() => undefined);
     });
   }
@@ -1983,7 +1989,7 @@ export default function Home() {
     }
   }
 
-  function approveProposal() {
+  async function approveProposal() {
     if (!proposal) return;
     if (
       timetableSubjectProposal?.proposalId === proposal.id &&
@@ -1997,17 +2003,11 @@ export default function Home() {
       setNotice("This proposal failed deterministic scheduling checks.");
       return;
     }
-    recordHistory(proposal.title);
-    const next = applyProposal(proposal, items).map((item) => ({
-      ...item,
-      syncStatus: "pending" as const,
-    }));
-    transitionState(() => setItems(next));
-    syncSnapshotDiff(items, next);
     const importedSubjects =
       timetableSubjectProposal?.proposalId === proposal.id
         ? timetableSubjectProposal.subjects
         : [];
+    const failedSubjectIds = new Set<string>();
     if (importedSubjects.length) {
       setSubjects((current) => [
         ...current.filter(
@@ -2016,15 +2016,32 @@ export default function Home() {
         ),
         ...importedSubjects,
       ]);
-      importedSubjects.forEach((subject) => {
-        persistMutation({
-          table: "subjects",
-          action: "upsert",
-          recordId: subject.id,
-          payload: subjectToRow(subject),
-        }).catch(() => undefined);
+      const results = await Promise.all(
+        importedSubjects.map(async (subject) => ({
+          id: subject.id,
+          synced: await persistMutation({
+            table: "subjects",
+            action: "upsert",
+            recordId: subject.id,
+            payload: subjectToRow(subject),
+          }),
+        })),
+      );
+      results.forEach(({ id, synced }) => {
+        if (!synced) failedSubjectIds.add(id);
       });
     }
+    recordHistory(proposal.title);
+    const next = applyProposal(proposal, items).map((item) => ({
+      ...item,
+      syncStatus: "pending" as const,
+    }));
+    transitionState(() => setItems(next));
+    syncSnapshotDiff(items, next, (item) =>
+      item.subjectId && failedSubjectIds.has(item.subjectId)
+        ? `subjects:record:${item.subjectId}`
+        : undefined,
+    );
     setProposal(null);
     setTimetableSubjectProposal(null);
     setTimetableImportIssues(null);
@@ -2115,6 +2132,9 @@ export default function Home() {
   }
 
   function removeTimetableSubject(subjectId: string) {
+    setProposal((current) =>
+      current ? removeSubjectFromTimetableProposal(current, subjectId) : current,
+    );
     setTimetableSubjectProposal((current) =>
       current
         ? {

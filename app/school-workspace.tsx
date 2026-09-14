@@ -53,6 +53,7 @@ import {
 } from "@/lib/school-day-engine";
 import { estimateMinutesFromHistory, WORK_TYPE_LABELS } from "@/lib/school";
 import {
+  importedLessonMatchesClass,
   isImportedTimetableItem,
   isItemInWeek,
 } from "@/lib/timetable-import";
@@ -715,12 +716,15 @@ export function SchoolWorkspace(props: Props) {
                 <div className="school-timetable">
                   {weekDays.map((day, dayIndex) => {
                     const key = dateKey(day);
-                    const regular = (importedWeekLessons.length ? [] : classes)
+                    const regular = classes
                       .filter(
                         (entry) =>
                           entry.weekday === dayIndex + 1 &&
                           key >= entry.validFrom &&
-                          (!entry.validUntil || key <= entry.validUntil),
+                          (!entry.validUntil || key <= entry.validUntil) &&
+                          !importedWeekLessons.some((item) =>
+                            importedLessonMatchesClass(item, entry, key),
+                          ),
                       )
                       .sort((a, b) => a.startTime.localeCompare(b.startTime));
                     const movedHere = classExceptions.filter(
