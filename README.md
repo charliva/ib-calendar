@@ -75,7 +75,7 @@ Configure Supabase Authentication > SMTP with:
 - port: `465` with implicit TLS, or `587` with STARTTLS
 - username: `resend`
 - password: the Resend API key
-- sender: `Syllabi <login@auth.charlieva.dev>`
+- sender: `Syllabi <login@auth.example.dev>`
 
 Resend's free tier is suitable for a small class/friends rollout. Cloudflare
 Email Routing can remain enabled independently for inbound aliases, but it is
