@@ -1,0 +1,150 @@
+/* Item inspector overlay. */
+
+.item-overlay {
+  z-index: 105;
+  padding-top: 4vh;
+  justify-items: end;
+}
+
+.item-inspector {
+  width: min(480px, 100%);
+  max-height: 92vh;
+  margin-right: 2vw;
+  padding: 0 18px;
+  overflow: auto;
+  background: #fffefa;
+  border: 1px solid #d1cdd3;
+  border-radius: 14px;
+  box-shadow: 0 24px 75px rgb(17 14 22 / 27%);
+}
+
+.item-inspector > header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 -18px;
+  padding: 13px 18px;
+  background: rgb(255 254 250 / 95%);
+  backdrop-filter: blur(12px);
+}
+
+.kind-pill {
+  padding: 4px 7px;
+  color: #5849a8;
+  background: #ece8ff;
+  border-radius: 5px;
+  font-family: var(--font-mono), monospace;
+  font-size: 7px;
+  font-weight: 750;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.kind-pill.event {
+  color: #a13f57;
+  background: #ffe3e9;
+}
+
+.kind-pill.intention {
+  color: #36785e;
+  background: #dff4e9;
+}
+
+.item-title-input {
+  width: 100%;
+  padding: 7px 0 10px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  outline: 0;
+  font-size: 21px;
+  font-weight: 670;
+  letter-spacing: -.045em;
+}
+
+.item-inspector > textarea {
+  width: 100%;
+  min-height: 65px;
+  margin: 10px 0 13px;
+  padding: 9px;
+  resize: vertical;
+  background: #f8f6f1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  outline: 0;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+
+.field-grid.triple {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.field-grid + .field-grid {
+  margin-top: 9px;
+}
+
+.item-inspector label {
+  display: block;
+  color: #89837b;
+  font-size: 8px;
+  font-weight: 620;
+}
+
+.item-inspector label > span {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.item-inspector input:not(.item-title-input),
+.item-inspector select {
+  width: 100%;
+  height: 34px;
+  padding: 0 8px;
+  color: #39353c;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  outline: 0;
+  font-size: 9px;
+}
+
+.item-inspector input:disabled {
+  color: #9b958e;
+  background: #f0eee9;
+}
+
+.constraint-field {
+  margin-top: 10px;
+}
+
+.check-field {
+  display: flex !important;
+  align-items: center;
+  margin: 12px 0 4px;
+  gap: 7px;
+}
+
+.check-field input {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+.item-inspector footer {
+  margin: 14px -18px 0;
+}
+
+.item-inspector footer .delete {
+  margin-right: auto;
+  color: #b34159;
+  border-color: #ecc7ce;
+}

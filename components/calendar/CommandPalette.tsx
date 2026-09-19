@@ -9,7 +9,10 @@ import {
 import { useRef, type FormEvent } from "react";
 import { formatDate } from "../../app/calendar-format.ts";
 import type { ParsedCommand } from "../../lib/calendar/commands.ts";
-import type { ParsedHomework } from "../../lib/homework-parser.ts";
+import type {
+  ParsedHomework,
+  ParsedReviewSession,
+} from "../../lib/homework-parser.ts";
 
 export function CommandPalette({
   error,
@@ -21,6 +24,7 @@ export function CommandPalette({
   commandQuestions,
   commandPreview,
   homeworkCommandPreview,
+  reviewCommandPreview,
   commandIsHomework,
   onClose,
   onModeChange,
@@ -41,6 +45,7 @@ export function CommandPalette({
   }>;
   commandPreview: ParsedCommand | null;
   homeworkCommandPreview: ParsedHomework;
+  reviewCommandPreview: ParsedReviewSession | null;
   commandIsHomework: boolean;
   onClose: () => void;
   onModeChange: (mode: "command" | "filter" | "upload") => void;
@@ -188,7 +193,9 @@ export function CommandPalette({
                 {commandBusy
                   ? "Thinking…"
                   : commandIsHomework
-                    ? "Capture"
+                    ? "Add now"
+                    : reviewCommandPreview
+                      ? "Add now"
                     : mode === "filter"
                       ? "Filter"
                       : "Apply"}
@@ -201,7 +208,7 @@ export function CommandPalette({
                 className="parsed-intent homework-intent"
                 aria-label="Parsed homework"
               >
-                <span>Instant capture · local</span>
+                <span>Instant homework · local</span>
                 <div>
                   <strong>
                     {homeworkCommandPreview.matched.subject ?? "Homework"}
@@ -222,6 +229,31 @@ export function CommandPalette({
                   <i className="intent-shift">
                     {homeworkCommandPreview.taskType}
                   </i>
+                </div>
+              </div>
+            ) : mode === "command" &&
+              commandConversation.length === 0 &&
+              reviewCommandPreview ? (
+              <div
+                className="parsed-intent homework-intent"
+                aria-label="Parsed review session"
+              >
+                <span>Instant session · local</span>
+                <div>
+                  <strong>{reviewCommandPreview.title}</strong>
+                  <i>{reviewCommandPreview.durationMinutes} min</i>
+                  {reviewCommandPreview.startsAt && (
+                    <>
+                      <Move size={12} />
+                      <i>
+                        {formatDate(new Date(reviewCommandPreview.startsAt), {
+                          weekday: "short",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </i>
+                    </>
+                  )}
                 </div>
               </div>
             ) : mode === "command" &&

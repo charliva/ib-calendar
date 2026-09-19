@@ -5,6 +5,8 @@ import type {
   TaskContext,
 } from "@/lib/calendar-engine";
 
+import { DEFAULT_WEEK_PATTERN_ANCHOR } from "./school/week-pattern.ts";
+
 export type { TaskContext } from "@/lib/calendar-engine";
 export type WeekPattern = "every" | "a" | "b";
 export type AssignmentStatus =
@@ -19,8 +21,6 @@ export type HomeworkTaskType =
   | "vocabulary"
   | "project"
   | "other";
-export type HomeworkCaptureStatus =
-  "captured" | "scheduled" | "converted" | "completed" | "archived";
 
 export type SchoolDaySettings = {
   schoolLocation: string;
@@ -37,6 +37,12 @@ export type SchoolDaySettings = {
   minimumFreePeriodMinutes: number;
   lowEnergyStart: string;
   lowEnergyEnd: string;
+  /**
+   * Monday of a week the student has confirmed runs the A timetable. Schools
+   * decide which week is which, so the fortnightly cycle is anchored to an
+   * answer rather than to a constant.
+   */
+  weekPatternAnchor: string;
   focusTemplates: Record<SchoolWorkType, FocusTemplate>;
 };
 
@@ -80,9 +86,10 @@ export const DEFAULT_SCHOOL_DAY_SETTINGS: SchoolDaySettings = {
   preferredStudyEnd: "19:00",
   allowCommuteScheduling: false,
   schoolComputerAccess: false,
-  minimumFreePeriodMinutes: 20,
+  minimumFreePeriodMinutes: 45,
   lowEnergyStart: "19:00",
   lowEnergyEnd: "21:00",
+  weekPatternAnchor: DEFAULT_WEEK_PATTERN_ANCHOR,
   focusTemplates: DEFAULT_FOCUS_TEMPLATES,
 };
 
@@ -176,28 +183,12 @@ export type Assessment = {
   createdAt: string;
 };
 
-export type HomeworkCapture = {
-  id: string;
-  rawText: string;
-  title: string;
-  subjectId: string | null;
-  deadline: string | null;
-  taskType: HomeworkTaskType;
-  estimatedMinutes: number;
-  status: HomeworkCaptureStatus;
-  convertedAssignmentId: string | null;
-  scheduledCalendarItemId: string | null;
-  parsedMeta: Record<string, unknown>;
-  createdAt: string;
-};
-
 export type SchoolState = {
   subjects: Subject[];
   classes: SchoolClass[];
   classExceptions: ClassException[];
   assignments: Assignment[];
   assessments: Assessment[];
-  homeworkCaptures: HomeworkCapture[];
   schoolDaySettings: SchoolDaySettings;
 };
 
@@ -245,7 +236,6 @@ export const EMPTY_SCHOOL_STATE: SchoolState = {
   classExceptions: [],
   assignments: [],
   assessments: [],
-  homeworkCaptures: [],
   schoolDaySettings: DEFAULT_SCHOOL_DAY_SETTINGS,
 };
 
@@ -334,9 +324,14 @@ export function rowToSchoolDaySettings(
     preferredStudyEnd: text(row.preferred_study_end).slice(0, 5) || "19:00",
     allowCommuteScheduling: Boolean(row.allow_commute_scheduling),
     schoolComputerAccess: Boolean(row.school_computer_access),
-    minimumFreePeriodMinutes: numeric(row.minimum_free_period_minutes, 20),
+    minimumFreePeriodMinutes: Math.max(
+      45,
+      numeric(row.minimum_free_period_minutes, 45),
+    ),
     lowEnergyStart: text(row.low_energy_start).slice(0, 5) || "19:00",
     lowEnergyEnd: text(row.low_energy_end).slice(0, 5) || "21:00",
+    weekPatternAnchor:
+      text(row.week_pattern_anchor).slice(0, 10) || DEFAULT_WEEK_PATTERN_ANCHOR,
     focusTemplates: focusTemplates(row.focus_templates),
   };
 }
@@ -347,6 +342,9 @@ export function normalizeSchoolDaySettings(
   return {
     ...DEFAULT_SCHOOL_DAY_SETTINGS,
     ...settings,
+    minimumFreePeriodMinutes: Math.max(45, settings.minimumFreePeriodMinutes),
+    weekPatternAnchor:
+      settings.weekPatternAnchor?.trim() || DEFAULT_WEEK_PATTERN_ANCHOR,
     focusTemplates: focusTemplates(settings.focusTemplates),
   };
 }
@@ -367,6 +365,7 @@ export function schoolDaySettingsToRow(settings: SchoolDaySettings) {
     minimum_free_period_minutes: settings.minimumFreePeriodMinutes,
     low_energy_start: settings.lowEnergyStart,
     low_energy_end: settings.lowEnergyEnd,
+    week_pattern_anchor: settings.weekPatternAnchor,
     focus_templates: settings.focusTemplates,
   };
 }
@@ -583,45 +582,5 @@ export function normalizeAssessment(assessment: Assessment): Assessment {
       assessment.reviewIntervalsDays?.length > 0
         ? assessment.reviewIntervalsDays
         : [1, 3, 7, 14],
-  };
-}
-
-export function rowToHomeworkCapture(
-  row: Record<string, unknown>,
-): HomeworkCapture {
-  return {
-    id: text(row.id),
-    rawText: text(row.raw_text),
-    title: text(row.title),
-    subjectId: nullableText(row.subject_id),
-    deadline: nullableText(row.deadline),
-    taskType: (text(row.task_type) || "other") as HomeworkTaskType,
-    estimatedMinutes: numeric(row.estimated_minutes, 30),
-    status: (text(row.status) || "captured") as HomeworkCaptureStatus,
-    convertedAssignmentId: nullableText(row.converted_assignment_id),
-    scheduledCalendarItemId: nullableText(row.scheduled_calendar_item_id),
-    parsedMeta:
-      row.parsed_meta &&
-      typeof row.parsed_meta === "object" &&
-      !Array.isArray(row.parsed_meta)
-        ? (row.parsed_meta as Record<string, unknown>)
-        : {},
-    createdAt: text(row.created_at) || new Date().toISOString(),
-  };
-}
-
-export function homeworkCaptureToRow(capture: HomeworkCapture) {
-  return {
-    id: capture.id,
-    raw_text: capture.rawText,
-    title: capture.title,
-    subject_id: capture.subjectId,
-    deadline: capture.deadline,
-    task_type: capture.taskType,
-    estimated_minutes: capture.estimatedMinutes,
-    status: capture.status,
-    converted_assignment_id: capture.convertedAssignmentId,
-    scheduled_calendar_item_id: capture.scheduledCalendarItemId,
-    parsed_meta: capture.parsedMeta,
   };
 }

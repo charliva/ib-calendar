@@ -1,0 +1,323 @@
+/* Control surface refinements for proposals and subject review. */
+
+.proposal-overlay {
+  z-index: 110;
+  padding: 0 18px 18px calc(var(--rail) + 18px);
+  align-items: end;
+  justify-items: center;
+  pointer-events: none;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.proposal-sheet {
+  width: min(690px, calc(100vw - var(--rail) - 36px));
+  max-height: min(70vh, 640px);
+  pointer-events: auto;
+  background: rgb(246 247 243 / 97%);
+  border: 1px solid #cfd2cb;
+  border-radius: 12px;
+  box-shadow:
+    0 24px 70px rgb(47 46 54 / 19%),
+    0 3px 12px rgb(47 46 54 / 8%);
+  backdrop-filter: blur(20px);
+}
+
+.proposal-sheet > header {
+  padding: 13px 14px;
+  background: rgb(246 247 243 / 95%);
+  border-color: #dfe2db;
+}
+
+.proposal-icon {
+  color: #5749ab;
+  background: #e6e2f7;
+  border-radius: 7px;
+}
+
+.proposal-sheet h2 {
+  font-size: 14px;
+}
+
+.proposal-sheet.subject-reviewing {
+  width: min(780px, calc(100vw - var(--rail) - 36px));
+  max-height: min(82vh, 760px);
+}
+
+.subject-review-splash {
+  padding: 18px;
+}
+
+.subject-review-intro {
+  max-width: 560px;
+  margin-bottom: 14px;
+}
+
+.subject-review-intro h3 {
+  margin: 4px 0 5px;
+  color: #34343a;
+  font-size: 18px;
+  letter-spacing: -.035em;
+}
+
+.subject-review-intro p {
+  margin: 0;
+  color: #777972;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.subject-review-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.subject-review-card {
+  padding: 10px;
+  background: rgb(255 255 255 / 58%);
+  border: 1px solid #d9dcd5;
+  border-radius: 9px;
+}
+
+.subject-review-card > header {
+  display: grid;
+  grid-template-columns: 7px 1fr 24px;
+  align-items: center;
+  margin-bottom: 9px;
+  gap: 7px;
+}
+
+.subject-review-card > header strong {
+  color: #777972;
+  font-size: 10px;
+  font-weight: 620;
+}
+
+.subject-review-card > header button {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  place-items: center;
+  color: #9b5966;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+}
+
+.subject-review-card label > span {
+  display: block;
+  margin: 0 0 4px 1px;
+  color: #898b85;
+  font-size: 10px;
+  font-weight: 620;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.subject-review-card input {
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  color: #393a3f;
+  background: #eef0eb;
+  border: 1px solid #d7dad3;
+  border-radius: 6px;
+  outline: 0;
+  font-size: 13px;
+}
+
+.subject-review-name input {
+  height: 38px;
+  background: #fff;
+  font-size: 14px;
+  font-weight: 620;
+}
+
+.subject-review-fields {
+  display: grid;
+  grid-template-columns: 80px 48px 1fr 80px;
+  margin-top: 8px;
+  gap: 6px;
+}
+
+.subject-review-fields input[type="color"] {
+  padding: 3px;
+}
+
+.subject-review-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+  gap: 7px;
+}
+
+.subject-review-actions button,
+.proposal-subject-preview button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  padding: 0 11px;
+  gap: 5px;
+  color: #5f615c;
+  background: #fff;
+  border: 1px solid #d6d9d2;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.subject-review-actions .approve {
+  color: #f5f3ff;
+  background: #6758c5;
+  border-color: #6758c5;
+}
+
+.subject-review-actions button:disabled {
+  opacity: .42;
+}
+
+.proposal-list {
+  display: grid;
+  padding: 10px 15px;
+  gap: 2px;
+}
+
+.proposal-subject-preview {
+  padding: 10px 13px 7px;
+  border-bottom: 1px solid #dfe2db;
+}
+
+.proposal-subject-preview > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 7px;
+}
+
+.proposal-subject-preview > div:first-child > strong {
+  color: #6154b5;
+  font-family: var(--font-mono), monospace;
+  font-size: 9px;
+}
+
+.proposal-subject-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+  gap: 5px;
+}
+
+.proposal-subject-list article {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  align-items: center;
+  padding: 7px 8px;
+  gap: 7px;
+  background: rgb(255 255 255 / 58%);
+  border: 1px solid #dcddd8;
+  border-radius: 7px;
+}
+
+.proposal-subject-dot {
+  width: 7px;
+  height: 22px;
+  border-radius: 3px;
+}
+
+.proposal-subject-list strong,
+.proposal-subject-list small {
+  display: block;
+}
+
+.proposal-subject-list strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.proposal-subject-list small,
+.proposal-subject-preview > p {
+  color: #85847f;
+  font-size: 10px;
+}
+
+.proposal-subject-preview > p {
+  margin: 7px 0 0;
+}
+
+.proposal-list article {
+  grid-template-columns: 52px 1fr 22px;
+  padding: 12px 0;
+}
+
+.proposal-sheet footer {
+  padding: 9px 13px;
+  background: rgb(246 247 243 / 95%);
+  border-color: #dfe2db;
+}
+
+.proposal-sheet footer > div {
+  display: flex;
+  margin-right: auto;
+  align-items: center;
+  gap: 6px;
+  color: #81837e;
+  font-size: 10px;
+}
+
+.proposal-sheet footer .approve {
+  color: #f3f1fb;
+  background: #6758c5;
+  border-color: #6758c5;
+}
+
+.item-overlay {
+  padding: 10px;
+  background: rgb(50 51 56 / 12%);
+  backdrop-filter: blur(2px);
+}
+
+.item-inspector {
+  width: min(450px, 100%);
+  max-height: calc(100dvh - 20px);
+  margin-right: 0;
+  background: #f6f7f3;
+  border-color: #ced2ca;
+  border-radius: 12px;
+}
+
+.item-inspector > header,
+.item-inspector footer {
+  background: rgb(246 247 243 / 95%);
+}
+
+.item-title-input {
+  color: #33343a;
+  font-size: 19px;
+}
+
+.item-inspector > textarea,
+.item-inspector input:not(.item-title-input),
+.item-inspector select {
+  background: #eef0eb;
+  border-color: #d9dcd5;
+}
+
+.item-inspector footer .save,
+.account-card form button,
+.account-card > button:not(.account-close) {
+  color: #f3f1fb;
+  background: #6758c5;
+  border-color: #6758c5;
+}
+
+.account-card {
+  bottom: 10px;
+  left: calc(var(--rail) + 10px);
+  width: 360px;
+  background: #f6f7f3;
+  border-color: #ced2ca;
+  border-radius: 12px;
+}

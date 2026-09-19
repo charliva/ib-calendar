@@ -1,0 +1,150 @@
+/* Calendar stage chrome: toolbar, date navigation, undo, zoom, toasts. */
+
+.calendar-stage {
+  position: relative;
+  grid-column: 3;
+  min-width: 0;
+  overflow: auto;
+  background: var(--paper);
+}
+
+.calendar-stage.zoom-day,
+.calendar-stage.zoom-week,
+.calendar-stage.zoom-month {
+  touch-action: pan-y;
+  overscroll-behavior-x: contain;
+}
+
+.calendar-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 18;
+  display: flex;
+  align-items: center;
+  min-width: 630px;
+  min-height: 64px;
+  padding: 0 16px;
+  gap: 12px;
+  background: rgb(255 254 250 / 94%);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(14px);
+}
+
+.date-navigation {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin-right: auto;
+  gap: 5px;
+}
+
+.date-navigation button,
+.undo-button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  place-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+}
+
+.date-navigation button:nth-child(2) {
+  width: auto;
+  padding: 0 6px;
+}
+
+.undo-button {
+  display: flex;
+  width: auto;
+  min-width: 54px;
+  padding: 0 7px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 9px;
+}
+
+.date-navigation button:hover,
+.undo-button:hover:not(:disabled) {
+  background: #f2efe9;
+  border-color: #e1ddd5;
+}
+
+.date-navigation h2 {
+  min-width: 0;
+  margin: 0 8px;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 670;
+  letter-spacing: -.025em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zoom-control {
+  display: flex;
+  padding: 3px;
+  background: #eeece6;
+  border-radius: 9px;
+}
+
+.zoom-control button {
+  min-width: 39px;
+  height: 25px;
+  padding: 0 7px;
+  color: #77716a;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  font-size: 9px;
+  font-weight: 620;
+  text-transform: capitalize;
+}
+
+.zoom-control button.active {
+  color: #29262d;
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(30 27 34 / 11%);
+}
+
+.undo-button {
+  border-color: var(--line);
+}
+
+.undo-button:disabled {
+  cursor: default;
+  opacity: .35;
+}
+
+.toast {
+  position: fixed;
+  z-index: 80;
+  bottom: 22px;
+  left: calc(var(--rail) + var(--dock) + 18px);
+  max-width: 420px;
+  padding: 9px 12px;
+  color: #fff;
+  background: #211f25;
+  border: 1px solid #3e3a44;
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 17%);
+  font-size: 10px;
+}
+
+.weekly-review-toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.weekly-review-toast button {
+  padding: 4px 8px;
+  color: #211f25;
+  background: #fff;
+  border: 0;
+  border-radius: 5px;
+  font-size: 9px;
+  font-weight: 660;
+}

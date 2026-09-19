@@ -1,0 +1,250 @@
+/* Ranked recommendations and the start action. */
+
+/* ─────────────────────────────────────
+   Recommendations
+   ───────────────────────────────────── */
+
+.now-recommendations {
+  padding: 0 17px 17px;
+}
+
+.now-recommendations article {
+  position: relative;
+
+  display: grid;
+  grid-template-columns: 29px minmax(0, 1fr) auto;
+
+  min-height: 86px;
+
+  padding: 13px 12px 12px 10px;
+  gap: 10px;
+
+  background: #fff;
+
+  border: 1px solid #e2dee4;
+  border-radius: 10px;
+
+  box-shadow:
+    0 1px 2px rgb(28 25 33 / 3%);
+
+  transition:
+    transform 130ms ease,
+    border-color 130ms ease,
+    box-shadow 130ms ease;
+}
+
+.now-recommendations article + article {
+  margin-top: 7px;
+}
+
+.now-recommendations article:hover {
+  z-index: 2;
+
+  transform: translateY(-1px);
+
+  border-color: #cec7dd;
+
+  box-shadow:
+    0 7px 20px rgb(42 35 59 / 8%);
+}
+
+
+/* Best recommendation */
+
+.now-recommendations article:first-child {
+  background:
+    linear-gradient(
+      110deg,
+      rgb(247 245 255 / 100%),
+      #fff 56%
+    );
+
+  border-color: #cec5ed;
+
+  box-shadow:
+    0 3px 15px rgb(89 71 167 / 7%);
+}
+
+.now-recommendations article:first-child::after {
+  position: absolute;
+
+  top: -6px;
+  right: 12px;
+
+  padding: 3px 6px;
+
+  color: #6252b5;
+  background: #ece8ff;
+
+  border: 1px solid #d8d1f5;
+  border-radius: 5px;
+
+  font-family: var(--font-mono), monospace;
+  font-size: 6px;
+  font-weight: 750;
+  letter-spacing: .05em;
+
+  text-transform: uppercase;
+
+  content: "Best match";
+}
+
+
+/* Ranking */
+
+.now-rank {
+  display: grid;
+
+  width: 26px;
+  height: 26px;
+
+  place-items: center;
+
+  color: #99939e;
+  background: #f2eff3;
+
+  border-radius: 7px;
+
+  font-family: var(--font-mono), monospace;
+  font-size: 7px;
+  font-weight: 720;
+}
+
+.now-recommendations article:first-child .now-rank {
+  color: #fff;
+  background: #6758c5;
+}
+
+
+/* Recommendation text */
+
+.now-recommendation-copy {
+  min-width: 0;
+}
+
+.now-recommendation-copy > div:first-child {
+  display: flex;
+
+  min-width: 0;
+
+  align-items: center;
+  gap: 7px;
+}
+
+.now-recommendation-copy h3 {
+  min-width: 0;
+  flex: 0 1 auto;
+
+  overflow: hidden;
+
+  margin: 0;
+
+  color: #343139;
+
+  font-size: 11px;
+  font-weight: 670;
+  letter-spacing: -.015em;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.now-recommendation-copy > div:first-child > span {
+  flex: 0 0 auto;
+
+  padding: 3px 5px;
+
+  color: #72679d;
+  background: #efecf8;
+
+  border-radius: 4px;
+
+  font-family: var(--font-mono), monospace;
+  font-size: 7px;
+  font-weight: 650;
+}
+
+.now-recommendation-copy p {
+  margin: 4px 0 7px;
+
+  color: #858087;
+
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+
+/* Why it chose this task */
+
+.now-recommendation-copy ul {
+  display: flex;
+  flex-wrap: wrap;
+
+  margin: 0;
+  padding: 0;
+
+  gap: 4px;
+
+  list-style: none;
+}
+
+.now-recommendation-copy li {
+  padding: 3px 6px;
+
+  color: #777179;
+  background: #f3f1ee;
+
+  border: 1px solid #e8e4de;
+  border-radius: 99px;
+
+  font-size: 7px;
+  line-height: 1.2;
+}
+
+
+/* Start button */
+
+.now-start {
+  display: inline-flex;
+
+  min-width: 67px;
+  height: 31px;
+
+  align-self: center;
+  align-items: center;
+  justify-content: center;
+
+  padding: 0 10px;
+  gap: 5px;
+
+  color: #f8f7fb;
+  background: #29262e;
+
+  border: 1px solid #29262e;
+  border-radius: 7px;
+
+  font-size: 8px;
+  font-weight: 680;
+
+  transition:
+    transform 120ms ease,
+    background 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.now-start:hover {
+  background: #6758c5;
+  border-color: #6758c5;
+
+  box-shadow:
+    0 4px 11px rgb(103 88 197 / 20%);
+}
+
+.now-start:active {
+  transform: scale(.96);
+}
+
+.now-recommendations article:first-child .now-start {
+  background: #6758c5;
+  border-color: #6758c5;
+}

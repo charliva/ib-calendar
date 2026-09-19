@@ -14,9 +14,13 @@ import type {
   SchoolClass,
   SchoolDaySettings,
 } from "./school.ts";
+import { classRunsInWeek } from "./school/week-pattern.ts";
 
 const MINUTE = 60_000;
 const DAY = 86_400_000;
+// A nominal half-hour between lessons is a changeover, not time a student can
+// realistically commit to work. Keep enough room to leave, reset, and arrive.
+export const MINIMUM_ACTIONABLE_FREE_PERIOD_MINUTES = 45;
 
 export type TimeRange = {
   start: Date;
@@ -87,16 +91,6 @@ function atTime(day: Date, value: string) {
   return result;
 }
 
-function weekPatternFor(day: Date) {
-  const monday = new Date(day);
-  const weekday = monday.getDay() === 0 ? 7 : monday.getDay();
-  monday.setDate(monday.getDate() - weekday + 1);
-  monday.setHours(0, 0, 0, 0);
-  const epoch = new Date(2020, 0, 6);
-  const week = Math.floor((monday.getTime() - epoch.getTime()) / (7 * DAY));
-  return Math.abs(week) % 2 === 0 ? "a" : "b";
-}
-
 function classDateRangeAllows(schoolClass: SchoolClass, day: Date) {
   const key = dateKey(day);
   return (
@@ -110,6 +104,7 @@ export function lessonOccurrences(
   exceptions: ClassException[],
   from: Date,
   to: Date,
+  weekPatternAnchor?: string,
 ) {
   const first = new Date(from);
   first.setHours(0, 0, 0, 0);
@@ -129,8 +124,7 @@ export function lessonOccurrences(
       if (
         schoolClass.weekday !== weekday ||
         !classDateRangeAllows(schoolClass, day) ||
-        (schoolClass.weekPattern !== "every" &&
-          schoolClass.weekPattern !== weekPatternFor(day))
+        !classRunsInWeek(schoolClass.weekPattern, day, weekPatternAnchor)
       ) {
         continue;
       }
@@ -175,6 +169,7 @@ export function schoolLessonRanges(
   from: Date,
   to: Date,
   calendarItems: CalendarItem[] = [],
+  weekPatternAnchor?: string,
 ): TimeRange[] {
   const firstDay = new Date(from);
   firstDay.setHours(0, 0, 0, 0);
@@ -185,6 +180,7 @@ export function schoolLessonRanges(
     exceptions,
     from,
     to,
+    weekPatternAnchor,
   );
   const imported: TimeRange[] = calendarItems
     .filter(
@@ -226,6 +222,7 @@ export function detectFreePeriods(
     from,
     to,
     calendarItems,
+    settings.weekPatternAnchor,
   );
   const byDay = new Map<string, TimeRange[]>();
   for (const lesson of lessons) {
@@ -241,7 +238,13 @@ export function detectFreePeriods(
       const durationMinutes = Math.round(
         (end.getTime() - start.getTime()) / MINUTE,
       );
-      if (durationMinutes >= settings.minimumFreePeriodMinutes) {
+      if (
+        durationMinutes >=
+        Math.max(
+          MINIMUM_ACTIONABLE_FREE_PERIOD_MINUTES,
+          settings.minimumFreePeriodMinutes,
+        )
+      ) {
         free.push({ start, end, durationMinutes, kind: "free_period" });
       }
     }
@@ -264,6 +267,7 @@ export function protectedSchoolRanges(
     from,
     to,
     calendarItems,
+    settings.weekPatternAnchor,
   );
   const byDay = new Map<string, TimeRange[]>();
   for (const lesson of lessons) {
@@ -339,6 +343,7 @@ export function studySlotSuitability(
     start,
     end,
     calendarItems,
+    settings.weekPatternAnchor,
   );
   const freePeriods = detectFreePeriods(
     classes,
@@ -407,6 +412,7 @@ export function studySlotSuitability(
     atTime(day, "00:00"),
     atTime(day, "23:59"),
     calendarItems,
+    settings.weekPatternAnchor,
   );
   if (dayLessons.length) {
     const first = dayLessons[0];
@@ -604,6 +610,47 @@ export function recommendationsForFreePeriod(
       return a.sourceType === "calendar_item" ? -1 : 1;
     })
     .slice(0, Math.max(0, limit));
+}
+
+function freePeriodKey(period: FreePeriod) {
+  return period.start.toISOString();
+}
+
+/**
+ * A school week should not suggest the same piece of work in every open slot.
+ * Allocate the strongest distinct option to each period first, then offer one
+ * alternate only when the gap is long enough to make that choice useful.
+ */
+export function recommendationsAcrossFreePeriods(
+  periods: FreePeriod[],
+  assignments: Assignment[],
+  items: CalendarItem[],
+  settings: SchoolDaySettings,
+) {
+  const claimed = new Set<string>();
+  const byPeriod = new Map<string, FreePeriodRecommendation[]>();
+
+  for (const period of periods) {
+    const ranked = recommendationsForFreePeriod(
+      period,
+      assignments,
+      items,
+      settings,
+      6,
+    );
+    const distinct = ranked.filter(
+      (recommendation) =>
+        !claimed.has(`${recommendation.sourceType}:${recommendation.sourceId}`),
+    );
+    const limit = period.durationMinutes >= 90 ? 2 : 1;
+    const selected = distinct.slice(0, limit);
+    selected.forEach((recommendation) =>
+      claimed.add(`${recommendation.sourceType}:${recommendation.sourceId}`),
+    );
+    byPeriod.set(freePeriodKey(period), selected);
+  }
+
+  return byPeriod;
 }
 
 export function recommendForFreePeriod(

@@ -28,7 +28,6 @@ export type PendingMutation = {
     | "class_exceptions"
     | "assignments"
     | "assessments"
-    | "homework_captures"
     | "intentions"
     | "learning_signals"
     | "explorations"
@@ -48,7 +47,7 @@ export type LastViewState = {
   selectedDay: string;
   nowOpen: boolean;
   inboxOpen: boolean;
-  homeworkOpen: boolean;
+  inboxDockPosition?: { x: number; y: number };
   intentionsOpen: boolean;
   hudOpen: boolean;
   historyOpen: boolean;
@@ -114,6 +113,48 @@ export async function getLastViewState(
   const database = await dbPromise;
   if (!database) return null;
   return ((await database.get("calendar-state", key)) as LastViewState) ?? null;
+}
+
+/**
+ * What this device knows about setup and when it last saw the student.
+ *
+ * Stored per owner so that signing in on a shared device does not inherit
+ * somebody else's progress, and stored locally at all because a session with no
+ * account still needs both answers.
+ */
+export type DeviceOnboardingRecord = {
+  state: unknown;
+  lastSeenAt: string | null;
+};
+
+const EMPTY_DEVICE_ONBOARDING: DeviceOnboardingRecord = {
+  state: null,
+  lastSeenAt: null,
+};
+
+function onboardingKey(ownerKey: string) {
+  return `onboarding:${ownerKey}`;
+}
+
+export async function getDeviceOnboarding(
+  ownerKey: string,
+): Promise<DeviceOnboardingRecord> {
+  const database = await dbPromise;
+  if (!database) return EMPTY_DEVICE_ONBOARDING;
+  const stored = (await database.get(
+    "calendar-state",
+    onboardingKey(ownerKey),
+  )) as DeviceOnboardingRecord | undefined;
+  return stored ?? EMPTY_DEVICE_ONBOARDING;
+}
+
+export async function saveDeviceOnboarding(
+  ownerKey: string,
+  record: DeviceOnboardingRecord,
+) {
+  const database = await dbPromise;
+  if (!database) return;
+  await database.put("calendar-state", record, onboardingKey(ownerKey));
 }
 
 export async function queueMutation(mutation: PendingMutation) {

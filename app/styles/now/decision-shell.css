@@ -1,0 +1,291 @@
+/* Decision mode: header and context controls. */
+
+/* ─────────────────────────────────────
+   Decision Mode / What should I do now?
+   ───────────────────────────────────── */
+
+.now-overlay {
+  z-index: 115;
+  padding: max(42px, 7vh) 18px 24px;
+  align-items: start;
+
+  background: rgb(26 23 32 / 34%);
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+}
+
+.now-panel {
+  width: min(680px, 100%);
+  max-height: min(780px, calc(100dvh - 70px));
+
+  overflow-y: auto;
+  overscroll-behavior: contain;
+
+  color: var(--ink);
+  background:
+    linear-gradient(
+      180deg,
+      rgb(255 254 250 / 100%),
+      rgb(251 249 246 / 100%)
+    );
+
+  border: 1px solid #d7d2df;
+  border-radius: 15px;
+
+  box-shadow:
+    0 28px 80px rgb(24 19 37 / 24%),
+    0 6px 18px rgb(30 25 45 / 8%),
+    inset 0 1px 0 rgb(255 255 255 / 85%);
+
+  animation: now-panel-enter 170ms ease-out both;
+}
+
+@keyframes now-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(.988);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+
+/* ─────────────────────────────────────
+   Header
+   ───────────────────────────────────── */
+
+.now-panel > header {
+  position: sticky;
+  z-index: 5;
+  top: 0;
+
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 30px 30px;
+  min-height: 72px;
+
+  align-items: center;
+
+  padding: 12px 13px 12px 15px;
+  gap: 9px;
+
+  background: rgb(255 254 250 / 94%);
+  border-bottom: 1px solid var(--line-soft);
+
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+}
+
+.now-panel-mark {
+  display: grid;
+  width: 36px;
+  height: 36px;
+
+  place-items: center;
+
+  color: #fff;
+  background:
+    linear-gradient(
+      145deg,
+      #8575dd,
+      #6555bd
+    );
+
+  border-radius: 10px;
+
+  box-shadow:
+    0 5px 13px rgb(103 88 197 / 24%),
+    inset 0 1px 0 rgb(255 255 255 / 22%);
+}
+
+.now-panel > header > div {
+  min-width: 0;
+}
+
+.now-panel > header .micro-label {
+  color: #8c829f;
+}
+
+.now-panel > header h2 {
+  margin: 3px 0 0;
+
+  overflow: hidden;
+
+  color: #302e35;
+
+  font-size: 16px;
+  font-weight: 680;
+  letter-spacing: -.035em;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.now-panel > header > button {
+  display: grid;
+
+  width: 30px;
+  height: 30px;
+  padding: 0;
+
+  place-items: center;
+
+  color: #77727c;
+  background: transparent;
+
+  border: 1px solid transparent;
+  border-radius: 7px;
+
+  transition:
+    color 120ms ease,
+    background 120ms ease,
+    border-color 120ms ease,
+    transform 120ms ease;
+}
+
+.now-panel > header > button:hover {
+  color: #3f3a47;
+  background: #f0edf5;
+  border-color: #dfdae7;
+}
+
+.now-panel > header > button:active {
+  transform: scale(.94);
+}
+
+
+/* ─────────────────────────────────────
+   Context controls
+   ───────────────────────────────────── */
+
+.now-context {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 16px 17px 15px;
+
+  gap: 14px;
+
+  background: #faf8f5;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.now-context fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+
+  border: 0;
+}
+
+.now-context legend {
+  margin-bottom: 7px;
+  padding: 0;
+
+  color: #8a858d;
+
+  font-family: var(--font-mono), monospace;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: .075em;
+
+  text-transform: uppercase;
+}
+
+.now-segments {
+  display: flex;
+  width: 100%;
+
+  padding: 3px;
+  gap: 2px;
+
+  background: #ece9ed;
+  border: 1px solid #e1dde4;
+  border-radius: 8px;
+}
+
+.now-segments button {
+  min-width: 0;
+  min-height: 28px;
+  flex: 1;
+
+  padding: 0 7px;
+
+  overflow: hidden;
+
+  color: #817c83;
+  background: transparent;
+
+  border: 0;
+  border-radius: 6px;
+
+  font-size: 8px;
+  font-weight: 620;
+
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+  white-space: nowrap;
+
+  transition:
+    color 120ms ease,
+    background 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.now-segments button:hover {
+  color: #514b59;
+}
+
+.now-segments button.active {
+  color: #393340;
+  background: #fff;
+
+  box-shadow:
+    0 1px 4px rgb(31 27 36 / 11%),
+    inset 0 0 0 1px rgb(211 206 218 / 75%);
+}
+
+
+/* Computer toggle */
+
+.now-tool-toggle {
+  grid-column: 1 / -1;
+
+  display: inline-flex;
+  width: fit-content;
+  min-height: 30px;
+
+  align-items: center;
+
+  padding: 0 10px;
+  gap: 7px;
+
+  color: #69636f;
+  background: #fff;
+
+  border: 1px solid #dfdae1;
+  border-radius: 7px;
+
+  font-size: 8px;
+  font-weight: 590;
+
+  cursor: pointer;
+}
+
+.now-tool-toggle:hover {
+  border-color: #cbc3df;
+  background: #fdfcff;
+}
+
+.now-tool-toggle input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+
+  accent-color: #6758c5;
+}
+
+.now-tool-toggle svg {
+  color: #7465c9;
+}

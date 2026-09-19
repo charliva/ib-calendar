@@ -4,12 +4,12 @@ import {
   Activity,
   CalendarDays,
   House,
-  BookOpen,
   ClipboardCheck,
   Command,
   GraduationCap,
   History,
   Inbox,
+  Settings,
   UserRound,
   Zap,
 } from "lucide-react";
@@ -30,47 +30,43 @@ function initials(value?: string | null) {
 export function CalendarRail({
   zoom,
   inboxOpen,
-  homeworkOpen,
   hudOpen,
   historyOpen,
   weeklyReviewOpen,
   weeklyReviewAvailable,
-  activeHomeworkCount,
   inboxCount,
   userEmail,
   onToday,
   onHome,
   onCalendar,
   onSchool,
-  onToggleHomework,
   onToggleInbox,
   onWeeklyReview,
   onOpenCommand,
   onToggleHud,
   onOpenHistory,
   onToggleAccount,
+  onOpenSettings,
 }: {
   zoom: CalendarZoom;
   inboxOpen: boolean;
-  homeworkOpen: boolean;
   hudOpen: boolean;
   historyOpen: boolean;
   weeklyReviewOpen: boolean;
   weeklyReviewAvailable: boolean;
-  activeHomeworkCount: number;
   inboxCount: number;
   userEmail?: string | null;
   onToday: () => void;
   onHome: () => void;
   onCalendar: () => void;
   onSchool: () => void;
-  onToggleHomework: () => void;
   onToggleInbox: () => void;
   onWeeklyReview: () => void;
   onOpenCommand: () => void;
   onToggleHud: () => void;
   onOpenHistory: () => void;
   onToggleAccount: () => void;
+  onOpenSettings: () => void;
 }) {
   return (
     <aside className="icon-rail">
@@ -86,7 +82,7 @@ export function CalendarRail({
       <nav aria-label="Calendar tools">
         <button
           className={
-            !inboxOpen && !homeworkOpen && !hudOpen && zoom === "upcoming"
+            !inboxOpen && !hudOpen && zoom === "upcoming"
               ? "active"
               : ""
           }
@@ -118,16 +114,6 @@ export function CalendarRail({
         >
           <GraduationCap size={19} />
           <small className="rail-label">School</small>
-        </button>
-        <button
-          className={homeworkOpen ? "active" : ""}
-          type="button"
-          aria-label="Homework inbox"
-          onClick={onToggleHomework}
-        >
-          <BookOpen size={18} />
-          {activeHomeworkCount > 0 && <span>{activeHomeworkCount}</span>}
-          <small className="rail-label">Homework</small>
         </button>
         <button
           className={inboxOpen ? "active" : ""}
@@ -177,6 +163,16 @@ export function CalendarRail({
           <small className="rail-label">History</small>
         </button>
       </nav>
+      <button
+        className="rail-settings"
+        type="button"
+        aria-label="Settings"
+        data-tour="settings"
+        onClick={onOpenSettings}
+      >
+        <Settings size={18} />
+        <small className="rail-label">Settings</small>
+      </button>
       <button
         className="rail-account"
         type="button"

@@ -1,5 +1,5 @@
 import type { CurrentStudyLocation } from "./now-recommender.ts";
-import type { TimeBlockType } from "./block-choices.ts";
+import type { TimeBlockType } from "./block-choices/types.ts";
 import type { EnergyRequirement } from "./calendar-engine.ts";
 
 /**

@@ -5,10 +5,15 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
-  // Override default ignores of eslint-config-next.
+  // Replaces the default ignores of eslint-config-next, which this config
+  // would otherwise drop. Everything here is generated output or scratch state,
+  // never hand-edited source.
   globalIgnores([
-    // Default ignores of eslint-config-next:
     ".next/**",
+    ".unlazy/**",
+    ".vinext/**",
+    ".wrangler/**",
+    "dist/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

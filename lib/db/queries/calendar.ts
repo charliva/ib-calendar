@@ -50,7 +50,9 @@ export function rowToItem(row: Record<string, unknown>): CalendarItem {
           ? null
           : Number(row.review_offset_days),
       learnedAt: (row.learned_at as string | null) ?? null,
-      homeworkCaptureId: (row.homework_capture_id as string | null) ?? null,
+      workItemType:
+        (row.work_item_type as CalendarItem["workItemType"]) ??
+        (row.kind === "task" ? "task" : null),
       taskContext: (row.task_context as TaskContext) ?? "anywhere",
       computerRequired: Boolean(row.computer_required),
       workType: (row.work_type as CalendarItem["workType"]) ?? null,
@@ -85,6 +87,11 @@ export function safeMutationPayload(mutation: PendingMutation) {
     return mutation.payload;
   }
   const payload = { ...mutation.payload };
+  const legacyHomeworkCaptureId = payload.homework_capture_id;
+  if (typeof legacyHomeworkCaptureId === "string" && legacyHomeworkCaptureId) {
+    payload.work_item_type = "homework";
+  }
+  delete payload.homework_capture_id;
   const start =
     typeof payload.starts_at === "string" ? new Date(payload.starts_at) : null;
   const end =

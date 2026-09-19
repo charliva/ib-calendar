@@ -1,0 +1,24 @@
+/* Design tokens: the palette and layout metrics every layer reads. */
+
+:root {
+  --ink: #151419;
+  --ink-soft: #29272e;
+  --paper: #fffefa;
+  --canvas: #f4f2ed;
+  --panel: #faf9f5;
+  --line: #dedbd3;
+  --line-soft: #ebe8e1;
+  --muted: #77736d;
+  --accent: var(--lilac);
+  --lilac: #8b84c9;
+  --lilac-dark: #5c5590;
+  --lilac-wash: #ebe9f0;
+  --peach: #e6a878;
+  --mint: #6db894;
+  --sky: #70a8cf;
+  --rose: #c97080;
+  --yellow: #d4b050;
+  --rail: 56px;
+  --dock: 272px;
+  --hud: 264px;
+}

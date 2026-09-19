@@ -1,0 +1,111 @@
+/* The shared modal surface. Sits above every interactive layer in the app:
+   the ladder below this tops out at 260 (the one Radix popover), and the mobile
+   shell creates its own stacking context, so these are portalled to the body
+   and start at 300. */
+
+.overlay-panel-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(22 20 26 / 32%);
+  backdrop-filter: blur(4px);
+  animation: overlay-panel-fade 160ms cubic-bezier(0.22, 0.8, 0.24, 1);
+}
+
+.overlay-panel {
+  width: min(560px, 100%);
+  max-height: min(86vh, 760px);
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: 0 24px 60px rgb(22 20 26 / 18%);
+  overflow: hidden;
+  animation: overlay-panel-rise 180ms cubic-bezier(0.22, 0.8, 0.24, 1);
+}
+
+.overlay-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  position: sticky;
+  top: 0;
+  background: var(--paper);
+}
+
+.overlay-panel-header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+
+.overlay-panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.overlay-panel-close {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.35rem;
+  line-height: 1;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.overlay-panel-close:hover {
+  background: var(--canvas);
+  color: var(--ink);
+}
+
+.overlay-panel-body {
+  padding: 18px 20px 22px;
+  overflow: auto;
+}
+
+@keyframes overlay-panel-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes overlay-panel-rise {
+  from { opacity: 0; transform: translateY(8px) scale(0.99); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (max-width: 780px) {
+  .overlay-panel-scrim {
+    padding: 0;
+    place-items: end stretch;
+  }
+
+  .overlay-panel {
+    width: 100%;
+    max-height: 92dvh;
+    border-radius: 18px 18px 0 0;
+    animation-name: overlay-panel-sheet;
+  }
+}
+
+@keyframes overlay-panel-sheet {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay-panel-scrim,
+  .overlay-panel {
+    animation: none;
+  }
+}

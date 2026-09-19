@@ -1,0 +1,188 @@
+/* Shell breakpoints for the layers above. */
+
+@media (max-width: 1180px) {
+  :root {
+    --dock: 252px;
+  }
+
+  .flex-shell {
+    grid-template-columns: var(--rail) var(--dock) minmax(500px, 1fr);
+  }
+
+  .quick-hud {
+    display: none;
+  }
+
+  .quick-hud.show-history {
+    position: fixed;
+    z-index: 70;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    display: block;
+    width: 285px;
+    box-shadow: -15px 0 45px rgb(23 20 27 / 17%);
+  }
+}
+
+@media (max-width: 780px) {
+  :root {
+    --rail: 0px;
+    --dock: 0px;
+  }
+
+  .flex-shell {
+    display: block;
+    height: auto;
+    min-height: 100dvh;
+    padding-bottom: 56px;
+    overflow: visible;
+  }
+
+  .icon-rail {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 90;
+    display: flex;
+    width: 100%;
+    height: 56px;
+    flex-direction: row;
+    justify-content: space-around;
+    padding: 7px 12px;
+    border-top: 1px solid #36333b;
+    border-right: 0;
+  }
+
+  .icon-rail .flux-mark {
+    margin: 0;
+  }
+
+  .icon-rail nav {
+    display: flex;
+    gap: 18px;
+  }
+
+  .rail-account {
+    margin: 0;
+  }
+
+  .task-dock {
+    display: block;
+    height: auto;
+    max-height: 258px;
+    overflow: hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .task-dock > header {
+    min-height: 64px;
+    padding: 11px 14px;
+  }
+
+  .command-trigger {
+    margin: 0 12px 10px;
+  }
+
+  .dock-section {
+    padding-top: 9px;
+  }
+
+  .inbox-list {
+    display: flex;
+    padding: 0 10px 11px;
+    gap: 7px;
+    overflow-x: auto;
+  }
+
+  .inbox-item {
+    min-width: 195px;
+    margin: 0;
+  }
+
+  .inbox-item > time {
+    display: none;
+  }
+
+  .dock-empty {
+    width: 100%;
+    padding: 10px;
+  }
+
+  .dock-section.intentions,
+  .dock-sync {
+    display: none;
+  }
+
+  .calendar-stage {
+    min-height: calc(100dvh - 180px);
+    overflow: auto;
+  }
+
+  .calendar-toolbar {
+    left: 0;
+    width: 100vw;
+    min-width: 0;
+    min-height: 88px;
+    padding: 7px 9px;
+    flex-wrap: wrap;
+    align-content: center;
+  }
+
+  .day-head {
+    top: 88px;
+  }
+
+  .date-navigation {
+    flex: 1;
+  }
+
+  .zoom-control {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .zoom-control button {
+    flex: 1;
+    min-width: 0;
+    padding: 0 4px;
+  }
+
+  .toast {
+    right: 12px;
+    bottom: 68px;
+    left: 12px;
+    max-width: none;
+  }
+
+  .overlay {
+    padding: 4vh 10px 68px;
+  }
+
+  .item-overlay {
+    justify-items: center;
+  }
+
+  .item-inspector {
+    max-height: calc(96vh - 58px);
+    margin: 0;
+  }
+
+  .account-card {
+    right: 10px;
+    bottom: 66px;
+    left: 10px;
+    width: auto;
+  }
+
+  .quick-hud.show-history {
+    top: 0;
+    bottom: 56px;
+    width: min(320px, 88vw);
+  }
+
+  .overview-grid.months-6 {
+    grid-template-columns: 1fr;
+  }
+}

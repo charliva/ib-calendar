@@ -1,0 +1,227 @@
+/* Guided setup, the welcome-back surface, and the cloud-only lock they share. */
+
+.onboarding-panel {
+  width: min(500px, 100%);
+}
+
+.onboarding-body {
+  margin: 0 0 14px;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.onboarding-away {
+  margin: 0 0 12px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: var(--lilac-wash);
+  color: var(--lilac-dark);
+  font-size: 0.85rem;
+}
+
+.onboarding-questions .form-pair {
+  display: flex;
+  gap: 10px;
+}
+
+.onboarding-fortnight {
+  margin: 16px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.onboarding-fortnight legend {
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 0;
+}
+
+.onboarding-fortnight p {
+  margin: 4px 0 10px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.onboarding-panel-footer,
+.onboarding-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.onboarding-panel-footer {
+  justify-content: space-between;
+  margin-top: 18px;
+}
+
+.onboarding-actions {
+  justify-content: flex-end;
+}
+
+.onboarding-progress {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.onboarding-primary,
+.welcome-back-primary {
+  padding: 9px 15px;
+  border: 1px solid var(--lilac-dark);
+  border-radius: 10px;
+  background: var(--lilac);
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.87rem;
+}
+
+.onboarding-actions .is-quiet,
+.welcome-back-footer .is-quiet {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.84rem;
+}
+
+.onboarding-dismiss {
+  display: block;
+  margin: 14px auto 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Cloud-only lock ------------------------------------------------------- */
+
+.cloud-locked {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: var(--canvas);
+}
+
+.cloud-locked p {
+  margin: 0 0 10px;
+  color: var(--ink-soft);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.cloud-locked-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cloud-locked-actions button {
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+  cursor: pointer;
+  font-size: 0.83rem;
+}
+
+.cloud-locked-primary {
+  border-color: var(--lilac-dark) !important;
+  background: var(--lilac) !important;
+  color: #fff;
+}
+
+/* Welcome back ---------------------------------------------------------- */
+
+.welcome-back {
+  width: min(540px, 100%);
+}
+
+.welcome-back-lede {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.welcome-back-block {
+  padding: 14px 15px;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--panel);
+}
+
+.welcome-back-block h3 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+}
+
+.welcome-back-block p {
+  margin: 0 0 12px;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.welcome-back-block button {
+  padding: 8px 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.welcome-back-items {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.welcome-back-items li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: var(--paper);
+  font-size: 0.85rem;
+}
+
+.welcome-back-items small {
+  color: var(--muted);
+  font-size: 0.76rem;
+  flex-shrink: 0;
+}
+
+.welcome-back-more {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.welcome-back-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.welcome-back-footer button:not(.is-quiet) {
+  padding: 9px 15px;
+  border: 1px solid var(--lilac-dark);
+  border-radius: 10px;
+  background: var(--lilac);
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.87rem;
+}

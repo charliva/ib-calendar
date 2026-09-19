@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowUp, Check, X } from "lucide-react";
+import {
+  ArrowUp,
+  CalendarDays,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  X,
+} from "lucide-react";
 import {
   dateKey,
   durationMinutes,
@@ -16,11 +23,17 @@ import {
   SCHOOL_PERIODS,
   type EditorOptions,
 } from "../../lib/calendar/interactions.ts";
-import {
-  fromLocalInput,
-  toLocalInput,
-} from "../../lib/calendar/time-inputs.ts";
+import { fromLocalInput } from "../../lib/calendar/time-inputs.ts";
 import type { SchoolClass, Subject } from "../../lib/school.ts";
+
+import {
+  dateInputValue,
+  isSameDay,
+  localDatePart,
+  localTimePart,
+  monthGrid,
+} from "./date-parts.ts";
+import { CompactTimePicker } from "./CompactTimePicker.tsx";
 
 export function CompactEventEditor({
   item,
@@ -68,6 +81,10 @@ export function CompactEventEditor({
   const [armed, setArmed] = useState(false);
   const [pulse, setPulse] = useState(0);
   const [isNew, setIsNew] = useState(creating);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [visibleMonth, setVisibleMonth] = useState(
+    () => new Date(item.startsAt ?? new Date()),
+  );
   const panel = useRef<HTMLFormElement>(null);
   const saved = useRef(item);
   const [position, setPosition] = useState({ left: 0, top: 0 });
@@ -205,6 +222,24 @@ export function CompactEventEditor({
   const linked = occurrences.filter(
     (entry) => entry.subjectId === draft.subjectId,
   );
+  const updateStart = (date: string, time: string) => {
+    const startsAt = fromLocalInput(`${date}T${time}`);
+    if (!startsAt) return;
+    change({
+      startsAt,
+      endsAt: new Date(
+        new Date(startsAt).getTime() +
+          Math.max(5, durationMinutes(draft)) * 60000,
+      ).toISOString(),
+      status: "scheduled",
+    });
+  };
+  const selectedDate = draft.startsAt ? new Date(draft.startsAt) : new Date();
+  const dateLabel = new Intl.DateTimeFormat("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }).format(selectedDate);
   return (
     <form
       ref={panel}
@@ -325,34 +360,127 @@ export function CompactEventEditor({
         data-save-pulse={pulse % 2}
         className={`compact-field-grid ${pulse ? "did-save" : ""}`}
       >
-        <div className="compact-field">
-          <span>Date & time</span>
-          <input
-            aria-label="Start date and time"
-            type="datetime-local"
-            value={toLocalInput(draft.startsAt)}
-            onChange={(event) => {
-              const startsAt = fromLocalInput(event.target.value);
-              if (!startsAt) return;
-              change({
-                startsAt,
-                endsAt: new Date(
-                  new Date(startsAt).getTime() +
-                    Math.max(5, durationMinutes(draft)) * 60000,
-                ).toISOString(),
-                status: "scheduled",
-              });
-            }}
-          />
-          <input
-            aria-label="End date and time"
-            type="datetime-local"
-            value={toLocalInput(draft.endsAt)}
-            onChange={(event) => {
-              const endsAt = fromLocalInput(event.target.value);
-              if (endsAt) change({ endsAt });
-            }}
-          />
+        <div className="compact-field compact-when-field">
+          <span>When</span>
+          <div className="compact-when-controls">
+            <div className="compact-date-picker">
+              <button
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded={datePickerOpen}
+                onClick={() => {
+                  setVisibleMonth(selectedDate);
+                  setDatePickerOpen((open) => !open);
+                }}
+              >
+                <CalendarDays size={13} />
+                {dateLabel}
+              </button>
+              {datePickerOpen && (
+                <div
+                  className="compact-date-popover"
+                  role="dialog"
+                  aria-label="Choose event date"
+                >
+                  <header>
+                    <button
+                      type="button"
+                      aria-label="Previous month"
+                      onClick={() =>
+                        setVisibleMonth(
+                          (month) =>
+                            new Date(
+                              month.getFullYear(),
+                              month.getMonth() - 1,
+                              1,
+                            ),
+                        )
+                      }
+                    >
+                      <ChevronLeft size={15} />
+                    </button>
+                    <strong>
+                      {new Intl.DateTimeFormat("en-GB", {
+                        month: "long",
+                        year: "numeric",
+                      }).format(visibleMonth)}
+                    </strong>
+                    <button
+                      type="button"
+                      aria-label="Next month"
+                      onClick={() =>
+                        setVisibleMonth(
+                          (month) =>
+                            new Date(
+                              month.getFullYear(),
+                              month.getMonth() + 1,
+                              1,
+                            ),
+                        )
+                      }
+                    >
+                      <ChevronRight size={15} />
+                    </button>
+                  </header>
+                  <div className="compact-date-weekdays" aria-hidden="true">
+                    {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => (
+                      <span key={`${day}-${index}`}>{day}</span>
+                    ))}
+                  </div>
+                  <div className="compact-date-days">
+                    {monthGrid(visibleMonth).map((day) => {
+                      const selected = isSameDay(day, selectedDate);
+                      const today = isSameDay(day, new Date());
+                      return (
+                        <button
+                          type="button"
+                          key={dateInputValue(day)}
+                          data-selected={selected}
+                          data-outside={
+                            day.getMonth() !== visibleMonth.getMonth()
+                          }
+                          aria-pressed={selected}
+                          aria-label={new Intl.DateTimeFormat("en-GB", {
+                            weekday: "long",
+                            day: "numeric",
+                            month: "long",
+                            year: "numeric",
+                          }).format(day)}
+                          onClick={() => {
+                            updateStart(
+                              dateInputValue(day),
+                              localTimePart(draft.startsAt),
+                            );
+                            setDatePickerOpen(false);
+                          }}
+                        >
+                          {today ? <i /> : null}
+                          {day.getDate()}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+            <CompactTimePicker
+              label="Starts"
+              value={localTimePart(draft.startsAt)}
+              onChange={(time) =>
+                updateStart(localDatePart(draft.startsAt), time)
+              }
+            />
+            <CompactTimePicker
+              label="Ends"
+              value={localTimePart(draft.endsAt)}
+              onChange={(time) => {
+                const endsAt = fromLocalInput(
+                  `${localDatePart(draft.endsAt)}T${time}`,
+                );
+                if (endsAt) change({ endsAt });
+              }}
+            />
+          </div>
         </div>
         <div className="compact-field">
           <label htmlFor="event-context">Location</label>
@@ -385,7 +513,9 @@ export function CompactEventEditor({
           />
         </div>
         <div className="compact-field">
-          <label htmlFor="event-energy">Energy usage</label>
+          <label htmlFor="event-energy">
+            Energy · {ENERGY_USAGE_LABELS[(draft.energyUsage ?? 3) - 1]}
+          </label>
           <div
             className="energy-five"
             style={
@@ -437,78 +567,43 @@ export function CompactEventEditor({
               }}
             />
           </div>
-          <small>{ENERGY_USAGE_LABELS[(draft.energyUsage ?? 3) - 1]}</small>
+          <small>Drag or tap to set level</small>
         </div>
-        <div className="compact-field">
-          <span>{options.isClass ? "Repeats" : "Action"}</span>
-          {options.isClass ? (
-            <>
+        {options.isClass && (
+          <div className="compact-field">
+            <span>Repeats</span>
+            <select
+              aria-label="Class recurrence"
+              value={options.repeat}
+              onChange={(event) =>
+                changeOptions({
+                  repeat: event.target.value as EditorOptions["repeat"],
+                  scope: "future",
+                })
+              }
+            >
+              <option value="once">Once</option>
+              <option value="every">Weekly</option>
+              <option value="a">Week A</option>
+              <option value="b">Week B</option>
+            </select>
+            {draft.classId && options.repeat !== "once" && (
               <select
-                aria-label="Class recurrence"
-                value={options.repeat}
+                aria-label="Apply class edits to"
+                value={options.scope}
                 onChange={(event) =>
-                  changeOptions({
-                    repeat: event.target.value as EditorOptions["repeat"],
-                    scope: "future",
+                  setOptions({
+                    ...options,
+                    scope: event.target.value as EditorOptions["scope"],
                   })
                 }
               >
-                <option value="once">Once</option>
-                <option value="every">Weekly</option>
-                <option value="a">Week A</option>
-                <option value="b">Week B</option>
+                <option value="occurrence">This class only</option>
+                <option value="future">This & future classes</option>
               </select>
-              {draft.classId && options.repeat !== "once" && (
-                <select
-                  aria-label="Apply class edits to"
-                  value={options.scope}
-                  onChange={(event) =>
-                    setOptions({
-                      ...options,
-                      scope: event.target.value as EditorOptions["scope"],
-                    })
-                  }
-                >
-                  <option value="occurrence">This class only</option>
-                  <option value="future">This & future classes</option>
-                </select>
-              )}
-            </>
-          ) : (
-            <>
-              <select
-                aria-label="Event purpose"
-                value={draft.kind}
-                onChange={(event) =>
-                  change({ kind: event.target.value as CalendarItem["kind"] })
-                }
-              >
-                <option value="event">Event</option>
-                <option value="task">Homework</option>
-                <option value="intention">Intention</option>
-              </select>
-              {draft.kind === "task" && (
-                <button
-                  className="compact-complete"
-                  type="button"
-                  onClick={() =>
-                    change({
-                      status:
-                        draft.status === "completed"
-                          ? draft.startsAt
-                            ? "scheduled"
-                            : "inbox"
-                          : "completed",
-                    })
-                  }
-                >
-                  <Check size={14} />
-                  {draft.status === "completed" ? "Completed" : "Mark complete"}
-                </button>
-              )}
-            </>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </fieldset>
       {options.isClass && (
         <details className="compact-extra">
@@ -537,29 +632,48 @@ export function CompactEventEditor({
         </details>
       )}
       {!options.isClass && draft.kind === "task" && (
-        <details className="compact-extra">
-          <summary>
-            {subjects.find((subject) => subject.id === draft.subjectId)?.name ??
-              "Connect to a class"}
-          </summary>
-          <select
-            aria-label="Homework subject"
-            value={draft.subjectId ?? ""}
-            onChange={(event) =>
-              change({
-                subjectId: event.target.value || null,
-                linkedClassId: null,
-                linkedOccurrenceDate: null,
-              })
-            }
-          >
-            <option value="">No subject</option>
-            {subjects.map((subject) => (
-              <option key={subject.id} value={subject.id}>
-                {subject.name}
-              </option>
-            ))}
-          </select>
+        <section className="compact-homework-link">
+          <div>
+            <span>Homework</span>
+            <button
+              className="compact-complete"
+              type="button"
+              onClick={() =>
+                change({
+                  status:
+                    draft.status === "completed"
+                      ? draft.startsAt
+                        ? "scheduled"
+                        : "inbox"
+                      : "completed",
+                })
+              }
+            >
+              <Check size={13} />
+              {draft.status === "completed" ? "Completed" : "Mark complete"}
+            </button>
+          </div>
+          <label>
+            <span className="sr-only">Subject</span>
+            <select
+              aria-label="Homework subject"
+              value={draft.subjectId ?? ""}
+              onChange={(event) =>
+                change({
+                  subjectId: event.target.value || null,
+                  linkedClassId: null,
+                  linkedOccurrenceDate: null,
+                })
+              }
+            >
+              <option value="">Connect to a subject</option>
+              {subjects.map((subject) => (
+                <option key={subject.id} value={subject.id}>
+                  {subject.name}
+                </option>
+              ))}
+            </select>
+          </label>
           {draft.subjectId && (
             <select
               aria-label="Homework class occurrence"
@@ -588,7 +702,7 @@ export function CompactEventEditor({
               ))}
             </select>
           )}
-        </details>
+        </section>
       )}
       {error && (
         <p role="alert" className="compact-editor-error">

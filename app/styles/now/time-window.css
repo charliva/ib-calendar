@@ -1,0 +1,58 @@
+/* Available time window. */
+
+/* ─────────────────────────────────────
+   Available time window
+   ───────────────────────────────────── */
+
+.now-window {
+  display: flex;
+
+  margin: 16px 17px 13px;
+  padding: 12px 13px;
+
+  align-items: center;
+  gap: 10px;
+
+  color: #4d4659;
+
+  background:
+    linear-gradient(
+      100deg,
+      #efecfc,
+      #f7f5fc
+    );
+
+  border: 1px solid #ddd7f1;
+  border-radius: 10px;
+}
+
+.now-window > svg {
+  flex: 0 0 auto;
+
+  color: #6758c5;
+}
+
+.now-window > div {
+  min-width: 0;
+}
+
+.now-window strong,
+.now-window span {
+  display: block;
+}
+
+.now-window strong {
+  color: #403a4b;
+
+  font-size: 10px;
+  font-weight: 680;
+}
+
+.now-window span {
+  margin-top: 2px;
+
+  color: #817a89;
+
+  font-size: 8px;
+  line-height: 1.35;
+}

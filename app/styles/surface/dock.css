@@ -1,0 +1,145 @@
+/* Control surface refinements for the command trigger and task dock. */
+
+.command-trigger {
+  min-height: 39px;
+  margin: 0 12px 10px;
+  color: #666870;
+  background: #eceee9;
+  border: 1px solid #daddd6;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.command-trigger:hover {
+  background: #e6e8e3;
+  border-color: #cfd2cb;
+  box-shadow: none;
+}
+
+.active-filter {
+  margin: 0 12px 10px;
+  color: #5d50b6;
+  background: #e7e4f6;
+}
+
+.dock-section {
+  border-color: #e1e3dd;
+}
+
+.dock-title {
+  padding: 0 14px 9px;
+  color: #7b7d77;
+  letter-spacing: .045em;
+}
+
+.dock-title span {
+  display: flex;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
+  background: transparent;
+  border-radius: 0;
+}
+
+.dock-title strong {
+  font-family: var(--font-mono), monospace;
+  font-size: 8px;
+}
+
+.inbox-list {
+  padding: 0 8px 14px;
+}
+
+.dock-empty {
+  margin: 3px 5px;
+  padding: 24px 16px;
+  color: #92948d;
+  background: transparent;
+  border-color: #cfd3cb;
+  border-radius: 8px;
+}
+
+.inbox-item {
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  min-height: 59px;
+  margin-bottom: 4px;
+  padding: 9px 9px 8px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.inbox-item::before {
+  top: 9px;
+  bottom: 9px;
+  left: 3px;
+  width: 2px;
+  background: var(--energy);
+}
+
+.inbox-item:hover {
+  transform: none;
+  background: #eceee9;
+  border-color: #dfe2db;
+  box-shadow: none;
+}
+
+.inbox-item.flex-flexible {
+  border-left: 1px dashed color-mix(in srgb, var(--energy) 65%, #d7dad3);
+}
+
+.inbox-item.kind-intention {
+  background: color-mix(in srgb, var(--energy) 5%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--energy) 38%, transparent);
+}
+
+.inbox-item.is-dragging {
+  z-index: 3;
+  transform: translateY(-3px) rotate(-.5deg) scale(1.015);
+  background: #f7f7f3;
+  border-color: color-mix(in srgb, var(--energy) 48%, #d6d9d2);
+  box-shadow: 0 14px 30px rgb(54 53 61 / 17%);
+  opacity: .72;
+}
+
+.inbox-item h3 {
+  font-size: 11px;
+  font-weight: 620;
+}
+
+.inbox-item > div {
+  gap: 2px;
+}
+
+.inbox-item > div > span,
+.inbox-item small {
+  color: #92948e;
+  font-size: 7px;
+}
+
+.inbox-item > time {
+  color: #a34f61;
+  background: transparent;
+  border: 1px solid #dca9b4;
+}
+
+.dock-section.intentions {
+  min-height: 88px;
+  max-height: 130px;
+  background: #f0f1ed;
+}
+
+.quiet-copy {
+  color: #898b85;
+}
+
+.dock-sync {
+  min-height: 47px;
+  color: #858780;
+  background: #edeFEB;
+  border-color: #dddfda;
+}

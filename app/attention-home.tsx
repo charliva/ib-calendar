@@ -122,6 +122,7 @@ export function AttentionHome({
           onChange={(event) => onCommandChange(event.target.value)}
           placeholder="Add anything. Just type it."
           aria-label="Natural-language command"
+          data-tour="capture-input"
         />
         <button
           type="button"

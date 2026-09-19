@@ -4,6 +4,7 @@ export type EnergyType =
 export type Priority = "low" | "medium" | "high";
 export type Flexibility = "fixed" | "flexible" | "elastic";
 export type ItemStatus = "inbox" | "scheduled" | "completed" | "archived";
+export type WorkItemType = "task" | "homework" | "review" | null;
 export type TaskContext = "school" | "home" | "library" | "city" | "anywhere";
 export type SchoolWorkType =
   | "deep_focus"
@@ -56,7 +57,7 @@ export type CalendarItem = {
   revisionStage: string | null;
   reviewOffsetDays: number | null;
   learnedAt: string | null;
-  homeworkCaptureId: string | null;
+  workItemType: WorkItemType;
   taskContext: TaskContext;
   computerRequired: boolean;
   workType: SchoolWorkType | null;
@@ -547,7 +548,8 @@ export function makeItem(
     revisionStage: input.revisionStage ?? null,
     reviewOffsetDays: input.reviewOffsetDays ?? null,
     learnedAt: input.learnedAt ?? null,
-    homeworkCaptureId: input.homeworkCaptureId ?? null,
+    workItemType:
+      input.workItemType ?? (input.kind === "task" ? "task" : null),
     taskContext: input.taskContext ?? "anywhere",
     computerRequired: input.computerRequired ?? false,
     workType: input.workType ?? null,
@@ -595,7 +597,7 @@ export function itemToRow(item: CalendarItem) {
     revision_stage: item.revisionStage,
     review_offset_days: item.reviewOffsetDays,
     learned_at: item.learnedAt,
-    homework_capture_id: item.homeworkCaptureId,
+    work_item_type: item.workItemType,
     task_context: item.taskContext,
     computer_required: item.computerRequired,
     work_type: item.workType,

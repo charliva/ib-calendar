@@ -2,8 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { Outfit, Space_Grotesk } from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
-import "./calendar-redesign.css";
-import "./calendar-interactions.css";
 
 const displaySans = Outfit({
   variable: "--font-sans",

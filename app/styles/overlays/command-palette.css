@@ -1,0 +1,176 @@
+/* Command palette overlay and the upload drop target. */
+
+.overlay {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  padding: 9vh 18px 18px;
+  align-items: start;
+  justify-items: center;
+  background: rgb(22 20 26 / 30%);
+  backdrop-filter: blur(4px);
+}
+
+.command-palette {
+  width: min(660px, 100%);
+  overflow: hidden;
+  background: #fffefa;
+  border: 1px solid #cecad0;
+  border-radius: 13px;
+  box-shadow: 0 24px 70px rgb(17 14 22 / 26%);
+}
+
+.command-palette > header {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 14px;
+  gap: 6px;
+  color: #6d6771;
+  border-bottom: 1px solid var(--line-soft);
+  font-family: var(--font-mono), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.palette-modes {
+  display: flex;
+  padding: 9px 10px 7px;
+  gap: 4px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.palette-modes button {
+  display: flex;
+  align-items: center;
+  min-height: 29px;
+  padding: 0 9px;
+  gap: 6px;
+  color: #827d76;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.palette-modes button.active,
+.palette-modes button:hover {
+  color: #2f2936;
+  background: #eeeafd;
+}
+
+.palette-input {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  align-items: center;
+  min-height: 66px;
+  padding: 0 16px;
+  gap: 7px;
+}
+
+.palette-input > svg {
+  color: #8274d7;
+}
+
+.palette-input input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 16px;
+  letter-spacing: -.02em;
+}
+
+.palette-input button,
+.proposal-sheet footer button,
+.item-inspector footer button,
+.account-card button {
+  min-height: 34px;
+  padding: 0 13px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 9px;
+  font-weight: 680;
+}
+
+.palette-input button {
+  color: #fff;
+  background: #211f24;
+  border-color: #211f24;
+}
+
+.palette-input button:disabled {
+  opacity: .45;
+}
+
+.command-examples {
+  padding: 11px 16px 14px;
+  color: #8d877f;
+  background: #f8f6f1;
+  border-top: 1px solid var(--line-soft);
+  font-size: 9px;
+  line-height: 1.55;
+}
+
+.command-examples strong {
+  margin-right: 5px;
+  color: #514c55;
+}
+
+.upload-drop {
+  display: grid;
+  min-height: 190px;
+  margin: 16px;
+  padding: 28px;
+  place-items: center;
+  color: #716b74;
+  text-align: center;
+  background: #faf8f3;
+  border: 1px dashed #bbb5c0;
+  border-radius: 10px;
+}
+
+.upload-drop svg {
+  margin-bottom: 12px;
+  color: #7c6ed0;
+}
+
+.upload-drop strong,
+.upload-drop small {
+  display: block;
+}
+
+.upload-drop strong {
+  font-size: 12px;
+}
+
+.upload-drop small {
+  margin-top: 4px;
+  color: #969089;
+  font-size: 9px;
+}
+
+.upload-drop input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.upload-drop button {
+  margin-top: 15px;
+  padding: 8px 13px;
+  color: #fff;
+  background: #211f24;
+  border: 0;
+  border-radius: 7px;
+  font-size: 9px;
+}

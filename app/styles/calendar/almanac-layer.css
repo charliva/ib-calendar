@@ -1,0 +1,15 @@
+/* Keeps the almanac redesign above every legacy calendar layer. */
+
+/* Keep the almanac redesign above every legacy calendar layer. */
+.calendar-stage {
+  --calendar-serif: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP",
+    Georgia, serif;
+  --calendar-sans: var(--font-sans), "Hiragino Sans", "Yu Gothic",
+    sans-serif;
+  background: #fffdf8;
+}
+
+.calendar-toolbar,
+.day-head {
+  background: rgb(255 253 248 / 94%);
+}

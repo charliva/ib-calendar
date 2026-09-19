@@ -1,0 +1,81 @@
+/* Tour bubbles anchored to real elements of the app. */
+
+.coachmark-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 310;
+  background: rgb(22 20 26 / 38%);
+  animation: coachmark-fade 160ms cubic-bezier(0.22, 0.8, 0.24, 1);
+}
+
+.coachmark {
+  position: absolute;
+  z-index: 320;
+  width: min(320px, calc(100vw - 32px));
+  padding: 14px 16px 16px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 18px 44px rgb(22 20 26 / 20%);
+  animation: coachmark-rise 180ms cubic-bezier(0.22, 0.8, 0.24, 1);
+}
+
+/* When the element a step points at is not on screen, the step still has to be
+   readable rather than pinned to nothing. */
+.coachmark.is-unanchored {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.coachmark-title {
+  display: block;
+  font-size: 0.98rem;
+  letter-spacing: -0.01em;
+  margin-bottom: 6px;
+}
+
+.coachmark-body {
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.coachmark-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+/* The element a step is pointing at, lifted above the dimming scrim. */
+[data-tour-active="true"] {
+  position: relative;
+  z-index: 315;
+  outline: 2px solid var(--lilac);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+@keyframes coachmark-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes coachmark-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coachmark,
+  .coachmark-scrim {
+    animation: none;
+  }
+
+  .coachmark.is-unanchored {
+    transform: translate(-50%, -50%);
+  }
+}

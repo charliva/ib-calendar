@@ -1,0 +1,77 @@
+/* Final temporal-field layer: overrides legacy form styling kept for other inputs. */
+
+/* Final temporal-field layer: overrides legacy form styling kept for other inputs. */
+.temporal-trigger,
+.item-schedule-row .temporal-trigger,
+.class-schedule-card .temporal-trigger {
+  grid-template-columns: 18px minmax(0, 1fr) !important;
+  min-height: 42px;
+  padding: 0 11px !important;
+  gap: 8px;
+  background: #eef0eb !important;
+  border: 1px solid transparent !important;
+  border-radius: 10px !important;
+}
+
+.temporal-field.is-open .temporal-trigger,
+.temporal-trigger:focus-within {
+  background: #f8f8f5 !important;
+  border-color: #afa7d6 !important;
+  box-shadow: 0 0 0 3px rgb(111 94 203 / 7%);
+}
+
+.temporal-trigger > input,
+.item-inspector .temporal-trigger > input:not(.item-title-input),
+.school-field .temporal-trigger > input {
+  width: 100% !important;
+  min-width: 0;
+  height: 40px !important;
+  padding: 0 !important;
+  color: #3f4045 !important;
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: 0;
+  font-family: inherit;
+  font-size: 10px !important;
+  font-weight: 590;
+}
+
+.temporal-trigger > input::placeholder {
+  color: #9a9c96;
+  font-weight: 470;
+}
+
+.temporal-trigger > input[aria-invalid="true"] {
+  color: #a44759 !important;
+}
+
+.temporal-picker-button {
+  display: none !important;
+}
+
+.temporal-clear {
+  top: 9px;
+  right: 7px;
+}
+
+.temporal-field:has(.temporal-clear) .temporal-trigger {
+  padding-right: 34px !important;
+}
+
+@media (max-width: 780px) {
+  .temporal-trigger,
+  .item-schedule-row .temporal-trigger,
+  .class-schedule-card .temporal-trigger {
+    min-height: 46px;
+  }
+
+  .temporal-trigger > input,
+  .item-inspector .temporal-trigger > input:not(.item-title-input),
+  .school-field .temporal-trigger > input {
+    height: 44px !important;
+    font-size: 16px !important;
+  }
+}
