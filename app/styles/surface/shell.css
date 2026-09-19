@@ -151,6 +151,20 @@ body {
   opacity: 1;
 }
 
+/* These panels are hidden by opacity alone, which leaves them clickable and
+   their text selectable while invisible. Take them out of hit testing until
+   they are actually open; the components also mark themselves inert, which is
+   what removes them from the tab order and the accessibility tree. */
+.task-dock,
+.quick-hud {
+  pointer-events: none;
+}
+
+.task-dock.is-open,
+.quick-hud.is-open {
+  pointer-events: auto;
+}
+
 .task-dock-drag-handle {
   cursor: grab;
   user-select: none;

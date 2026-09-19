@@ -52,9 +52,12 @@
 }
 
 /* The element a step is pointing at, lifted above the dimming scrim. */
+/* Outline only. An earlier version also set position:relative and a z-index to
+   lift the anchor above a scrim, which dropped position:fixed anchors like the
+   work dock into normal flow and shoved the whole layout down. Outline draws
+   outside the box without affecting layout, and tour steps are non-blocking so
+   there is no scrim to escape. */
 [data-tour-active="true"] {
-  position: relative;
-  z-index: 315;
   outline: 2px solid var(--lilac);
   outline-offset: 3px;
   border-radius: 8px;

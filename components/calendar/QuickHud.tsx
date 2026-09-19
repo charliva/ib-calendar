@@ -69,6 +69,7 @@ export function QuickHud({
       className={`quick-hud ${open ? "is-open" : ""} ${
         historyOpen ? "show-history" : ""
       }`}
+      inert={!open}
     >
       {historyOpen ? (
         <>

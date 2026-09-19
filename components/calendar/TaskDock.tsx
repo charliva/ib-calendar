@@ -191,6 +191,10 @@ export function TaskDock({
     <aside
       ref={dockRef}
       className={`task-dock ${open ? "is-open" : ""}`}
+      // Hidden by opacity alone, this panel stayed focusable and selectable
+      // while invisible. `inert` takes it out of the tab order, hit testing and
+      // the accessibility tree together.
+      inert={!open}
       data-tour="task-dock"
       style={
         {
