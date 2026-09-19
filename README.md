@@ -1,5 +1,7 @@
 <img width="1490" height="855" alt="Screenshot 2026-09-19 at 3 31 40 PM" src="https://github.com/user-attachments/assets/7f829efb-5283-46f9-b542-f68d635b5d9a" />
+
 ---
+
 # Syllabi
 A mobile-first homework calendar that turns quick captures into realistic study
 blocks. The initialized prototype includes:
