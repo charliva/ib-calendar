@@ -64,6 +64,22 @@ export function useOnboarding(params: Params) {
   );
   const [dismissedThisSession, setDismissedThisSession] = useState(false);
 
+  /**
+   * An explicit sequence for a replay.
+   *
+   * Ordinary setup asks "what is still outstanding", which is right the first
+   * time and useless afterwards: once every step is behind the student that
+   * question answers "nothing", so a replay showed one card and closed. A
+   * replay therefore carries its own list and ignores completion entirely.
+   */
+  const [replayQueue, setReplayQueue] = useState<OnboardingStepId[] | null>(
+    null,
+  );
+  /** How long the running replay was when it started, for "step 2 of 3". */
+  const [stepCountForReplay, setStepCountForReplay] = useState<number | null>(
+    null,
+  );
+
   // Which owner's record this device has read, rather than a bare "loaded"
   // flag: signing in changes the owner, and the previous account's progress
   // must not be read as the new one's while the swap is in flight.
@@ -221,27 +237,56 @@ export function useOnboarding(params: Params) {
 
   const step = useMemo(() => {
     if (!flowOpen) return null;
+    if (replayQueue) {
+      const [current] = replayQueue;
+      return ONBOARDING_STEPS.find((entry) => entry.id === current) ?? null;
+    }
     if (activeStepId) {
       return ONBOARDING_STEPS.find((entry) => entry.id === activeStepId) ?? null;
     }
     return nextStep(effectiveCompleted);
-  }, [activeStepId, effectiveCompleted, flowOpen]);
+  }, [activeStepId, effectiveCompleted, flowOpen, replayQueue]);
+
+  /** Move a replay along, ending the flow when its list runs out. */
+  const advanceReplay = useCallback(() => {
+    setReplayQueue((queue) => {
+      if (!queue) return queue;
+      const remaining = queue.slice(1);
+      if (remaining.length) return remaining;
+      setForcedMode(null);
+      setDismissedThisSession(true);
+      return null;
+    });
+  }, []);
 
   const completeStep = useCallback(
     (id: OnboardingStepId) => {
       const now = new Date().toISOString();
       const next = withStepCompleted(state, id, REQUIRED_STEP_IDS, now);
       persist(next, deviceLastSeenAt);
-      const following = nextStep([
-        ...new Set([...effectiveCompleted, id]),
-      ]);
+      if (replayQueue) {
+        advanceReplay();
+        return;
+      }
+      const following = nextStep([...new Set([...effectiveCompleted, id])]);
       setActiveStepId(following?.id ?? null);
     },
-    [deviceLastSeenAt, effectiveCompleted, persist, state],
+    [
+      advanceReplay,
+      deviceLastSeenAt,
+      effectiveCompleted,
+      persist,
+      replayQueue,
+      state,
+    ],
   );
 
   const skipStep = useCallback(
     (id: OnboardingStepId) => {
+      if (replayQueue) {
+        advanceReplay();
+        return;
+      }
       const index = ONBOARDING_STEPS.findIndex((entry) => entry.id === id);
       const following = ONBOARDING_STEPS.slice(index + 1).find(
         (entry) => !effectiveCompleted.includes(entry.id),
@@ -249,31 +294,54 @@ export function useOnboarding(params: Params) {
       if (following) setActiveStepId(following.id);
       else setDismissedThisSession(true);
     },
-    [effectiveCompleted],
+    [advanceReplay, effectiveCompleted, replayQueue],
   );
 
   const dismiss = useCallback(() => {
     setDismissedThisSession(true);
+    setReplayQueue(null);
+    setForcedMode(null);
     persist(
       { ...state, dismissedAt: new Date().toISOString() },
       deviceLastSeenAt,
     );
   }, [deviceLastSeenAt, persist, state]);
 
-  /** Replay the concept steps only — setup steps have data behind them already. */
+  /** Replay what the app *is*, skipping the setup a returning student has done. */
   const replayTour = useCallback(() => {
     setDismissedThisSession(false);
+    setActiveStepId(null);
     setForcedMode("resuming");
-    const firstConcept = ONBOARDING_STEPS.find(
-      (entry) => entry.kind === "concept" && entry.id !== "welcome",
-    );
-    setActiveStepId(firstConcept?.id ?? "capture");
+    const queue = ONBOARDING_STEPS.filter(
+      (entry) => entry.kind === "concept",
+    ).map((entry) => entry.id);
+    setStepCountForReplay(queue.length);
+    setReplayQueue(queue);
   }, []);
 
+  /**
+   * Wipe the record and walk the whole thing again.
+   *
+   * Distinct from replaying the tour: this forgets that setup ever happened, so
+   * the flow behaves exactly as it does for a new student.
+   */
+  const restartEverything = useCallback(() => {
+    setDismissedThisSession(false);
+    setActiveStepId(null);
+    setForcedMode("resuming");
+    const queue = ONBOARDING_STEPS.map((entry) => entry.id);
+    setStepCountForReplay(queue.length);
+    setReplayQueue(queue);
+    persist(EMPTY_ONBOARDING_STATE, deviceLastSeenAt);
+  }, [deviceLastSeenAt, persist]);
+
+  /** Walk the timetable back through import and the questions that follow it. */
   const restartSetup = useCallback(() => {
     setDismissedThisSession(false);
+    setActiveStepId(null);
     setForcedMode("resuming");
-    setActiveStepId("timetable");
+    setStepCountForReplay(2);
+    setReplayQueue(["timetable", "school-day"]);
   }, []);
 
   return {
@@ -282,12 +350,24 @@ export function useOnboarding(params: Params) {
     state,
     step,
     completedSteps: effectiveCompleted,
+    replaying: replayQueue !== null,
+    // Position within whatever sequence is actually running, so a three-step
+    // replay does not announce itself as "step 5 of 6".
+    stepNumber: replayQueue
+      ? replayQueue.length === 0
+        ? 0
+        : (stepCountForReplay ?? 0) - replayQueue.length + 1
+      : step
+        ? ONBOARDING_STEPS.indexOf(step) + 1
+        : 0,
+    stepCount: replayQueue ? (stepCountForReplay ?? 0) : ONBOARDING_STEPS.length,
     lastSeenAt,
     completeStep,
     skipStep,
     dismiss,
     replayTour,
     restartSetup,
+    restartEverything,
     setForcedMode,
   };
 }

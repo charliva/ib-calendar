@@ -7,6 +7,14 @@ import type { DeadLetterMutation } from "@/lib/offline";
 import type { SchoolDaySettings } from "@/lib/school";
 import type { AccountPreferences } from "@/lib/settings/account-preferences";
 import { OverlayPanel } from "@/components/overlay/OverlayPanel";
+import { REQUIRED_STEP_IDS } from "@/lib/onboarding/steps";
+import {
+  onboardingSummary,
+  profileSummary,
+  schoolDaySummary,
+  syncSummary,
+  weekCycleSummary,
+} from "@/lib/settings/summaries";
 import {
   SETTINGS_SECTIONS,
   type SettingsSectionId,
@@ -31,8 +39,11 @@ type Props = {
   onboardingState: OnboardingState;
   onReplayTour: () => void;
   onReimportTimetable: () => void;
+  onRestartEverything: () => void;
   onForceOnboardingMode: (mode: OnboardingMode | null) => void;
   pendingCount: number;
+  /** Whether any lesson actually uses the A/B cycle, so the row can say so. */
+  hasAlternatingClasses: boolean;
   deadLettered: DeadLetterMutation[];
   onRetryDeadLetter: (mutation: DeadLetterMutation) => void;
   onDiscardDeadLetter: (mutation: DeadLetterMutation) => void;
@@ -55,6 +66,34 @@ export function SettingsPanel(props: Props) {
   const sections = SETTINGS_SECTIONS.filter(
     (section) => props.hasAccount || !section.requiresAccount,
   );
+
+  const [today] = useState(() => new Date());
+
+  function sectionValue(id: SettingsSectionId) {
+    switch (id) {
+      case "school-day":
+        return schoolDaySummary(props.schoolDaySettings);
+      case "week-cycle":
+        return weekCycleSummary(
+          props.schoolDaySettings,
+          props.hasAlternatingClasses,
+          today,
+        );
+      case "profile":
+        return profileSummary(props.accountPreferences);
+      case "onboarding":
+        return onboardingSummary(
+          props.onboardingState,
+          REQUIRED_STEP_IDS.length,
+        );
+      case "sync":
+        return syncSummary({
+          hasAccount: props.hasAccount,
+          pendingCount: props.pendingCount,
+          failedCount: props.deadLettered.length,
+        });
+    }
+  }
 
   function renderSection(id: SettingsSectionId) {
     switch (id) {
@@ -95,6 +134,10 @@ export function SettingsPanel(props: Props) {
             }}
             onReimportTimetable={() => {
               props.onReimportTimetable();
+              props.onClose();
+            }}
+            onRestartEverything={() => {
+              props.onRestartEverything();
               props.onClose();
             }}
             onForceMode={(mode) => {
@@ -138,15 +181,22 @@ export function SettingsPanel(props: Props) {
                 aria-expanded={isOpen}
                 onClick={() => setExpanded(isOpen ? null : section.id)}
               >
-                <span>
+                <span className="settings-section-label">
                   <strong>{section.title}</strong>
-                  <small>{section.summary}</small>
+                  <span className="settings-section-value">
+                    {sectionValue(section.id)}
+                  </span>
                 </span>
                 <span aria-hidden="true" className="settings-section-chevron">
-                  {isOpen ? "–" : "+"}
+                  {isOpen ? "\u2013" : "\u203a"}
                 </span>
               </button>
-              {isOpen ? renderSection(section.id) : null}
+              {isOpen ? (
+                <>
+                  <p className="settings-section-hint">{section.hint}</p>
+                  {renderSection(section.id)}
+                </>
+              ) : null}
             </li>
           );
         })}

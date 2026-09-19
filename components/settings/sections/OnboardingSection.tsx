@@ -9,6 +9,7 @@ type Props = {
   showDeveloperOverride: boolean;
   onReplayTour: () => void;
   onReimportTimetable: () => void;
+  onRestartEverything: () => void;
   onForceMode: (mode: OnboardingMode | null) => void;
 };
 
@@ -26,6 +27,7 @@ export function OnboardingSection({
   showDeveloperOverride,
   onReplayTour,
   onReimportTimetable,
+  onRestartEverything,
   onForceMode,
 }: Props) {
   const finished = Boolean(state.completedAt);
@@ -57,6 +59,17 @@ export function OnboardingSection({
           <small>
             For a new term, or when your lessons have moved. Nothing is replaced
             until you have reviewed it.
+          </small>
+        </button>
+        <button
+          type="button"
+          className="settings-action"
+          onClick={onRestartEverything}
+        >
+          <strong>Start over from the beginning</strong>
+          <small>
+            Forgets that you have done this before and runs the whole thing
+            again. Your calendar is not touched.
           </small>
         </button>
       </div>

@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import type { SchoolDaySettings } from "@/lib/school";
-import { SchoolDayEditor } from "@/components/school/editors/SchoolDayEditor";
+import { WORK_TYPE_LABELS, type SchoolDaySettings } from "@/lib/school";
+import { workTypes } from "@/components/school/constants";
+import { FormField } from "@/components/school/fields";
+import { TemporalField } from "@/app/ui/temporal-field";
 
 type Props = {
   settings: SchoolDaySettings;
@@ -10,20 +12,26 @@ type Props = {
 };
 
 /**
- * The school-day rules, now reachable from somewhere a student would look.
+ * The school day, with the five answers that matter up front.
  *
- * These were previously behind a small "Rules" button inside the Timetable tab
- * of the School workspace, which is two levels deep and not named "settings".
+ * The full rules form has fifteen fields and a six-row grid, which is more than
+ * anyone wants to meet when they open Settings. Travel time, recovery, energy
+ * windows and per-work-type block lengths are all real, but they are
+ * refinements — so they sit behind disclosures and the panel opens on the
+ * handful of times that actually decide where free periods land.
  */
 export function SchoolDaySection({ settings, onSave }: Props) {
   const [draft, setDraft] = useState(settings);
-  // Reset the draft when the saved rules change underneath it — a sync from
-  // another device, say. Adjusting state during render is React's documented
-  // answer here; an effect would render once with the stale draft first.
   const [savedSettings, setSavedSettings] = useState(settings);
   if (savedSettings !== settings) {
     setSavedSettings(settings);
     setDraft(settings);
+  }
+
+  const dirty = draft !== settings;
+
+  function update(patch: Partial<SchoolDaySettings>) {
+    setDraft({ ...draft, ...patch });
   }
 
   function submit(event: FormEvent) {
@@ -35,13 +43,188 @@ export function SchoolDaySection({ settings, onSave }: Props) {
   }
 
   return (
-    <div className="settings-section-body settings-school-day">
-      <SchoolDayEditor
-        draft={draft}
-        setDraft={setDraft}
-        onSubmit={submit}
-        onCancel={() => setDraft(settings)}
-      />
-    </div>
+    <form className="settings-section-body settings-form" onSubmit={submit}>
+      <div className="settings-field-pair">
+        <FormField label="School starts">
+          <TemporalField
+            mode="time"
+            value={draft.schoolDayStart}
+            onChange={(schoolDayStart) => update({ schoolDayStart })}
+          />
+        </FormField>
+        <FormField label="School ends">
+          <TemporalField
+            mode="time"
+            value={draft.schoolDayEnd}
+            onChange={(schoolDayEnd) => update({ schoolDayEnd })}
+          />
+        </FormField>
+      </div>
+
+      <div className="settings-field-pair">
+        <FormField label="You work best from">
+          <TemporalField
+            mode="time"
+            value={draft.preferredStudyStart}
+            onChange={(preferredStudyStart) => update({ preferredStudyStart })}
+          />
+        </FormField>
+        <FormField label="Until">
+          <TemporalField
+            mode="time"
+            value={draft.preferredStudyEnd}
+            onChange={(preferredStudyEnd) => update({ preferredStudyEnd })}
+          />
+        </FormField>
+      </div>
+
+      <FormField label="Stop scheduling schoolwork after">
+        <TemporalField
+          mode="time"
+          value={draft.schoolworkCutoff}
+          onChange={(schoolworkCutoff) => update({ schoolworkCutoff })}
+        />
+      </FormField>
+
+      <details className="settings-disclosure">
+        <summary>Travel and energy</summary>
+        <div className="settings-field-pair">
+          <FormField label="Travel to school (min)">
+            <input
+              type="number"
+              min={0}
+              value={draft.travelBeforeSchoolMinutes}
+              onChange={(event) =>
+                update({
+                  travelBeforeSchoolMinutes: Number(event.target.value),
+                })
+              }
+            />
+          </FormField>
+          <FormField label="Travel home (min)">
+            <input
+              type="number"
+              min={0}
+              value={draft.travelHomeMinutes}
+              onChange={(event) =>
+                update({ travelHomeMinutes: Number(event.target.value) })
+              }
+            />
+          </FormField>
+        </div>
+        <div className="settings-field-pair">
+          <FormField label="Wind down at home (min)">
+            <input
+              type="number"
+              min={0}
+              value={draft.recoveryAfterHomeMinutes}
+              onChange={(event) =>
+                update({ recoveryAfterHomeMinutes: Number(event.target.value) })
+              }
+            />
+          </FormField>
+          <FormField label="Shortest usable gap (min)">
+            <input
+              type="number"
+              min={45}
+              value={draft.minimumFreePeriodMinutes}
+              onChange={(event) =>
+                update({ minimumFreePeriodMinutes: Number(event.target.value) })
+              }
+            />
+          </FormField>
+        </div>
+        <div className="settings-field-pair">
+          <FormField label="Low energy from">
+            <TemporalField
+              mode="time"
+              value={draft.lowEnergyStart}
+              onChange={(lowEnergyStart) => update({ lowEnergyStart })}
+            />
+          </FormField>
+          <FormField label="Until">
+            <TemporalField
+              mode="time"
+              value={draft.lowEnergyEnd}
+              onChange={(lowEnergyEnd) => update({ lowEnergyEnd })}
+            />
+          </FormField>
+        </div>
+        <label className="settings-check">
+          <input
+            type="checkbox"
+            checked={draft.schoolComputerAccess}
+            onChange={(event) =>
+              update({ schoolComputerAccess: event.target.checked })
+            }
+          />
+          <span>I can use a computer in free periods</span>
+        </label>
+        <label className="settings-check">
+          <input
+            type="checkbox"
+            checked={draft.allowCommuteScheduling}
+            onChange={(event) =>
+              update({ allowCommuteScheduling: event.target.checked })
+            }
+          />
+          <span>Suggest work during my commute</span>
+        </label>
+      </details>
+
+      <details className="settings-disclosure">
+        <summary>How long study blocks run</summary>
+        <div className="settings-template-grid">
+          {workTypes.map((workType) => {
+            const template = draft.focusTemplates[workType];
+            return (
+              <div key={workType} className="settings-template-row">
+                <span>{WORK_TYPE_LABELS[workType]}</span>
+                <input
+                  type="number"
+                  min={5}
+                  aria-label={`${WORK_TYPE_LABELS[workType]} shortest`}
+                  value={template.durationMin}
+                  onChange={(event) =>
+                    update({
+                      focusTemplates: {
+                        ...draft.focusTemplates,
+                        [workType]: {
+                          ...template,
+                          durationMin: Number(event.target.value),
+                        },
+                      },
+                    })
+                  }
+                />
+                <input
+                  type="number"
+                  min={5}
+                  aria-label={`${WORK_TYPE_LABELS[workType]} longest`}
+                  value={template.durationMax}
+                  onChange={(event) =>
+                    update({
+                      focusTemplates: {
+                        ...draft.focusTemplates,
+                        [workType]: {
+                          ...template,
+                          durationMax: Number(event.target.value),
+                        },
+                      },
+                    })
+                  }
+                />
+              </div>
+            );
+          })}
+        </div>
+      </details>
+
+      <div className="settings-form-footer">
+        <button type="submit" disabled={!dirty}>
+          {dirty ? "Save" : "Saved"}
+        </button>
+      </div>
+    </form>
   );
 }

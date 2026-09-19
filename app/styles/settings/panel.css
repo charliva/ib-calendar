@@ -1,28 +1,33 @@
-/* The settings panel: a list of collapsible sections inside the shared overlay. */
+/* Settings: a short list you can read at a glance, not a form to fill in.
+   Each row shows what it is currently set to; opening one is opt-in. */
 
 .settings-panel {
-  width: min(620px, 100%);
+  width: min(560px, 100%);
+}
+
+.settings-panel .overlay-panel-body {
+  padding: 6px 10px 14px;
 }
 
 .settings-sections {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 
-.settings-section {
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--panel);
-  overflow: hidden;
+.settings-section + .settings-section {
+  border-top: 1px solid var(--line-soft);
 }
 
 .settings-section.is-open {
-  background: var(--paper);
-  border-color: var(--lilac);
+  border-top-color: transparent;
+  background: var(--panel);
+  border-radius: 14px;
+  margin: 6px 0;
+}
+
+.settings-section.is-open + .settings-section {
+  border-top-color: transparent;
 }
 
 .settings-section-toggle {
@@ -30,43 +35,171 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 13px 15px;
+  gap: 14px;
+  padding: 14px 12px;
   background: transparent;
   border: 0;
+  border-radius: 12px;
   text-align: left;
   cursor: pointer;
   color: inherit;
 }
 
-.settings-section-toggle strong {
-  display: block;
-  font-size: 0.95rem;
+.settings-section-toggle:hover {
+  background: var(--canvas);
 }
 
-.settings-section-toggle small {
-  display: block;
-  margin-top: 2px;
+.settings-section.is-open .settings-section-toggle:hover {
+  background: transparent;
+}
+
+.settings-section-label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.settings-section-label strong {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* The value is the point of the collapsed row: readable, but quiet enough
+   that the section names still scan as a list. */
+.settings-section-value {
   color: var(--muted);
-  font-size: 0.8rem;
-  line-height: 1.4;
+  font-size: 0.83rem;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settings-section-chevron {
-  color: var(--muted);
-  font-size: 1.1rem;
+  color: var(--line);
+  font-size: 1.2rem;
+  line-height: 1;
   flex-shrink: 0;
+  transition: color 160ms cubic-bezier(0.22, 0.8, 0.24, 1);
+}
+
+.settings-section-toggle:hover .settings-section-chevron {
+  color: var(--lilac);
+}
+
+.settings-section-hint {
+  margin: 0 12px 10px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
 }
 
 .settings-section-body {
-  padding: 4px 15px 16px;
-  border-top: 1px solid var(--line-soft);
+  padding: 0 12px 14px;
 }
 
-.settings-help {
-  margin: 12px 0;
-  color: var(--ink-soft);
+/* Forms ----------------------------------------------------------------- */
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-field-pair {
+  display: flex;
+  gap: 10px;
+}
+
+.settings-field-pair > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.settings-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   font-size: 0.86rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.settings-disclosure {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 10px;
+}
+
+.settings-disclosure > summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--lilac-dark);
+  padding: 4px 0;
+  list-style: none;
+}
+
+.settings-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-disclosure > summary::before {
+  content: "+ ";
+  color: var(--muted);
+}
+
+.settings-disclosure[open] > summary::before {
+  content: "– ";
+}
+
+.settings-disclosure[open] > summary {
+  margin-bottom: 8px;
+}
+
+.settings-template-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-template-row {
+  display: grid;
+  grid-template-columns: 1fr 72px 72px;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+}
+
+.settings-form-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+.settings-form-footer button {
+  padding: 8px 16px;
+  border: 1px solid var(--lilac-dark);
+  border-radius: 10px;
+  background: var(--lilac);
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.86rem;
+}
+
+.settings-form-footer button:disabled {
+  border-color: var(--line);
+  background: var(--canvas);
+  color: var(--muted);
+  cursor: default;
+}
+
+/* Shared bits ----------------------------------------------------------- */
+
+.settings-help {
+  margin: 0 0 12px;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
   line-height: 1.5;
 }
 
@@ -114,7 +247,6 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: 12px;
 }
 
 .settings-action {
@@ -136,18 +268,19 @@
 
 .settings-action strong {
   display: block;
-  font-size: 0.92rem;
+  font-size: 0.9rem;
 }
 
 .settings-action small {
   display: block;
   margin-top: 3px;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.79rem;
   line-height: 1.45;
 }
 
 .settings-inline-action {
+  align-self: flex-start;
   border: 0;
   background: transparent;
   color: var(--lilac-dark);
@@ -158,7 +291,7 @@
 }
 
 .settings-developer {
-  margin-top: 16px;
+  margin-top: 14px;
   padding-top: 12px;
   border-top: 1px dashed var(--line);
 }
@@ -167,9 +300,9 @@
   display: block;
   margin-bottom: 8px;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
 }
 
 .settings-dead-letter {
@@ -218,8 +351,8 @@
   border-color: var(--rose);
 }
 
-/* The school-day form is reused verbatim from the School workspace, so it
-   arrives with its own footer layout. */
-.settings-school-day .school-editor-footer {
-  margin-top: 14px;
+@media (max-width: 780px) {
+  .settings-field-pair {
+    flex-direction: column;
+  }
 }

@@ -55,19 +55,41 @@ export function OverlayPanel({
     };
   }, [id, open]);
 
+  // Focus moves into the panel when it opens, and only then. This used to
+  // depend on `onClose`, which callers pass as an inline arrow — so every
+  // keystroke produced a new identity, re-ran the effect, and threw focus back
+  // to the close button after a single character.
   useEffect(() => {
     if (!open) return;
     const panel = panelRef.current;
     if (!panel) return;
-    const first = panel.querySelector<HTMLElement>(FOCUSABLE);
-    (first ?? panel).focus();
+    // Prefer a real field over the close button, so opening a panel lands
+    // somewhere useful rather than on the dismiss affordance.
+    const preferred = panel.querySelector<HTMLElement>(
+      'input:not(:disabled), select:not(:disabled), textarea:not(:disabled)',
+    );
+    const fallback = panel.querySelector<HTMLElement>(FOCUSABLE);
+    (preferred ?? fallback ?? panel).focus();
+  }, [open]);
+
+  // Held in a ref so the key handler below does not have to re-register every
+  // time a caller passes a fresh inline `onClose`.
+  const closeRef = useRef(onClose);
+  useEffect(() => {
+    closeRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    const panel = panelRef.current;
+    if (!panel) return;
 
     function onKeyDown(event: KeyboardEvent) {
       if (!ownsEscape(id)) return;
       if (event.key === "Escape") {
         event.stopPropagation();
         event.preventDefault();
-        onClose();
+        closeRef.current();
         return;
       }
       if (event.key !== "Tab") return;
@@ -88,7 +110,7 @@ export function OverlayPanel({
 
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [id, onClose, open]);
+  }, [id, open]);
 
   if (!open || typeof document === "undefined") return null;
 

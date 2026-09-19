@@ -3,10 +3,7 @@
 import { useMemo } from "react";
 import { cloudAvailability } from "@/lib/cloud-features";
 import type { OnboardingStepId } from "@/lib/onboarding/state";
-import {
-  ONBOARDING_STEPS,
-  type OnboardingStep,
-} from "@/lib/onboarding/steps";
+import type { OnboardingStep } from "@/lib/onboarding/steps";
 import type { SchoolDaySettings } from "@/lib/school";
 import { Coachmark } from "@/components/overlay/Coachmark";
 import { OverlayPanel } from "@/components/overlay/OverlayPanel";
@@ -21,6 +18,8 @@ type Props = {
   isOnline: boolean;
   /** Set when the student is returning rather than arriving for the first time. */
   awayDays: number | null;
+  stepNumber: number;
+  stepCount: number;
   schoolDaySettings: SchoolDaySettings;
   onChangeSchoolDaySettings: (settings: SchoolDaySettings) => void;
   onSkipStep: () => void;
@@ -45,6 +44,8 @@ export function OnboardingFlow({
   hasAccount,
   isOnline,
   awayDays,
+  stepNumber,
+  stepCount,
   schoolDaySettings,
   onChangeSchoolDaySettings,
   onSkipStep,
@@ -61,8 +62,7 @@ export function OnboardingFlow({
   if (!open || !step) return null;
 
   const locked = step.requiresAccount && !cloud.available;
-  const position = ONBOARDING_STEPS.indexOf(step) + 1;
-  const progress = `Step ${position} of ${ONBOARDING_STEPS.length}`;
+  const progress = `Step ${stepNumber} of ${stepCount}`;
 
   const body = (
     <>

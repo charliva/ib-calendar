@@ -2305,6 +2305,8 @@ export default function Home() {
           hasAccount={Boolean(user)}
           isOnline={isOnline}
           awayDays={onboarding.awayDays}
+          stepNumber={onboarding.stepNumber}
+          stepCount={onboarding.stepCount}
           schoolDaySettings={schoolDaySettings}
           onChangeSchoolDaySettings={saveSchoolDaySettings}
           onSkipStep={() => onboarding.step && onboarding.skipStep(onboarding.step.id)}
@@ -2347,11 +2349,15 @@ export default function Home() {
             onboarding.restartSetup();
             transitionState(() => setZoom("school"));
           }}
+          onRestartEverything={onboarding.restartEverything}
           onForceOnboardingMode={(mode) => {
             setWelcomeBackDismissed(false);
             onboarding.setForcedMode(mode);
           }}
           pendingCount={pendingCount}
+          hasAlternatingClasses={classes.some(
+            (entry) => entry.weekPattern !== "every",
+          )}
           deadLettered={deadLettered}
           onRetryDeadLetter={(mutation) => {
             queueMutation({ ...mutation, failureCount: 0 });

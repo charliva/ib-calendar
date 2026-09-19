@@ -53,6 +53,12 @@ export function Coachmark({
   // Named for what it is: floating-ui's own handle object, not a React ref.
   const { refs: floating, floatingStyles } = useFloating({
     open,
+    // Fixed, not absolute: the bubble is portalled to <body> while several
+    // anchors (the work dock, the rail) are themselves position:fixed. Under
+    // the absolute default the computed viewport coordinates were applied
+    // relative to the document instead, which mispositioned the bubble and grew
+    // the page enough to scroll the whole app out of view.
+    strategy: "fixed",
     placement: "bottom-start",
     middleware: [offset(12), flip({ padding: 16 }), shift({ padding: 16 })],
     whileElementsMounted: autoUpdate,
@@ -85,7 +91,11 @@ export function Coachmark({
   useEffect(() => {
     if (!target || !open) return;
     target.setAttribute("data-tour-active", "true");
-    target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    // A fixed element is already on screen; scrolling to it only drags its
+    // ancestors around.
+    if (getComputedStyle(target).position !== "fixed") {
+      target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
     // Block body on purpose: the Workers DOM types make removeAttribute
     // chainable, so a concise arrow would return a value where React expects
     // a cleanup function or nothing.

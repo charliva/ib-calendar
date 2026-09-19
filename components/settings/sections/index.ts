@@ -2,8 +2,9 @@
  * The settings panel's contents, in order.
  *
  * Kept as data so a section can be added, reordered or renamed without editing
- * the panel itself — and so the panel has no growing switch statement inside
- * it as more preferences find a home here.
+ * the panel itself. Each row shows its live value rather than a description of
+ * itself; the hint is a short nudge for the ones worth a second look, not an
+ * explanation of what the section is for.
  */
 
 export type SettingsSectionId =
@@ -16,7 +17,8 @@ export type SettingsSectionId =
 export type SettingsSectionMeta = {
   id: SettingsSectionId;
   title: string;
-  summary: string;
+  /** Shown under the value when expanded, or when the value needs context. */
+  hint: string;
   /** Sections that only make sense for an account are hidden without one. */
   requiresAccount: boolean;
 };
@@ -24,34 +26,32 @@ export type SettingsSectionMeta = {
 export const SETTINGS_SECTIONS: SettingsSectionMeta[] = [
   {
     id: "school-day",
-    title: "School day",
-    summary:
-      "When your day runs, how long you travel, and the default shape of each kind of study block.",
+    title: "Your day",
+    hint: "When school runs and when you like to work.",
     requiresAccount: false,
   },
   {
     id: "week-cycle",
     title: "Week cycle",
-    summary:
-      "Whether your timetable repeats every week or alternates, and which week you are in now.",
+    hint: "For timetables that alternate between two weeks.",
     requiresAccount: false,
   },
   {
     id: "profile",
     title: "You",
-    summary: "Your name and the timezone your calendar is read in.",
+    hint: "Your name, and the timezone your calendar is read in.",
     requiresAccount: true,
   },
   {
     id: "onboarding",
     title: "Getting started",
-    summary: "Replay the walkthrough, or set your timetable up again.",
+    hint: "Replay the walkthrough, or set your timetable up again.",
     requiresAccount: false,
   },
   {
     id: "sync",
-    title: "Sync and this device",
-    summary: "Changes waiting to reach your account, and anything that failed.",
+    title: "Sync",
+    hint: "Changes waiting to reach your account.",
     requiresAccount: false,
   },
 ];
