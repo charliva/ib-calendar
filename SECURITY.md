@@ -21,8 +21,8 @@ days; this is a personal project, not a company with an on-call rota.
 - Reading, writing or deleting another account's calendar, subjects,
   assignments, assessments or learning signals.
 - Bypassing invite-only signup, or minting or reusing an invitation token.
-- Server-side secret disclosure (`SUPABASE_SECRET_KEY`, `AI_GATEWAY_API_KEY`,
-  `CLERK_SECRET_KEY`) through any response, log or client bundle.
+- Server-side secret disclosure (`SUPABASE_SECRET_KEY`, `AI_GATEWAY_API_KEY`)
+  through any response, log or client bundle.
 - Authenticated abuse of the AI routes that lets one account spend another's
   quota, or reach the model provider without a session.
 - Stored or reflected XSS in calendar content — event titles, rooms and
@@ -70,8 +70,8 @@ These are known, intentional, and not vulnerabilities:
 
 - Keep `.env.local` out of version control. It is already in `.gitignore`;
   leave it there.
-- `SUPABASE_SECRET_KEY`, `SUPABASE_ACCESS_TOKEN` and `CLERK_SECRET_KEY` are
-  server-only. If one is ever pasted into a client file, a commit or a log,
+- `SUPABASE_SECRET_KEY` and `SUPABASE_ACCESS_TOKEN` are server-only. If one is
+  ever pasted into a client file, a commit or a log,
   rotate it in the provider dashboard rather than deleting the commit.
 - Turn **off** "Allow new users to sign up" in Supabase Authentication once
   your own account exists, or your instance is open to the world.
