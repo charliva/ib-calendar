@@ -6,7 +6,10 @@ import {
 } from "../calendar-engine.ts";
 import { lessonOccurrences } from "../school-day-engine.ts";
 import type { ClassException, SchoolClass, Subject } from "../school.ts";
-import { isImportedTimetableItem } from "../timetable-import.ts";
+import {
+  importedLessonMatchesClass,
+  isImportedTimetableItem,
+} from "../timetable-import.ts";
 
 export const SCHOOL_PERIODS = [
   [510, 600],
@@ -132,4 +135,36 @@ export function editedTiming(
     durationMin: minutes,
     durationMax: minutes,
   };
+}
+
+/**
+ * The lesson occurrences left after removing any that an imported timetable
+ * already covers.
+ *
+ * A week imported from a screenshot and a recurring fallback lesson can
+ * describe the same slot. The School tab has always resolved that — it drops
+ * the recurring lesson when `importedLessonMatchesClass` says the import
+ * covers it — but the calendar did not, so an imported week drew each lesson
+ * twice, once from the import and once from the recurrence. The exclusion the
+ * calendar did have compared an item's id against a class id, which imported
+ * items (a fresh uuid, no classId) can never match.
+ *
+ * The import wins, because it is what the student's timetable actually said
+ * that week.
+ */
+export function withoutImportedDuplicates(
+  occurrences: CalendarItem[],
+  classes: SchoolClass[],
+  items: CalendarItem[],
+) {
+  const imported = items.filter(isImportedTimetableItem);
+  if (imported.length === 0) return occurrences;
+  return occurrences.filter((occurrence) => {
+    const lesson = classes.find((entry) => entry.id === occurrence.classId);
+    if (!lesson || !occurrence.startsAt) return true;
+    const day = dateKey(new Date(occurrence.startsAt));
+    return !imported.some((item) =>
+      importedLessonMatchesClass(item, lesson, day),
+    );
+  });
 }

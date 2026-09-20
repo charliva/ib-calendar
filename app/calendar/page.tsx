@@ -38,6 +38,7 @@ import { SelectionDeleteDialog } from "@/components/calendar/SelectionDeleteDial
 import {
   classCalendarItems,
   isClassEvent,
+  withoutImportedDuplicates,
 } from "@/lib/calendar/interactions";
 import { CommandPalette } from "@/components/calendar/CommandPalette";
 import {
@@ -1730,13 +1731,20 @@ export default function Home() {
     zoom === "day"
       ? [dateFromKey(selectedDay)]
       : Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
-  const classOccurrences = classCalendarItems(
+  // An imported week and a recurring fallback lesson can describe the same
+  // slot. The School tab drops the recurrence in that case; the calendar has
+  // to agree, or the lesson is drawn twice.
+  const classOccurrences = withoutImportedDuplicates(
+    classCalendarItems(
+      classes,
+      classExceptions,
+      subjects,
+      visibleDays[0],
+      visibleDays.at(-1)!,
+      schoolDaySettings.weekPatternAnchor,
+    ),
     classes,
-    classExceptions,
-    subjects,
-    visibleDays[0],
-    visibleDays.at(-1)!,
-    schoolDaySettings.weekPatternAnchor,
+    filteredItems,
   );
   const calendarDisplayItems = [
     ...filteredItems.filter(

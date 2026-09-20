@@ -4,8 +4,13 @@ import {
   classCalendarItems,
   snapEventMinutes,
   isClassEvent,
+  withoutImportedDuplicates,
 } from "../lib/calendar/interactions.ts";
-import { itemToRow, makeItem } from "../lib/calendar-engine.ts";
+import {
+  itemToRow,
+  makeItem,
+  TIMETABLE_IMPORT_MARKER,
+} from "../lib/calendar-engine.ts";
 import { rowToItem } from "../lib/db/queries/calendar.ts";
 import {
   classToRow,
@@ -226,4 +231,97 @@ test("a lesson that runs every week ignores the anchor entirely", () => {
       1,
     );
   }
+});
+
+// An imported week and a recurring fallback lesson can describe the same slot.
+// The School tab has always dropped the recurrence in that case; the calendar
+// drew both, so every lesson in an imported week appeared twice. The exclusion
+// the calendar did have compared an item's id against a class id, which an
+// imported item — a fresh uuid with no classId — can never match.
+function importedLesson(overrides = {}) {
+  return makeItem({
+    id: "imported-1",
+    kind: "event",
+    title: "English",
+    subjectId: subject.id,
+    source: "document",
+    constraints: [TIMETABLE_IMPORT_MARKER],
+    startsAt: new Date("2026-09-14T08:30").toISOString(),
+    endsAt: new Date("2026-09-14T10:00").toISOString(),
+    status: "scheduled",
+    ...overrides,
+  });
+}
+
+test("an imported lesson replaces the recurring one it covers", () => {
+  const occurrences = classCalendarItems(
+    [lesson],
+    [],
+    [subject],
+    new Date("2026-09-14T00:00"),
+    new Date("2026-09-20T23:00"),
+  );
+  assert.equal(occurrences.length, 1);
+
+  const deduped = withoutImportedDuplicates(
+    occurrences,
+    [lesson],
+    [importedLesson()],
+  );
+  assert.deepEqual(deduped, []);
+});
+
+test("a recurring lesson the import does not cover is kept", () => {
+  const occurrences = classCalendarItems(
+    [lesson],
+    [],
+    [subject],
+    new Date("2026-09-14T00:00"),
+    new Date("2026-09-20T23:00"),
+  );
+
+  // Same slot, different day.
+  const otherDay = importedLesson({
+    startsAt: new Date("2026-09-15T08:30").toISOString(),
+    endsAt: new Date("2026-09-15T10:00").toISOString(),
+  });
+  assert.equal(
+    withoutImportedDuplicates(occurrences, [lesson], [otherDay]).length,
+    1,
+  );
+
+  // Same day, different time.
+  const otherTime = importedLesson({
+    startsAt: new Date("2026-09-14T11:00").toISOString(),
+    endsAt: new Date("2026-09-14T12:30").toISOString(),
+  });
+  assert.equal(
+    withoutImportedDuplicates(occurrences, [lesson], [otherTime]).length,
+    1,
+  );
+
+  // An ordinary calendar item at the same time is not an import.
+  const ordinary = makeItem({
+    id: "not-an-import",
+    kind: "event",
+    title: "English",
+    subjectId: subject.id,
+    startsAt: new Date("2026-09-14T08:30").toISOString(),
+    endsAt: new Date("2026-09-14T10:00").toISOString(),
+  });
+  assert.equal(
+    withoutImportedDuplicates(occurrences, [lesson], [ordinary]).length,
+    1,
+  );
+});
+
+test("with nothing imported the occurrences are returned untouched", () => {
+  const occurrences = classCalendarItems(
+    [lesson],
+    [],
+    [subject],
+    new Date("2026-09-14T00:00"),
+    new Date("2026-09-20T23:00"),
+  );
+  assert.equal(withoutImportedDuplicates(occurrences, [lesson], []), occurrences);
 });
