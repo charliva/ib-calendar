@@ -192,7 +192,7 @@ import {
 import {
   promoteLegacyOfflineHomework,
   type LegacyOfflineState,
-} from "@/app/calendar/legacy-offline";
+} from "@/lib/calendar/legacy-offline";
 import { fetchCloudSnapshot } from "@/app/calendar/cloud-snapshot";
 import { useAccountSession } from "@/app/calendar/use-account-session";
 import { useSchoolRecords } from "@/app/calendar/use-school-records";

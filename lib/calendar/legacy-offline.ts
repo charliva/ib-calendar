@@ -1,8 +1,8 @@
 // Migration for calendar state saved before homework captures became ordinary
 // work items. It runs against whatever is already in IndexedDB on this device,
 // so it has to stay tolerant of shapes that no longer exist in the code.
-import { makeItem, type CalendarItem } from "@/lib/calendar-engine";
-import { normalizeItemTiming } from "@/lib/calendar/scheduling";
+import { makeItem, type CalendarItem } from "../calendar-engine.ts";
+import { normalizeItemTiming } from "./scheduling.ts";
 
 type LegacyOfflineState = {
   homeworkCaptures?: unknown;
@@ -85,6 +85,16 @@ function promoteLegacyOfflineHomework(
     const capture = rawCapture as Record<string, unknown>;
     const id = typeof capture.id === "string" ? capture.id : "";
     if (!id || knownIds.has(id)) continue;
+    // Scheduling a capture minted a calendar item under a *new* id and left
+    // the link behind in scheduledCalendarItemId, so the capture's own id
+    // never appears among the items. Matching only on that id would re-create
+    // every piece of homework the student had already put in their week, as a
+    // fresh inbox copy, and upload it. The server-side migration skips these
+    // captures on exactly this key; so does this.
+    const scheduledItemId = capture.scheduledCalendarItemId;
+    if (typeof scheduledItemId === "string" && knownIds.has(scheduledItemId)) {
+      continue;
+    }
     const title =
       typeof capture.title === "string" && capture.title.trim()
         ? capture.title.trim()
