@@ -6,6 +6,7 @@ import type {
 } from "@/lib/calendar-engine";
 
 import { DEFAULT_WEEK_PATTERN_ANCHOR } from "./school/week-pattern.ts";
+import { clampSchoolDayMinutes } from "./school/minute-bounds.ts";
 
 export type { TaskContext } from "@/lib/calendar-engine";
 export type WeekPattern = "every" | "a" | "b";
@@ -342,7 +343,22 @@ export function normalizeSchoolDaySettings(
   return {
     ...DEFAULT_SCHOOL_DAY_SETTINGS,
     ...settings,
-    minimumFreePeriodMinutes: Math.max(45, settings.minimumFreePeriodMinutes),
+    travelBeforeSchoolMinutes: clampSchoolDayMinutes(
+      "travelBeforeSchoolMinutes",
+      settings.travelBeforeSchoolMinutes,
+    ),
+    travelHomeMinutes: clampSchoolDayMinutes(
+      "travelHomeMinutes",
+      settings.travelHomeMinutes,
+    ),
+    recoveryAfterHomeMinutes: clampSchoolDayMinutes(
+      "recoveryAfterHomeMinutes",
+      settings.recoveryAfterHomeMinutes,
+    ),
+    minimumFreePeriodMinutes: clampSchoolDayMinutes(
+      "minimumFreePeriodMinutes",
+      settings.minimumFreePeriodMinutes,
+    ),
     weekPatternAnchor:
       settings.weekPatternAnchor?.trim() || DEFAULT_WEEK_PATTERN_ANCHOR,
     focusTemplates: focusTemplates(settings.focusTemplates),

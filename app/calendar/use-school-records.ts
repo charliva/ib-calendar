@@ -23,6 +23,7 @@ import {
   classToRow,
   normalizeAssessment,
   normalizeAssignment,
+  normalizeSchoolDaySettings,
   schoolDaySettingsToRow,
   subjectToRow,
   type Assessment,
@@ -157,7 +158,12 @@ export function useSchoolRecords({
     setNotice("Timetable lesson saved.");
   }
 
-  function saveSchoolDaySettings(settings: SchoolDaySettings) {
+  function saveSchoolDaySettings(input: SchoolDaySettings) {
+    // Out-of-range minutes are not merely odd, they are unwritable: the
+    // profiles CHECK constraints reject the upsert and it retries from the
+    // outbox forever. Normalizing here covers every caller rather than
+    // trusting each form to bound its own inputs.
+    const settings = normalizeSchoolDaySettings(input);
     setSchoolDaySettings(settings);
     if (user) {
       persistMutation({

@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { WORK_TYPE_LABELS, type SchoolDaySettings } from "@/lib/school";
+import { SCHOOL_DAY_MINUTE_BOUNDS } from "@/lib/school/minute-bounds";
 import { workTypes } from "@/components/school/constants";
 import { FormField } from "@/components/school/fields";
 import { TemporalField } from "@/app/ui/temporal-field";
@@ -92,7 +93,8 @@ export function SchoolDaySection({ settings, onSave }: Props) {
           <FormField label="Travel to school (min)">
             <input
               type="number"
-              min={0}
+              min={SCHOOL_DAY_MINUTE_BOUNDS.travelBeforeSchoolMinutes.min}
+              max={SCHOOL_DAY_MINUTE_BOUNDS.travelBeforeSchoolMinutes.max}
               value={draft.travelBeforeSchoolMinutes}
               onChange={(event) =>
                 update({
@@ -104,7 +106,8 @@ export function SchoolDaySection({ settings, onSave }: Props) {
           <FormField label="Travel home (min)">
             <input
               type="number"
-              min={0}
+              min={SCHOOL_DAY_MINUTE_BOUNDS.travelHomeMinutes.min}
+              max={SCHOOL_DAY_MINUTE_BOUNDS.travelHomeMinutes.max}
               value={draft.travelHomeMinutes}
               onChange={(event) =>
                 update({ travelHomeMinutes: Number(event.target.value) })
@@ -116,7 +119,8 @@ export function SchoolDaySection({ settings, onSave }: Props) {
           <FormField label="Wind down at home (min)">
             <input
               type="number"
-              min={0}
+              min={SCHOOL_DAY_MINUTE_BOUNDS.recoveryAfterHomeMinutes.min}
+              max={SCHOOL_DAY_MINUTE_BOUNDS.recoveryAfterHomeMinutes.max}
               value={draft.recoveryAfterHomeMinutes}
               onChange={(event) =>
                 update({ recoveryAfterHomeMinutes: Number(event.target.value) })
@@ -126,7 +130,8 @@ export function SchoolDaySection({ settings, onSave }: Props) {
           <FormField label="Shortest usable gap (min)">
             <input
               type="number"
-              min={45}
+              min={SCHOOL_DAY_MINUTE_BOUNDS.minimumFreePeriodMinutes.min}
+              max={SCHOOL_DAY_MINUTE_BOUNDS.minimumFreePeriodMinutes.max}
               value={draft.minimumFreePeriodMinutes}
               onChange={(event) =>
                 update({ minimumFreePeriodMinutes: Number(event.target.value) })
