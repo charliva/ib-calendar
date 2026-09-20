@@ -22,6 +22,7 @@ import type {
   FreePeriodRecommendation,
 } from "@/lib/school-day-engine";
 import { importedLessonMatchesClass } from "@/lib/timetable-import";
+import { classRunsInWeek } from "@/lib/school/week-pattern";
 import type { ClassException, SchoolClass, Subject } from "@/lib/school";
 import { weekdays } from "@/components/school/constants";
 import { displayDate, subjectColor } from "@/components/school/format";
@@ -67,8 +68,7 @@ export function TimetableTab(props: Props) {
     subjects,
     classes,
     classExceptions,
-    
-    
+    schoolDaySettings,
     weekAnchor,
     weekDays,
     freePeriods,
@@ -235,6 +235,15 @@ export function TimetableTab(props: Props) {
                     entry.weekday === dayIndex + 1 &&
                     key >= entry.validFrom &&
                     (!entry.validUntil || key <= entry.validUntil) &&
+                    // A "Week A only" lesson must not be drawn in a B week.
+                    // The free-period panel on this same screen already
+                    // resolves the fortnight this way, so without it the two
+                    // halves of the Timetable tab contradict each other.
+                    classRunsInWeek(
+                      entry.weekPattern,
+                      day,
+                      schoolDaySettings.weekPatternAnchor,
+                    ) &&
                     !importedWeekLessons.some((item) =>
                       importedLessonMatchesClass(item, entry, key),
                     ),
