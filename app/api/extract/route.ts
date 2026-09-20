@@ -1,44 +1,9 @@
 import { gateway, generateText, Output, type UserContent } from "ai";
 import { z } from "zod";
 import { authenticatedUser } from "@/lib/supabase/api-auth";
+import { extractRequestSchema } from "@/lib/ai/extract-request";
 
 export const runtime = "edge";
-
-const requestSchema = z.object({
-  filename: z.string().trim().min(1).max(180),
-  mediaType: z
-    .string()
-    .refine(
-      (value) =>
-        value.startsWith("image/") ||
-        value === "application/pdf" ||
-        value.startsWith("text/"),
-      "Unsupported file type",
-    ),
-  data: z.string().min(1).max(8_000_000),
-  timezone: z.string().trim().min(1).max(80),
-  mode: z.enum(["calendar_document", "school_timetable"]).default("calendar_document"),
-  weekStart: z.string().date().optional(),
-  subjects: z
-    .array(
-      z.object({
-        name: z.string().trim().min(1).max(120),
-        shortName: z.string().trim().max(30),
-        teacher: z.string().trim().max(120),
-        room: z.string().trim().max(80),
-      }),
-    )
-    .max(50)
-    .default([]),
-}).superRefine((value, context) => {
-  if (value.mode === "school_timetable" && !value.weekStart) {
-    context.addIssue({
-      code: "custom",
-      path: ["weekStart"],
-      message: "A target week is required for timetable screenshots",
-    });
-  }
-});
 
 const extractedItemSchema = z.object({
   kind: z.enum(["event", "task", "intention"]),
@@ -92,7 +57,7 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json().catch(() => null);
-  const parsed = requestSchema.safeParse(body);
+  const parsed = extractRequestSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json({ error: "Invalid or oversized document" }, { status: 400 });
   }

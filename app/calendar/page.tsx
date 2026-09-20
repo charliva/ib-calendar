@@ -2747,9 +2747,14 @@ export default function Home() {
           setCommandQuestions([]);
           setCommandText("");
         }}
-        onDocumentSelected={(file) =>
-          onDocumentSelected(file, { mode: "school_timetable" })
-        }
+        // The palette's control is "Document -> proposed calendar" and accepts
+        // PDFs, text and CSV as well as images. Forcing school_timetable mode
+        // here failed every one of them: non-images were turned away client
+        // side with a message about a timetable screenshot, and images reached
+        // /api/extract, which rejects school_timetable without a weekStart the
+        // palette has no way to supply. Timetable imports have their own entry
+        // point in the School tab, which does pass a week.
+        onDocumentSelected={(file) => onDocumentSelected(file)}
       />
       <ProposalReview
         proposal={proposal}
