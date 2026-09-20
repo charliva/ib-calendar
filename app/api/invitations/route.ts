@@ -72,7 +72,10 @@ export async function POST(request: Request) {
 
     const origin = new URL(request.url).origin;
     return Response.json({
-      inviteUrl: `${origin}/?invite=${token}`,
+      // Point straight at the app. `/` forwards the query string too, so an
+      // already-sent `/?invite=...` still works, but a link that needs no
+      // redirect cannot lose the token to one.
+      inviteUrl: `${origin}/calendar?invite=${token}`,
       email,
       expiresAt: invitation.expires_at,
       codeSent: Boolean(email),
