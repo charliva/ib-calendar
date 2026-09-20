@@ -52,14 +52,30 @@ export function snapEventMinutes(
     duration,
   };
 }
+/**
+ * The lessons that fall between `from` and `to`, as calendar items.
+ *
+ * `weekPatternAnchor` decides which side of a fortnight each week is on. It is
+ * a school's fact, not the software's, so it has to come from the student's
+ * settings — omitting it silently falls back to a 2020 epoch, which is how the
+ * calendar ended up rendering Week A / Week B lessons one week out of phase
+ * with the School tab and the free-period panel, both of which do pass it.
+ */
 export function classCalendarItems(
   classes: SchoolClass[],
   exceptions: ClassException[],
   subjects: Subject[],
   from: Date,
   to: Date,
+  weekPatternAnchor?: string,
 ) {
-  return lessonOccurrences(classes, exceptions, from, to).flatMap(
+  return lessonOccurrences(
+    classes,
+    exceptions,
+    from,
+    to,
+    weekPatternAnchor,
+  ).flatMap(
     (occurrence) => {
       const lesson = classes.find((entry) => entry.id === occurrence.classId);
       if (!lesson) return [];

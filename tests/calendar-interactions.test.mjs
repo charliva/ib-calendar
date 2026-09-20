@@ -186,3 +186,44 @@ test("legacy energy values migrate deterministically and invalid edits are rejec
     true,
   );
 });
+
+// The calendar used to call lessonOccurrences without the student's week
+// anchor, so it fell back to the hardcoded 2020 epoch while the School tab,
+// the free-period panel and the settings summary all passed the real one.
+// Any school out of phase with that epoch saw its fortnightly lessons render
+// on the wrong weeks, and the two halves of the app disagreed with each other.
+test("A/B lessons follow the student's week anchor, not a hardcoded epoch", () => {
+  const weekAOnly = { ...lesson, weekPattern: "a" };
+  const mondayOfWeekOne = new Date("2026-09-14T00:00");
+  const mondayOfWeekTwo = new Date("2026-09-21T00:00");
+
+  const inWeek = (anchor, monday) =>
+    classCalendarItems(
+      [weekAOnly],
+      [],
+      [subject],
+      monday,
+      new Date(monday.getTime() + 6 * 24 * 60 * 60 * 1000),
+      anchor,
+    ).length;
+
+  // Anchoring on the 14th makes that week the A week.
+  assert.equal(inWeek("2026-09-14", mondayOfWeekOne), 1);
+  assert.equal(inWeek("2026-09-14", mondayOfWeekTwo), 0);
+
+  // A school one week out of phase gets the mirror image. If the anchor were
+  // ignored, both anchors would give the same answer.
+  assert.equal(inWeek("2026-09-21", mondayOfWeekOne), 0);
+  assert.equal(inWeek("2026-09-21", mondayOfWeekTwo), 1);
+});
+
+test("a lesson that runs every week ignores the anchor entirely", () => {
+  const monday = new Date("2026-09-14T00:00");
+  const to = new Date("2026-09-20T23:00");
+  for (const anchor of ["2026-09-14", "2026-09-21", undefined]) {
+    assert.equal(
+      classCalendarItems([lesson], [], [subject], monday, to, anchor).length,
+      1,
+    );
+  }
+});

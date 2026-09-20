@@ -1736,6 +1736,7 @@ export default function Home() {
     subjects,
     visibleDays[0],
     visibleDays.at(-1)!,
+    schoolDaySettings.weekPatternAnchor,
   );
   const calendarDisplayItems = [
     ...filteredItems.filter(
