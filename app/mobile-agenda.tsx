@@ -1,7 +1,6 @@
 "use client";
 
 import { Plus, Sparkles } from "lucide-react";
-import { useState } from "react";
 import {
   classColorStyle,
 } from "@/app/calendar-ui";
@@ -12,7 +11,6 @@ import {
   formatTime,
   urgencyClass,
 } from "@/app/calendar-format";
-import { JapaneseDateExplanation } from "@/app/japanese-date-explanation";
 import {
   capacityForDay,
   dateFromKey,
@@ -24,7 +22,6 @@ import {
   kindLabels,
   type CalendarItem,
 } from "@/lib/calendar-engine";
-import { getJapaneseCalendarDetails } from "@/lib/japanese-calendar";
 import type { Subject } from "@/lib/school";
 import { isImportedTimetableItem, timetableRoomForItem } from "@/lib/timetable-import";
 
@@ -47,7 +44,6 @@ export function MobileAgenda({
   onOpenItem: (item: CalendarItem) => void;
   onQuickCapture: () => void;
 }) {
-  const [showCulturalDetails, setShowCulturalDetails] = useState(false);
   const selectedDate = dateFromKey(selectedDay);
   const scheduled = items
     .filter(
@@ -71,7 +67,6 @@ export function MobileAgenda({
     .filter((item) => item.status === "inbox" && !possible.includes(item))
     .slice(0, 4);
   const capacity = capacityForDay(items, selectedDay);
-  const selectedJapaneseDate = getJapaneseCalendarDetails(selectedDate);
 
   return (
     <section className="mobile-agenda">
@@ -94,6 +89,7 @@ export function MobileAgenda({
               }`}
               type="button"
               key={key}
+              aria-pressed={key === selectedDay}
               onClick={() => onSelectDay(key)}
             >
               <span>{formatDate(day, { weekday: "short" })}</span>
@@ -118,28 +114,10 @@ export function MobileAgenda({
               day: "numeric",
             })}
           </h2>
-          <button
-            className="mobile-cultural-date"
-            type="button"
-            aria-expanded={showCulturalDetails}
-            onClick={() => setShowCulturalDetails((current) => !current)}
-          >
-            <small>{selectedJapaneseDate.era}</small>
-            <span className={`rokuyo-tag tone-${selectedJapaneseDate.tone}`}>
-              {selectedJapaneseDate.rokuyo}
-            </span>
-            <span className="cultural-date-hint">What does this mean?</span>
-          </button>
         </div>
         <span>
           {capacity.total ? `${capacity.total} min planned` : "Open day"}
         </span>
-        {showCulturalDetails && (
-          <JapaneseDateExplanation
-            date={selectedDate}
-            onClose={() => setShowCulturalDetails(false)}
-          />
-        )}
       </header>
 
       <div className="agenda-list">

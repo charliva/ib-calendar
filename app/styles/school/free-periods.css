@@ -1,0 +1,184 @@
+/* Free-period panel and domain notes. */
+
+.free-period-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--accent) 7%, transparent),
+      transparent 48%
+    ),
+    var(--panel);
+}
+
+.free-period-panel > header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.free-period-panel h3 {
+  margin: 2px 0 0;
+  font-size: 15px;
+}
+
+.free-period-panel > header > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.free-period-panel > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 7px;
+}
+
+.free-period-panel article {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--canvas) 66%, transparent);
+}
+
+.free-period-panel article > div,
+.free-period-suggestions > button {
+  display: grid;
+  gap: 2px;
+}
+
+.free-period-panel article small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.free-period-suggestions {
+  display: grid;
+  gap: 6px !important;
+}
+
+.free-period-suggestions > button {
+  padding: 8px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 50%, var(--line));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--text);
+  text-align: left;
+}
+
+.free-period-suggestions > button > span {
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.free-period-no-fit {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.focus-template-editor {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--canvas) 62%, transparent);
+}
+
+.focus-template-editor > header,
+.focus-template-editor > label {
+  display: grid;
+  grid-template-columns: 1fr 56px 10px 56px;
+  gap: 5px;
+  align-items: center;
+}
+
+.focus-template-editor > header {
+  grid-template-columns: 1fr auto;
+  margin-bottom: 3px;
+}
+
+.focus-template-editor input {
+  width: 100%;
+  min-width: 0;
+  padding-inline: 6px;
+  text-align: center;
+}
+
+.focus-template-editor > label > span:first-child {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.focus-template-editor > label > span:nth-child(3),
+.focus-template-editor small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.record-meta,
+.record-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.record-meta {
+  margin-top: 3px;
+  gap: 9px;
+}
+
+.record-actions button:last-child:hover {
+  color: #a64f62;
+  background: #f1e5e7;
+}
+
+.domain-note {
+  display: flex;
+  min-height: 39px;
+  margin-bottom: 12px;
+  padding: 0 11px;
+  align-items: center;
+  gap: 8px;
+  color: #666171;
+  background: #ebe9f4;
+  border: 1px solid #ded9ef;
+  border-radius: 7px;
+  font-size: 8px;
+}
+
+.school-empty {
+  display: grid;
+  min-height: 330px;
+  place-items: center;
+  align-content: center;
+  color: #aaaCa6;
+  border: 1px dashed #d4d7d0;
+  border-radius: 9px;
+}
+
+.school-empty h3 {
+  margin: 12px 0 0;
+  color: #57585e;
+  font-size: 14px;
+  font-weight: 620;
+}
+
+.school-empty p {
+  max-width: 350px;
+  margin: 6px 15px 15px;
+  color: #91938d;
+  font-size: 9px;
+  line-height: 1.5;
+  text-align: center;
+}

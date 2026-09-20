@@ -1,0 +1,312 @@
+/* Quick HUD: rows, capacity and insight cards, history list. */
+
+.quick-hud {
+  position: relative;
+  z-index: 19;
+  grid-column: 4;
+  min-width: 0;
+  overflow: auto;
+  background: #f6f4ef;
+  border-left: 1px solid var(--line);
+}
+
+.quick-hud.show-history {
+  display: block;
+}
+
+.quick-hud > section {
+  min-height: 100%;
+}
+
+.hud-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 73px;
+  padding: 15px 16px;
+  background: rgb(246 244 239 / 94%);
+  border-bottom: 1px solid var(--line-soft);
+  backdrop-filter: blur(12px);
+}
+
+.hud-header h2 {
+  margin: 2px 0 0;
+  font-size: 15px;
+  letter-spacing: -.035em;
+}
+
+.temporal-hud {
+  padding: 6px 15px 12px;
+}
+
+.hud-row {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  padding: 12px 0;
+  gap: 8px;
+  border-bottom: 1px solid #e3dfd7;
+}
+
+.hud-row > span {
+  padding-top: 2px;
+  color: #9a958d;
+  font-family: var(--font-mono), monospace;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.hud-row > div {
+  min-width: 0;
+}
+
+.hud-row time,
+.hud-row strong,
+.hud-row small {
+  display: block;
+}
+
+.hud-row time {
+  margin-bottom: 2px;
+  color: #6554c2;
+  font-family: var(--font-mono), monospace;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.hud-row strong {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 660;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud-row small {
+  margin-top: 2px;
+  color: #908b84;
+  font-size: 8px;
+}
+
+.hud-row-empty {
+  color: #aaa59d;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.hud-later {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  padding: 12px 0 3px;
+  gap: 8px;
+}
+
+.hud-later > span {
+  color: #9a958d;
+  font-family: var(--font-mono), monospace;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.hud-later p {
+  margin: 0 0 7px;
+  color: #726d67;
+  font-size: 9px;
+}
+
+.hud-later button {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 44px 1fr;
+  padding: 5px 0;
+  gap: 5px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+}
+
+.hud-later button time {
+  color: #6554c2;
+  font-family: var(--font-mono), monospace;
+  font-size: 8px;
+}
+
+.hud-later button strong {
+  overflow: hidden;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capacity-card,
+.insight-card {
+  margin: 0 12px 12px;
+  padding: 13px;
+  background: #fff;
+  border: 1px solid #dfdbd3;
+  border-radius: 10px;
+}
+
+.capacity-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 9px;
+}
+
+.capacity-title strong {
+  font-size: 10px;
+}
+
+.capacity-title span {
+  color: #6d5bc3;
+  font-family: var(--font-mono), monospace;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.capacity-track {
+  height: 4px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  background: #eae6df;
+  border-radius: 99px;
+}
+
+.capacity-track i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--mint), var(--lilac), var(--rose));
+}
+
+.insight-card ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.capacity-card dl {
+  margin: 0;
+}
+
+.capacity-card dl > div {
+  display: flex;
+  align-items: center;
+  padding: 3px 0;
+  gap: 6px;
+  color: #77716b;
+  font-size: 8px;
+}
+
+.capacity-card dt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.capacity-card dd {
+  margin-left: auto;
+  margin-inline-start: auto;
+  color: #343038;
+  font-family: var(--font-mono), monospace;
+  font-weight: 700;
+}
+
+.capacity-dot {
+  width: 6px;
+  height: 6px;
+  background: #777;
+  border-radius: 50%;
+}
+
+.capacity-dot.deep {
+  background: #333037;
+}
+
+.capacity-dot.focus {
+  background: var(--lilac);
+}
+
+.capacity-dot.social {
+  background: var(--rose);
+}
+
+.capacity-dot.recovery {
+  background: var(--mint);
+}
+
+.insight-card .dock-title {
+  padding: 0 0 8px;
+}
+
+.insight-card li {
+  padding: 7px 0;
+  color: #6c6761;
+  border-top: 1px solid #efede7;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.insight-card li:first-child {
+  border-top: 0;
+}
+
+.history-list {
+  padding: 10px;
+}
+
+.history-list button {
+  width: 100%;
+  padding: 10px;
+  text-align: left;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.history-list button + button {
+  margin-top: 6px;
+}
+
+.history-list button:hover {
+  border-color: #b7addf;
+}
+
+.history-list strong,
+.history-list span {
+  display: block;
+}
+
+.history-list span {
+  margin-bottom: 4px;
+  color: #343038;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.history-list time,
+.history-list small {
+  display: block;
+  color: #908a82;
+  font-family: var(--font-mono), monospace;
+  font-size: 7px;
+}
+
+.history-list small {
+  margin-top: 4px;
+  color: #6858b4;
+}
+
+.hud-empty {
+  padding: 35px 18px;
+  color: #969189;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.5;
+}

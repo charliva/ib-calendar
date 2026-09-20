@@ -1,0 +1,318 @@
+/* School foundation: workspace shell, counts, section bar, week stepper. */
+
+/* School foundation */
+
+.school-toolbar-title {
+  display: flex;
+  min-width: 0;
+  margin-right: auto;
+  align-items: center;
+  gap: 8px;
+  color: #5650a7;
+}
+
+.school-toolbar-title strong {
+  color: #3e3f45;
+  font-size: 12px;
+  font-weight: 640;
+}
+
+.school-workspace {
+  min-height: calc(100dvh - 58px);
+  padding: clamp(20px, 3vw, 38px);
+  background:
+    radial-gradient(circle at 92% 0, rgb(127 112 232 / 6%), transparent 28%),
+    #f8f8f5;
+}
+
+.school-hero {
+  display: flex;
+  max-width: 1180px;
+  align-items: end;
+  justify-content: space-between;
+  margin: 0 auto 22px;
+  gap: 24px;
+}
+
+.school-hero h1 {
+  margin: 4px 0 5px;
+  color: #303137;
+  font-size: clamp(25px, 3vw, 36px);
+  font-weight: 650;
+  letter-spacing: -.05em;
+}
+
+.school-hero p {
+  max-width: 560px;
+  margin: 0;
+  color: #858780;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.school-counts {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.school-counts span {
+  display: grid;
+  gap: 3px;
+  color: #959790;
+  font-size: 8px;
+  text-align: right;
+}
+
+.school-counts strong {
+  color: #4c4d53;
+  font-family: var(--font-mono), monospace;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.school-tabs {
+  display: flex;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 3px;
+  gap: 2px;
+  background: #e9ebe6;
+  border: 1px solid #dfe2db;
+  border-radius: 8px;
+}
+
+.school-tabs button {
+  display: flex;
+  min-height: 31px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  gap: 6px;
+  color: #81837d;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  font-size: 9px;
+  font-weight: 570;
+}
+
+.school-tabs button:hover {
+  color: #48494f;
+  background: rgb(255 255 255 / 38%);
+}
+
+.school-tabs button.active {
+  color: #5349a8;
+  background: #f7f6fa;
+  box-shadow:
+    0 1px 4px rgb(48 49 45 / 8%),
+    inset 0 0 0 1px #dedbea;
+}
+
+.school-body {
+  display: grid;
+  max-width: 1180px;
+  grid-template-columns: minmax(0, 1fr);
+  margin: 16px auto 0;
+  overflow: hidden;
+  background: #f5f6f2;
+  border: 1px solid #daddd6;
+  border-radius: 12px;
+}
+
+.school-body.has-editor {
+  grid-template-columns: minmax(0, 1fr) minmax(290px, 340px);
+}
+
+.school-content {
+  min-width: 0;
+  min-height: 520px;
+  padding: 18px;
+}
+
+.school-section-bar {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  margin-bottom: 15px;
+  gap: 10px;
+}
+
+.school-section-bar > div:first-child:not(.week-stepper) {
+  margin-right: auto;
+}
+
+.school-section-bar h2 {
+  margin: 2px 0 0;
+  color: #37383e;
+  font-size: 16px;
+  font-weight: 630;
+  letter-spacing: -.025em;
+}
+
+.school-primary,
+.school-empty button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 11px;
+  gap: 6px;
+  color: #f7f5ff;
+  background: #685bc4;
+  border: 1px solid #685bc4;
+  border-radius: 7px;
+  font-size: 9px;
+  font-weight: 620;
+}
+
+.school-primary:hover,
+.school-empty button:hover {
+  background: #5d50b5;
+}
+
+.school-primary:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+.week-stepper {
+  display: flex;
+  margin-right: auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.week-stepper button,
+.record-actions button,
+.school-editor > header button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  place-items: center;
+  color: #797b75;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+
+.week-stepper button:hover,
+.record-actions button:hover,
+.school-editor > header button:hover {
+  color: #45464c;
+  background: #e6e8e3;
+}
+
+.week-stepper strong {
+  min-width: 170px;
+  color: #515259;
+  font-size: 10px;
+  font-weight: 610;
+  text-align: center;
+}
+
+.timetable-import-button {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  gap: 6px;
+  color: #574ba9;
+  background: #eeebfa;
+  border: 1px solid #d7d1ed;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.timetable-import-button:hover {
+  background: #e8e3f8;
+  border-color: #c5bce6;
+}
+
+.timetable-import-button:disabled {
+  cursor: wait;
+  opacity: .55;
+}
+
+.timetable-import-note {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  margin: -4px 0 13px;
+  padding: 9px 10px;
+  gap: 8px;
+  color: #6f716b;
+  background: #f0f0f5;
+  border: 1px solid #dddce7;
+  border-radius: 7px;
+}
+
+.timetable-drop-zone {
+  cursor: pointer;
+  outline: none;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.timetable-drop-zone:hover,
+.timetable-drop-zone:focus-visible {
+  background: #eceaf6;
+  border-color: #c9c2e8;
+}
+
+.timetable-drop-zone.is-dragging {
+  color: #51449f;
+  background: #e8e3fb;
+  border-color: #8172d4;
+  box-shadow: inset 0 0 0 2px rgb(127 112 232 / 14%);
+}
+
+.timetable-import-note > svg {
+  color: #6b5dc0;
+}
+
+.timetable-import-note span,
+.timetable-import-note strong {
+  display: block;
+}
+
+.timetable-import-note span {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.timetable-import-note strong {
+  margin-bottom: 1px;
+  color: #484750;
+  font-size: 12px;
+}
+
+.timetable-import-note small {
+  color: #6559b1;
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.school-timetable {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(112px, 1fr));
+  overflow: auto hidden;
+  background: #eeefeb;
+  border: 1px solid #daddd6;
+  border-radius: 9px;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Arial,
+    sans-serif;
+}

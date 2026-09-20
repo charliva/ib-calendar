@@ -33,6 +33,10 @@ const currentItemSchema = z.object({
   constraints: z.array(z.string()),
   description: z.string().optional(),
   room: z.string().optional(),
+  energyUsage: z.number().int().min(1).max(5).optional(),
+  taskContext: z
+    .enum(["school", "home", "city", "library", "anywhere"])
+    .optional(),
   subjectId: z.string().nullable().optional(),
   status: z.enum(["inbox", "scheduled", "completed", "archived"]),
 });
@@ -68,12 +72,10 @@ const requestSchema = z.object({
   conversation: z.array(conversationSchema).max(8).default([]),
 });
 
-const proposedItemSchema = currentItemSchema
-  .partial()
-  .extend({
-    id: z.string().nullable().optional(),
-    description: z.string().max(1000).optional(),
-  });
+const proposedItemSchema = currentItemSchema.partial().extend({
+  id: z.string().nullable().optional(),
+  description: z.string().max(1000).optional(),
+});
 
 const proposalSchema = z.object({
   kind: z.literal("proposal").optional(),
@@ -121,7 +123,10 @@ export async function POST(request: Request) {
 
   const parsed = requestSchema.safeParse(await request.json());
   if (!parsed.success) {
-    return Response.json({ error: "Invalid calendar command" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid calendar command" },
+      { status: 400 },
+    );
   }
 
   const { command, timezone, items, subjects, classes, conversation } =
@@ -199,7 +204,10 @@ For a create, after must include at least title and kind. For an update, omit un
 
   const validated = assistantResponseSchema.safeParse(output);
   if (!validated.success) {
-    return Response.json({ error: "AI returned an invalid proposal" }, { status: 502 });
+    return Response.json(
+      { error: "AI returned an invalid proposal" },
+      { status: 502 },
+    );
   }
   return Response.json(validated.data);
 }

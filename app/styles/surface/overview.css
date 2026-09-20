@@ -1,0 +1,31 @@
+/* Control surface refinements for the overview grid. */
+
+.overview-grid {
+  padding: 20px;
+  background: #f3f4f1;
+  animation: calendar-settle 180ms ease both;
+}
+
+.month-card {
+  padding: 14px;
+  background: #f8f8f5;
+  border-color: #dde0d9;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.month-days button {
+  border-color: #e5e7e2;
+}
+
+.month-days button:hover {
+  background: #f0eff7;
+}
+
+.month-days button.overloaded {
+  background: #f4ece9;
+}
+
+.mobile-agenda {
+  display: none;
+}

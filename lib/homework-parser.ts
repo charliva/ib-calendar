@@ -1,9 +1,5 @@
-import type {
-  Assignment,
-  HomeworkCapture,
-  HomeworkTaskType,
-  Subject,
-} from "@/lib/school";
+import type { HomeworkTaskType, Subject } from "@/lib/school";
+import { parseTemporalText } from "./temporal-parser.ts";
 
 export type ParsedHomework = {
   rawText: string;
@@ -22,6 +18,15 @@ export type ParsedHomework = {
     date: string | null;
     time: string | null;
   };
+};
+
+export type ParsedReviewSession = {
+  title: string;
+  subjectId: string | null;
+  durationMinutes: number;
+  startsAt: string | null;
+  endsAt: string | null;
+  deadline: string | null;
 };
 
 const weekdayIndexes: Record<string, number> = {
@@ -209,6 +214,75 @@ function detectTaskType(text: string): {
   return { taskType: "other", estimatedMinutes: 30, confident: false };
 }
 
+function sessionDuration(text: string) {
+  const minutes = text.match(
+    /\b(?:for\s+)?(?:about\s+|around\s+|~)?(\d{1,3})\s*(?:m|min|mins|minutes?)\b/i,
+  );
+  if (minutes) return Math.max(5, Math.min(240, Number(minutes[1])));
+  const hours = text.match(
+    /\b(?:for\s+)?(?:about\s+|around\s+|~)?(\d{1,2})(?:\s*\.\s*5)?\s*(?:h|hr|hrs|hours?)\b/i,
+  );
+  if (!hours) return 45;
+  return Math.max(
+    5,
+    Math.min(240, Number(hours[1]) * 60 + (hours[0].includes(".5") ? 30 : 0)),
+  );
+}
+
+function hasDate(text: string) {
+  return /\b(?:today|tomorrow|day after tomorrow|(?:next\s+)?(?:mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)(?:day)?|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?)\b/i.test(
+    text,
+  );
+}
+
+function hasTime(text: string) {
+  return /\b(?:at\s+)?(?:[01]?\d|2[0-3])[:.]\d{2}\b/i.test(text) ||
+    /\b(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)\b/i.test(text);
+}
+
+export function parseReviewSession(
+  input: string,
+  subjects: Subject[],
+  now = new Date(),
+): ParsedReviewSession | null {
+  const rawText = input.trim();
+  const prefix = rawText.match(
+    /^(?:(?:add|create|new|schedule)\s+)?(?:a\s+)?(?:\/review|review(?:\s+session)?|revise|revision|study(?:\s+session)?|practice|prep(?:are)?(?:\s+for)?)\b\s*/i,
+  );
+  if (!prefix) return null;
+
+  const homework = parseHomework(rawText, subjects, now);
+  const subject = subjects.find((candidate) => candidate.id === homework.subjectId);
+  const durationMinutes = sessionDuration(rawText);
+  const parsedDateTime = parseTemporalText(rawText, "datetime", now);
+  const includesDate = hasDate(rawText);
+  const includesTime = hasTime(rawText);
+  const startsAt =
+    includesDate && includesTime && parsedDateTime
+      ? new Date(parsedDateTime).toISOString()
+      : null;
+  const endsAt = startsAt
+    ? new Date(new Date(startsAt).getTime() + durationMinutes * 60_000).toISOString()
+    : null;
+  const deadline =
+    includesDate && !includesTime && parsedDateTime
+      ? (() => {
+          const date = new Date(parsedDateTime);
+          date.setHours(18, 0, 0, 0);
+          return date.toISOString();
+        })()
+      : null;
+
+  return {
+    title: subject ? `${subject.name} review` : "Review session",
+    subjectId: subject?.id ?? null,
+    durationMinutes,
+    startsAt,
+    endsAt,
+    deadline,
+  };
+}
+
 export function parseHomework(
   input: string,
   subjects: Subject[],
@@ -277,30 +351,8 @@ export function looksLikeHomeworkCommand(
   if (/^(?:\/hw|hw|homework|assignment|capture)\b/i.test(clean)) return true;
   if (/^(?:move|shift|delete|remove|filter|block)\b/i.test(clean)) return false;
   return (
-    parsed.confidence.deadline &&
-    (parsed.confidence.subject || parsed.confidence.taskType)
-  );
-}
-
-export function recentSubjects(
-  subjects: Subject[],
-  captures: HomeworkCapture[],
-  assignments: Assignment[],
-) {
-  const recency = new Map<string, number>();
-  [...captures, ...assignments].forEach((entry) => {
-    if (!entry.subjectId) return;
-    recency.set(
-      entry.subjectId,
-      Math.max(
-        recency.get(entry.subjectId) ?? 0,
-        new Date(entry.createdAt).getTime(),
-      ),
-    );
-  });
-  return [...subjects].sort(
-    (a, b) =>
-      (recency.get(b.id) ?? 0) - (recency.get(a.id) ?? 0) ||
-      a.name.localeCompare(b.name),
+    (parsed.confidence.subject && parsed.confidence.taskType) ||
+    (parsed.confidence.deadline &&
+      (parsed.confidence.subject || parsed.confidence.taskType))
   );
 }

@@ -2,7 +2,6 @@
 
 import {
   Activity,
-  BookOpen,
   CalendarPlus,
   ChevronRight,
   ClipboardCheck,
@@ -17,7 +16,6 @@ export function MobileActionSheets({
   createOpen,
   menuOpen,
   weeklyReviewAvailable,
-  activeHomeworkCount,
   inboxCount,
   undoCount,
   signedIn,
@@ -25,7 +23,6 @@ export function MobileActionSheets({
   onOpenCommand,
   onNewEvent,
   onNewTask,
-  onOpenHomework,
   onWeeklyReview,
   onOpenInbox,
   onOpenHud,
@@ -36,7 +33,6 @@ export function MobileActionSheets({
   createOpen: boolean;
   menuOpen: boolean;
   weeklyReviewAvailable: boolean;
-  activeHomeworkCount: number;
   inboxCount: number;
   undoCount: number;
   signedIn: boolean;
@@ -44,7 +40,6 @@ export function MobileActionSheets({
   onOpenCommand: () => void;
   onNewEvent: () => void;
   onNewTask: () => void;
-  onOpenHomework: () => void;
   onWeeklyReview: () => void;
   onOpenInbox: () => void;
   onOpenHud: () => void;
@@ -100,17 +95,6 @@ export function MobileActionSheets({
               </span>
               <ChevronRight size={17} />
             </button>
-            <button
-              type="button"
-              onClick={onOpenHomework}
-            >
-              <BookOpen size={19} />
-              <span>
-                <strong>Homework</strong>
-                <small>Capture it quickly during class</small>
-              </span>
-              <ChevronRight size={17} />
-            </button>
           </div>
         </aside>
       )}
@@ -125,14 +109,6 @@ export function MobileActionSheets({
             <h2>More tools</h2>
           </header>
           <div>
-            <button type="button" onClick={onOpenHomework}>
-              <BookOpen size={19} />
-              <span>
-                <strong>Homework</strong>
-                <small>{activeHomeworkCount} waiting</small>
-              </span>
-              <ChevronRight size={17} />
-            </button>
             {weeklyReviewAvailable && (
               <button type="button" onClick={onWeeklyReview}>
                 <ClipboardCheck size={19} />
@@ -146,7 +122,7 @@ export function MobileActionSheets({
             <button type="button" onClick={onOpenInbox}>
               <Inbox size={19} />
               <span>
-                <strong>Flexible work</strong>
+                <strong>Work queue</strong>
                 <small>{inboxCount} unscheduled</small>
               </span>
               <ChevronRight size={17} />

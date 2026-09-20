@@ -1,0 +1,191 @@
+/* Auth shell - sign-in and sign-up. Calm, editorial, paper-styled. */
+
+/* Auth shell — sign-in / sign-up. Calm, editorial, paper-styled. */
+.auth-shell {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: clamp(28px, 5vw, 56px);
+  max-width: 460px;
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: clamp(28px, 5vw, 56px) clamp(20px, 4vw, 36px);
+  color: var(--ink, #151419);
+  background: var(--paper, #fffefa);
+}
+
+.auth-shell-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  align-self: start;
+  text-decoration: none;
+  color: inherit;
+}
+
+.auth-shell-mark-glyph {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  color: #fffefa;
+  background: var(--ink, #151419);
+  border-radius: 8px;
+}
+
+.auth-shell-mark-text {
+  font: 600 14px/1 var(--font-sans), "Outfit", system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+.auth-shell-card {
+  display: grid;
+  gap: 12px;
+  align-self: center;
+}
+
+.auth-shell-eyebrow {
+  margin: 0;
+  color: color-mix(in srgb, currentColor 48%, transparent);
+  font: 600 10px/1 var(--font-mono), "Space Grotesk", monospace;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.auth-shell-title {
+  margin: 0;
+  font-size: clamp(28px, 4vw, 34px);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+  text-wrap: balance;
+}
+
+.auth-shell-subtitle {
+  margin: 0 0 8px;
+  max-width: 38ch;
+  color: color-mix(in srgb, currentColor 60%, transparent);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.auth-shell-footnote {
+  margin: 0;
+  color: color-mix(in srgb, currentColor 55%, transparent);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.auth-shell-link {
+  color: #5c5590;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.auth-shell-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.auth-shell-page {
+  min-height: 100dvh;
+  background: var(--paper, #fffefa);
+}
+
+.auth-shell-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.auth-shell-field {
+  display: grid;
+  gap: 6px;
+}
+
+.auth-shell-field-label {
+  color: color-mix(in srgb, currentColor 60%, transparent);
+  font: 600 10px/1 var(--font-mono), "Space Grotesk", monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.auth-shell-input {
+  width: 100%;
+  padding: 12px 14px;
+  background: #ffffff;
+  border: 1px solid var(--line, #dedbd3);
+  border-radius: 10px;
+  color: var(--ink, #151419);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.auth-shell-input::placeholder {
+  color: color-mix(in srgb, currentColor 38%, transparent);
+}
+
+.auth-shell-input:focus {
+  outline: none;
+  border-color: #5c5590;
+  box-shadow: 0 0 0 3px rgb(139 132 201 / 22%);
+}
+
+.auth-shell-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.auth-shell-submit {
+  padding: 12px 16px;
+  background: var(--ink, #151419);
+  color: var(--paper, #fffefa);
+  border: 1px solid var(--ink, #151419);
+  border-radius: 10px;
+  font: 500 14px/1 var(--font-sans), "Outfit", system-ui, sans-serif;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.auth-shell-submit:hover:not(:disabled) {
+  background: #29272e;
+  border-color: #29272e;
+}
+
+.auth-shell-submit:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(139 132 201 / 32%);
+}
+
+.auth-shell-submit:disabled {
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  border-color: transparent;
+  color: color-mix(in srgb, currentColor 45%, transparent);
+  cursor: not-allowed;
+}
+
+.auth-shell-error {
+  margin: 0;
+  color: #b3423a;
+}
+
+.auth-shell-foot {
+  margin: 0;
+  align-self: end;
+  text-align: center;
+  color: color-mix(in srgb, currentColor 50%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  .auth-shell-input {
+    background: #1c1b21;
+    border-color: #2d2b34;
+    color: var(--paper, #fffefa);
+  }
+  .auth-shell-input:focus {
+    border-color: #b6afde;
+    box-shadow: 0 0 0 3px rgb(139 132 201 / 28%);
+  }
+}

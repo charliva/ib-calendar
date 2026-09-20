@@ -2,17 +2,6 @@
 
 import type { User } from "@supabase/supabase-js";
 import {
-  assignmentProgress,
-  formatWorkMinutes,
-  planAssignment,
-} from "@/lib/assignment-planner";
-import { planRevisionRunway, planSpacedReviews } from "@/lib/revision-planner";
-import {
-  energyTypeForWorkType,
-  type FreePeriod,
-  type FreePeriodRecommendation,
-} from "@/lib/school-day-engine";
-import {
   CalendarPlus,
   CalendarClock,
   GraduationCap,
@@ -21,10 +10,6 @@ import {
   X,
 } from "lucide-react";
 import {
-  type DragEvent,
-  type FormEvent,
-  type PointerEvent as ReactPointerEvent,
-  type WheelEvent as ReactWheelEvent,
   useCallback,
   lazy,
   useEffect,
@@ -34,30 +19,13 @@ import {
   Suspense,
 } from "react";
 import {
-} from "@/app/calendar-format";
-import {
-  isAttentionQuestion,
-  intentionFromCommand,
   parsedCommand,
-  proposalFromCommandResponse,
   restoreProposal,
-  simpleFallbackProposal,
 } from "@/lib/calendar/commands";
 import {
-  normalizeItemTiming,
-  relevantCommandItems,
-} from "@/lib/calendar/scheduling";
-import {
   isBlockPolishResponse,
-  isClarificationResponse,
-  isCommandResponse,
-  isDeeperResponse,
   type ClarificationResponse,
 } from "@/lib/ai/study-planner";
-import {
-  documentMediaType,
-  isExtractionResponse,
-} from "@/lib/ai/timetable-parser";
 import { AccountPanel } from "@/components/calendar/AccountPanel";
 import { CalendarRail } from "@/components/calendar/CalendarRail";
 import { MobileActionSheets } from "@/components/calendar/MobileActionSheets";
@@ -65,10 +33,14 @@ import { TaskDock } from "@/components/calendar/TaskDock";
 import { QuickHud } from "@/components/calendar/QuickHud";
 import { CalendarHeader } from "@/components/calendar/CalendarHeader";
 import { ProposalReview } from "@/components/calendar/ProposalReview";
-import { EventModal } from "@/components/calendar/EventModal";
+import { CompactEventEditor } from "@/components/calendar/CompactEventEditor";
+import { SelectionDeleteDialog } from "@/components/calendar/SelectionDeleteDialog";
+import {
+  classCalendarItems,
+  isClassEvent,
+} from "@/lib/calendar/interactions";
 import { CommandPalette } from "@/components/calendar/CommandPalette";
 import {
-  rowToItem,
   safeMutationPayload,
   syncErrorMessage,
 } from "@/lib/db/queries/calendar";
@@ -88,19 +60,24 @@ const TimeCalendar = lazy(() =>
   import("@/app/time-calendar").then((mod) => ({ default: mod.TimeCalendar })),
 );
 const OverviewCalendar = lazy(() =>
-  import("@/app/overview-calendar").then((mod) => ({ default: mod.OverviewCalendar })),
-);
-const HomeworkInbox = lazy(() =>
-  import("@/app/homework-inbox").then((mod) => ({ default: mod.HomeworkInbox })),
+  import("@/app/overview-calendar").then((mod) => ({
+    default: mod.OverviewCalendar,
+  })),
 );
 const SchoolWorkspace = lazy(() =>
-  import("@/app/school-workspace").then((mod) => ({ default: mod.SchoolWorkspace })),
+  import("@/app/school-workspace").then((mod) => ({
+    default: mod.SchoolWorkspace,
+  })),
 );
 const IntentionsPanel = lazy(() =>
-  import("@/app/intentions-panel").then((mod) => ({ default: mod.IntentionsPanel })),
+  import("@/app/intentions-panel").then((mod) => ({
+    default: mod.IntentionsPanel,
+  })),
 );
 const GoDeeperPanel = lazy(() =>
-  import("@/app/go-deeper-panel").then((mod) => ({ default: mod.GoDeeperPanel })),
+  import("@/app/go-deeper-panel").then((mod) => ({
+    default: mod.GoDeeperPanel,
+  })),
 );
 import {
   buildAttentionSnapshot,
@@ -109,190 +86,129 @@ import {
 import {
   blockChoiceToRow,
   buildBlockChoice,
-  rowToBlockChoice,
   updateBlockChoice,
   type BlockChoice,
   type BlockChoiceStatus,
   type BlockSuggestion,
 } from "@/lib/block-choices";
 import {
-  intentionToRow,
-  makeIntention,
-  rowToIntention,
   type Intention,
 } from "@/lib/intentions";
 import {
-  explorationToRow,
-  latestSignalFor,
-  learningSignalToRow,
-  makeLearningSignal,
-  rowToExploration,
-  rowToLearningSignal,
-  subjectChallengeSummary,
-  type ChallengeLevel,
   type Exploration,
-  type ExplorationDirection,
   type LearningSignal,
   type LearningSource,
 } from "@/lib/study-intelligence";
 import { isWeeklyReviewAvailable } from "@/lib/weekly-review";
 import {
   addDays,
-  applyProposal,
   capacityForDay,
   dateFromKey,
   dateKey,
   durationMinutes,
   energyLabels,
-  flexibilityForNewItem,
   itemToRow,
   makeItem,
   scheduleInsights,
   startOfWeek,
   validatePlacement,
   validateProposal,
-  withResizedDuration,
   type CalendarItem,
   type CalendarProposal,
   type EnergyRequirement,
   type HistoryEntry,
-  type ProposalChange,
 } from "@/lib/calendar-engine";
 import {
   looksLikeHomeworkCommand,
   parseHomework,
-  recentSubjects,
+  parseReviewSession,
 } from "@/lib/homework-parser";
 import {
-  recommendNow,
   type CurrentStudyLocation,
-  type NowRecommendation,
 } from "@/lib/now-recommender";
 import {
-  isImportedTimetableItem,
-  isItemInWeek,
-  reconcileTimetableImport,
-  timetableRoomForItem,
   type RejectedTimetableCandidate,
 } from "@/lib/timetable-import";
+import { hasBlockingOverlay } from "@/lib/overlay/escape-stack";
+import {
+  buildStalenessReport,
+  releaseStaleItems,
+} from "@/lib/onboarding/staleness";
+import {
+  DEFAULT_ACCOUNT_PREFERENCES,
+  accountPreferencesToRow,
+  type AccountPreferences,
+} from "@/lib/settings/account-preferences";
+import { OnboardingFlow } from "@/components/onboarding/OnboardingFlow";
+import { WelcomeBack } from "@/components/onboarding/WelcomeBack";
+import { SettingsPanel } from "@/components/settings/SettingsPanel";
+import { useOnboarding } from "@/app/calendar/use-onboarding";
 import {
   getLastViewState,
   getOfflineState,
   getPendingMutations,
+  moveToDeadLetter,
   queueMutation,
   removePendingMutation,
+  getDeadLetterMutations,
+  removeDeadLetterMutation,
   saveLastViewState,
-  MAX_PENDING_FAILURES,
-  moveToDeadLetter,
   saveOfflineState,
+  shouldDeadLetter,
   updatePendingMutation,
+  type DeadLetterMutation,
   type LastViewState,
   type PendingMutation,
 } from "@/lib/offline";
-import { calendarSwipeDirection, type SwipePoint } from "@/lib/week-swipe";
+import { type SwipePoint } from "@/lib/week-swipe";
+import { calendarViewFromSearch } from "@/lib/calendar/view-state";
 import {
-  assessmentToRow,
-  assignmentToRow,
-  classExceptionToRow,
-  classToRow,
-  homeworkCaptureToRow,
   DEFAULT_SCHOOL_DAY_SETTINGS,
   normalizeAssignment,
   normalizeAssessment,
   normalizeSchoolDaySettings,
-  rowToAssessment,
-  rowToAssignment,
-  rowToClass,
-  rowToClassException,
-  rowToHomeworkCapture,
-  rowToSchoolDaySettings,
-  rowToSubject,
-  subjectToRow,
-  schoolDaySettingsToRow,
   type Assessment,
   type Assignment,
   type ClassException,
-  type HomeworkCapture,
   type SchoolClass,
   type SchoolDaySettings,
   type Subject,
 } from "@/lib/school";
 import { createClient } from "@/lib/supabase/client";
-import { compactPendingMutations, prepareMutation } from "@/lib/sync";
+import {
+  compactPendingMutations,
+  prepareMutation,
+  mutationIdentity,
+} from "@/lib/sync";
 
-type Zoom = "school" | "upcoming" | "day" | "week" | "month" | "semester";
-type PaletteMode = "command" | "filter" | "upload";
-type CommandTurn = { role: "user" | "assistant"; text: string };
-
-
-function transitionState(update: () => void) {
-  if (typeof document !== "undefined" && "startViewTransition" in document) {
-    document.startViewTransition(update);
-    return;
-  }
-  update();
-}
-
-function isRestorableZoom(value: string): value is Zoom {
-  return ["school", "upcoming", "day", "week", "month", "semester"].includes(
-    value,
-  );
-}
-
-function defaultViewState(): LastViewState {
-  const today = dateKey(new Date());
-  return {
-    zoom: "upcoming",
-    anchorDate: today,
-    selectedDay: today,
-    nowOpen: false,
-    inboxOpen: false,
-    homeworkOpen: false,
-    intentionsOpen: false,
-    hudOpen: false,
-    historyOpen: false,
-    weeklyReviewOpen: false,
-    weeklyReviewPromptWeek: null,
-    scrollTop: 0,
-    viewportHeight: 0,
-    visibleDay: today,
-    visibleHour: 6,
-    visibleMinute: 0,
-  };
-}
+import {
+  defaultViewState,
+  isRestorableZoom,
+  transitionState,
+  type CommandTurn,
+  type PaletteMode,
+  type Zoom,
+} from "@/app/calendar/view-types";
+import {
+  promoteLegacyOfflineHomework,
+  type LegacyOfflineState,
+} from "@/app/calendar/legacy-offline";
+import { fetchCloudSnapshot } from "@/app/calendar/cloud-snapshot";
+import { useAccountSession } from "@/app/calendar/use-account-session";
+import { useSchoolRecords } from "@/app/calendar/use-school-records";
+import { useWorkCapture } from "@/app/calendar/use-work-capture";
+import { useLearningActions } from "@/app/calendar/use-learning-actions";
+import { useNowSession } from "@/app/calendar/use-now-session";
+import { useCommandConsole } from "@/app/calendar/use-command-console";
+import { useProposals } from "@/app/calendar/use-proposals";
+import { useEventEditor } from "@/app/calendar/use-event-editor";
+import { useDragAndResize } from "@/app/calendar/use-drag-and-resize";
+import { useCalendarNavigation } from "@/app/calendar/use-calendar-navigation";
 
 const GATE_EMAILS = (process.env.NEXT_PUBLIC_ACCESS_GATE_EMAILS ?? "")
   .split(",")
   .map((entry) => entry.trim().toLowerCase())
   .filter(Boolean);
-
-function commandItem(item: CalendarItem) {
-  return {
-    id: item.id,
-    kind: item.kind,
-    title: item.title,
-    startsAt: item.startsAt,
-    endsAt: item.endsAt,
-    durationMin: item.durationMin,
-    durationMax: item.durationMax,
-    deadline: item.deadline,
-    windowStart: item.windowStart,
-    windowEnd: item.windowEnd,
-    energyType: item.energyType,
-    priority: item.priority,
-    splittable: item.splittable,
-    flexibility: item.flexibility,
-    constraints: item.constraints,
-    description: item.description,
-    room: item.room,
-    subjectId: item.subjectId,
-    assignmentId: item.assignmentId,
-    homeworkCaptureId: item.homeworkCaptureId,
-    taskContext: item.taskContext,
-    computerRequired: item.computerRequired,
-    status: item.status,
-  };
-}
 
 export default function Home() {
   const supabase = useMemo(() => createClient(), []);
@@ -308,9 +224,6 @@ export default function Home() {
   const [learningSignals, setLearningSignals] = useState<LearningSignal[]>([]);
   const [explorations, setExplorations] = useState<Exploration[]>([]);
   const [blockChoices, setBlockChoices] = useState<BlockChoice[]>([]);
-  const [homeworkCaptures, setHomeworkCaptures] = useState<HomeworkCapture[]>(
-    [],
-  );
   const [schoolDaySettings, setSchoolDaySettings] = useState<SchoolDaySettings>(
     DEFAULT_SCHOOL_DAY_SETTINGS,
   );
@@ -322,6 +235,27 @@ export default function Home() {
     Boolean(user && GATE_EMAILS.includes((user.email ?? "").toLowerCase()));
   const [isOnline, setIsOnline] = useState(true);
   const [hydrated, setHydrated] = useState(false);
+  /**
+   * Whether we know what this account holds — either because its snapshot has
+   * arrived, or because there is no account to ask. Local state hydrates from
+   * IndexedDB long before auth resolves, so without this a returning student on
+   * a new device looks exactly like a brand-new one and gets the setup wizard.
+   */
+  const [cloudSnapshotLoaded, setCloudSnapshotLoaded] = useState(false);
+  // A session with no account has nothing to wait for, so the gate opens as
+  // soon as local state is in memory. Derived rather than stored so there is no
+  // effect to keep in step with it.
+  const cloudLoaded = cloudSnapshotLoaded || (hydrated && !user);
+  const [cloudOnboardingState, setCloudOnboardingState] =
+    useState<unknown>(null);
+  const [cloudLastSeenAt, setCloudLastSeenAt] = useState<string | null>(null);
+  const [accountPreferences, setAccountPreferences] = useState<AccountPreferences>(
+    DEFAULT_ACCOUNT_PREFERENCES,
+  );
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [welcomeBackDismissed, setWelcomeBackDismissed] = useState(false);
+  const [deadLettered, setDeadLettered] = useState<DeadLetterMutation[]>([]);
+  const [pendingCount, setPendingCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [syncTick, setSyncTick] = useState(0);
   const [zoom, setZoom] = useState<Zoom>("upcoming");
@@ -331,6 +265,8 @@ export default function Home() {
   const [paletteMode, setPaletteMode] = useState<PaletteMode>("command");
   const [commandText, setCommandText] = useState("");
   const [commandBusy, setCommandBusy] = useState(false);
+  const [commandError, setCommandError] = useState("");
+  const [commandTargetId, setCommandTargetId] = useState<string | null>(null);
   const [commandConversation, setCommandConversation] = useState<CommandTurn[]>(
     [],
   );
@@ -352,12 +288,31 @@ export default function Home() {
   const [selectedItem, setSelectedItem] = useState<CalendarItem | null>(null);
   const [draftItem, setDraftItem] = useState<CalendarItem | null>(null);
   const [isCreatingItem, setIsCreatingItem] = useState(false);
+  const [eventAnchor, setEventAnchor] = useState<DOMRect | null>(null);
+  const [eventSelection, setEventSelection] = useState<string[]>([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [classesOnly, setClassesOnly] = useState(false);
+  const closeCompactEditor = useCallback(() => {
+    setSelectedItem(null);
+    setDraftItem(null);
+    setIsCreatingItem(false);
+  }, []);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
-  const [homeworkOpen, setHomeworkOpen] = useState(false);
+  const [inboxDockPosition, setInboxDockPosition] = useState({
+    x: 70,
+    y: 74,
+  });
+  const [isDockRepositioning, setIsDockRepositioning] = useState(false);
+  const [isCalendarItemRepositioning, setIsCalendarItemRepositioning] =
+    useState(false);
   const [weeklyReviewOpen, setWeeklyReviewOpen] = useState(false);
-  const [completedReviewWeeks, setCompletedReviewWeeks] = useState<string[]>([]);
-  const [weeklyReviewPromptWeek, setWeeklyReviewPromptWeek] = useState<string | null>(null);
+  const [completedReviewWeeks, setCompletedReviewWeeks] = useState<string[]>(
+    [],
+  );
+  const [weeklyReviewPromptWeek, setWeeklyReviewPromptWeek] = useState<
+    string | null
+  >(null);
   const [intentionsOpen, setIntentionsOpen] = useState(false);
   const [intentionSeed, setIntentionSeed] = useState<Partial<Intention> | null>(
     null,
@@ -447,7 +402,7 @@ export default function Home() {
       selectedDay,
       nowOpen,
       inboxOpen,
-      homeworkOpen,
+      inboxDockPosition,
       intentionsOpen,
       hudOpen,
       historyOpen,
@@ -458,17 +413,16 @@ export default function Home() {
       viewportHeight,
       visibleDay: zoom === "day" || zoom === "week" ? selectedDay : anchorDate,
       visibleHour: Math.min(23, Math.floor(visiblePosition)),
-      visibleMinute:
-        Math.min(45, Math.round((visiblePosition % 1) * 4) * 15),
+      visibleMinute: Math.min(45, Math.round((visiblePosition % 1) * 4) * 15),
     };
   }, [
     anchorDate,
     historyOpen,
-    homeworkOpen,
     weeklyReviewOpen,
     weeklyReviewPromptWeek,
     hudOpen,
     inboxOpen,
+    inboxDockPosition,
     intentionsOpen,
     nowOpen,
     selectedDay,
@@ -478,18 +432,52 @@ export default function Home() {
 
   const applyViewState = useCallback((state: LastViewState | null) => {
     const next = state ?? defaultViewState();
-    if (isRestorableZoom(next.zoom)) setZoom(next.zoom);
-    setAnchorDate(next.anchorDate);
-    setSelectedDay(next.selectedDay);
+    const { view: urlView, date: urlDate } = calendarViewFromSearch(
+      window.location.search,
+    );
+    if (urlView && isRestorableZoom(urlView)) setZoom(urlView);
+    else if (isRestorableZoom(next.zoom)) setZoom(next.zoom);
+    setAnchorDate(urlDate ?? next.anchorDate);
+    setSelectedDay(urlDate ?? next.selectedDay);
     setNowOpen(next.nowOpen);
     setInboxOpen(next.inboxOpen);
-    setHomeworkOpen(next.homeworkOpen);
+    setInboxDockPosition(
+      typeof next.inboxDockPosition?.x === "number" &&
+        typeof next.inboxDockPosition?.y === "number"
+        ? next.inboxDockPosition
+        : { x: 70, y: 74 },
+    );
     setIntentionsOpen(next.intentionsOpen);
     setHudOpen(next.hudOpen);
     setHistoryOpen(next.historyOpen);
     setWeeklyReviewOpen(Boolean(next.weeklyReviewOpen));
     setWeeklyReviewPromptWeek(next.weeklyReviewPromptWeek ?? null);
   }, []);
+
+  const urlReady = useRef(false);
+  const urlRestoring = useRef(false);
+  useEffect(() => {
+    if (!viewRestored) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", zoom === "upcoming" ? "home" : zoom);
+    url.searchParams.set("date", zoom === "day" ? selectedDay : anchorDate);
+    if (url.toString() !== window.location.href) {
+      if (!urlReady.current || urlRestoring.current)
+        window.history.replaceState(null, "", url);
+      else window.history.pushState(null, "", url);
+    }
+    urlReady.current = true;
+    urlRestoring.current = false;
+  }, [viewRestored, zoom, anchorDate, selectedDay]);
+
+  useEffect(() => {
+    const restore = () => {
+      urlRestoring.current = true;
+      applyViewState(defaultViewState());
+    };
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
+  }, [applyViewState]);
 
   const applyRestoredScroll = useCallback((state: LastViewState | null) => {
     if (!state) return;
@@ -500,7 +488,9 @@ export default function Home() {
     const exactTop = state.scrollTop ?? anchorTop;
     const preferAnchor =
       !state.viewportHeight ||
-      Math.abs((calendarStageRef.current?.clientHeight ?? 0) - state.viewportHeight) > 160;
+      Math.abs(
+        (calendarStageRef.current?.clientHeight ?? 0) - state.viewportHeight,
+      ) > 160;
     const targetTop = preferAnchor ? anchorTop : exactTop;
     let attempts = 0;
     const attempt = () => {
@@ -530,7 +520,13 @@ export default function Home() {
         compactPendingMutations(queued);
       await Promise.all(supersededIds.map(removePendingMutation));
       const failures: string[] = [];
-      for (const mutation of pending) {
+      const failedDependencies = new Set<string>();
+      for (const mutation of [
+        ...pending.filter((entry) => !entry.dependsOn),
+        ...pending.filter((entry) => entry.dependsOn),
+      ]) {
+        if (mutation.dependsOn && failedDependencies.has(mutation.dependsOn))
+          continue;
         try {
           let query;
           const prepared = prepareMutation(mutation, ownerKey);
@@ -556,14 +552,24 @@ export default function Home() {
           if (mutation.id !== undefined)
             await removePendingMutation(mutation.id);
         } catch (error) {
+          failedDependencies.add(mutationIdentity(mutation));
           const message = syncErrorMessage(error);
           failures.push(message);
-          await updatePendingMutation({
+          const attempted = {
             ...mutation,
             ownerKey,
             failureCount: (mutation.failureCount ?? 0) + 1,
             lastError: message,
-          });
+          };
+          // A change that has failed this many times will not start working
+          // because it was retried every fifteen seconds for another week.
+          // Park it so the rest of the queue can drain, rather than leaving a
+          // permanent "changes are waiting to sync" notice with no way out.
+          if (shouldDeadLetter(attempted)) {
+            await moveToDeadLetter(attempted, message);
+          } else {
+            await updatePendingMutation(attempted);
+          }
         }
       }
       return failures;
@@ -585,206 +591,44 @@ export default function Home() {
     async (activeUser: User) => {
       const writeRevisionAtStart = writeRevisionRef.current;
       setSyncing(true);
-      const [
-        itemResult,
-        historyResult,
-        subjectResult,
-        classResult,
-        exceptionResult,
-        assignmentResult,
-        assessmentResult,
-        homeworkResult,
-        intentionResult,
-        signalResult,
-        explorationResult,
-        blockChoiceResult,
-        profileResult,
-      ] = await Promise.all([
-        supabase
-          .from("calendar_items")
-          .select("*")
-          .eq("user_id", activeUser.id)
-          .neq("status", "archived")
-          .order("created_at"),
-        supabase
-          .from("calendar_history")
-          .select("id,label,snapshot,created_at")
-          .eq("user_id", activeUser.id)
-          .order("created_at", { ascending: false })
-          .limit(50),
-        supabase
-          .from("subjects")
-          .select("*")
-          .eq("user_id", activeUser.id)
-          .order("name"),
-        supabase
-          .from("classes")
-          .select("*")
-          .eq("user_id", activeUser.id)
-          .order("weekday")
-          .order("start_time"),
-        supabase
-          .from("class_exceptions")
-          .select("*")
-          .eq("user_id", activeUser.id)
-          .order("occurrence_date"),
-        supabase
-          .from("assignments")
-          .select("*")
-          .eq("user_id", activeUser.id)
-          .neq("status", "archived")
-          .order("due_at"),
-        supabase
-          .from("assessments")
-          .select("*")
-          .eq("user_id", activeUser.id)
-          .order("scheduled_at"),
-        supabase
-          .from("homework_captures")
-          .select("*")
-          .eq("user_id", activeUser.id)
-          .neq("status", "archived")
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("intentions")
-          .select("*")
-          .eq("user_id", activeUser.id)
-          .neq("status", "archived")
-          .order("created_at"),
-        supabase
-          .from("learning_signals")
-          .select("*")
-          .eq("user_id", activeUser.id)
-          .order("created_at", { ascending: false })
-          .limit(500),
-        supabase
-          .from("explorations")
-          .select("*")
-          .eq("user_id", activeUser.id)
-          .neq("status", "dismissed")
-          .order("created_at", { ascending: false })
-          .limit(100),
-        supabase
-          .from("time_block_choices")
-          .select("*")
-          .eq("user_id", activeUser.id)
-          .gte(
-            "starts_at",
-            new Date(Date.now() - 30 * 86_400_000).toISOString(),
-          )
-          .order("starts_at", { ascending: false })
-          .limit(150),
-        supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", activeUser.id)
-          .maybeSingle(),
-      ]);
-      const error =
-        itemResult.error ??
-        historyResult.error ??
-        subjectResult.error ??
-        classResult.error ??
-        exceptionResult.error ??
-        assignmentResult.error ??
-        assessmentResult.error ??
-        homeworkResult.error ??
-        intentionResult.error ??
-        signalResult.error ??
-        explorationResult.error ??
-        blockChoiceResult.error ??
-        profileResult.error;
-      if (error) {
+      let snapshot;
+      try {
+        snapshot = await fetchCloudSnapshot(supabase, activeUser.id);
+      } finally {
         setSyncing(false);
-        throw error;
       }
       // A local edit made while this snapshot was loading is newer than the
       // snapshot. Realtime (or the focus retry) will request a fresh one.
-      if (writeRevisionAtStart !== writeRevisionRef.current) {
-        setSyncing(false);
-        return;
-      }
-      setItems(
-        (itemResult.data ?? []).map((row) =>
-          rowToItem(row as Record<string, unknown>),
-        ),
-      );
-      setHistory(
-        (historyResult.data ?? []).map((entry) => ({
-          id: String(entry.id),
-          label: entry.label,
-          items: Array.isArray(entry.snapshot)
-            ? (entry.snapshot as CalendarItem[])
-            : [],
-          createdAt: entry.created_at,
-        })),
-      );
-      setSubjects(
-        (subjectResult.data ?? []).map((row) =>
-          rowToSubject(row as Record<string, unknown>),
-        ),
-      );
-      setClasses(
-        (classResult.data ?? []).map((row) =>
-          rowToClass(row as Record<string, unknown>),
-        ),
-      );
-      setClassExceptions(
-        (exceptionResult.data ?? []).map((row) =>
-          rowToClassException(row as Record<string, unknown>),
-        ),
-      );
-      setAssignments(
-        (assignmentResult.data ?? []).map((row) =>
-          rowToAssignment(row as Record<string, unknown>),
-        ),
-      );
-      setAssessments(
-        (assessmentResult.data ?? []).map((row) =>
-          rowToAssessment(row as Record<string, unknown>),
-        ),
-      );
-      setHomeworkCaptures(
-        (homeworkResult.data ?? []).map((row) =>
-          rowToHomeworkCapture(row as Record<string, unknown>),
-        ),
-      );
-      setIntentions(
-        (intentionResult.data ?? []).map((row) =>
-          rowToIntention(row as Record<string, unknown>),
-        ),
-      );
-      setLearningSignals(
-        (signalResult.data ?? []).map((row) =>
-          rowToLearningSignal(row as Record<string, unknown>),
-        ),
-      );
-      setExplorations(
-        (explorationResult.data ?? []).map((row) =>
-          rowToExploration(row as Record<string, unknown>),
-        ),
-      );
-      setBlockChoices(
-        (blockChoiceResult.data ?? []).map((row) =>
-          rowToBlockChoice(row as Record<string, unknown>),
-        ),
-      );
-      setSchoolDaySettings(
-        rowToSchoolDaySettings(
-          profileResult.data as Record<string, unknown> | null,
-        ),
-      );
-      setSyncing(false);
+      if (writeRevisionAtStart !== writeRevisionRef.current) return;
+      setItems(snapshot.items);
+      setHistory(snapshot.history);
+      setSubjects(snapshot.subjects);
+      setClasses(snapshot.classes);
+      setClassExceptions(snapshot.classExceptions);
+      setAssignments(snapshot.assignments);
+      setAssessments(snapshot.assessments);
+      setIntentions(snapshot.intentions);
+      setLearningSignals(snapshot.learningSignals);
+      setExplorations(snapshot.explorations);
+      setBlockChoices(snapshot.blockChoices);
+      setSchoolDaySettings(snapshot.schoolDaySettings);
+      setAccountPreferences(snapshot.accountPreferences);
+      setCloudOnboardingState(snapshot.onboardingState);
+      setCloudLastSeenAt(snapshot.lastSeenAt);
+      setCloudSnapshotLoaded(true);
     },
     [supabase],
   );
 
   useEffect(() => {
     const updateClock = () => setClockNow(new Date());
-    const today = dateKey(new Date());
+    const initialView = calendarViewFromSearch(window.location.search);
+    const today = initialView.date ?? dateKey(new Date());
     // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration-safe: server and client must agree on the initial date
     setAnchorDate(today);
     setSelectedDay(today);
+    if (initialView.view && isRestorableZoom(initialView.view))
+      setZoom(initialView.view);
     updateClock();
     const timer = window.setInterval(updateClock, 60_000);
     return () => window.clearInterval(timer);
@@ -814,8 +658,35 @@ export default function Home() {
     getOfflineState()
       .then(async (stored) => {
         if (!alive || !stored) return;
-        setItems(
-          stored.items.map((item) => normalizeItemTiming(makeItem(item))),
+        const legacyState = stored as typeof stored & LegacyOfflineState;
+        const promoted = promoteLegacyOfflineHomework(stored.items, legacyState);
+        setItems(promoted.items);
+        if (promoted.changed.length > 0) {
+          await Promise.all(
+            promoted.changed.map((item) =>
+              queueMutation({
+                table: "calendar_items",
+                action: "upsert",
+                recordId: item.id,
+                payload: itemToRow(item),
+                ownerKey: legacyState.ownerKey ?? "local",
+              }),
+            ),
+          );
+        }
+        const legacyMutations = await getPendingMutations(
+          legacyState.ownerKey ?? "local",
+        );
+        await Promise.all(
+          legacyMutations
+            .filter(
+              (mutation) =>
+                (mutation as { table?: unknown }).table ===
+                "homework_captures",
+            )
+            .flatMap((mutation) =>
+              mutation.id === undefined ? [] : [removePendingMutation(mutation.id)],
+            ),
         );
         setHistory(stored.history);
         setSubjects(stored.subjects ?? []);
@@ -828,7 +699,6 @@ export default function Home() {
         setExplorations(stored.explorations ?? []);
         setBlockChoices(stored.blockChoices ?? []);
         setCompletedReviewWeeks(stored.completedReviewWeeks ?? []);
-        setHomeworkCaptures(stored.homeworkCaptures ?? []);
         setSchoolDaySettings(
           normalizeSchoolDaySettings(
             stored.schoolDaySettings ?? DEFAULT_SCHOOL_DAY_SETTINGS,
@@ -930,13 +800,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [
-    applyRestoredScroll,
-    applyViewState,
-    hydrated,
-    user,
-    viewRestored,
-  ]);
+  }, [applyRestoredScroll, applyViewState, hydrated, user, viewRestored]);
 
   const scheduleViewSave = useCallback(() => {
     if (!viewRestored) return;
@@ -951,21 +815,14 @@ export default function Home() {
         void saveLastViewState(`owner:${user.id}:last-view`, state);
       }
     }, 400);
-  }, [
-    currentViewState,
-    user,
-    viewRestored,
-  ]);
+  }, [currentViewState, user, viewRestored]);
 
   useEffect(() => {
     scheduleViewSave();
   }, [scheduleViewSave]);
 
   useEffect(() => {
-    if (
-      !weeklyReviewAvailable ||
-      weeklyReviewPromptWeek === currentWeekKey
-    ) {
+    if (!weeklyReviewAvailable || weeklyReviewPromptWeek === currentWeekKey) {
       return;
     }
     const timer = window.setTimeout(() => {
@@ -1006,7 +863,6 @@ export default function Home() {
       explorations,
       blockChoices,
       completedReviewWeeks,
-      homeworkCaptures,
       schoolDaySettings,
       ownerKey: user?.id ?? "local",
     }).catch(() => undefined);
@@ -1018,7 +874,6 @@ export default function Home() {
     classes,
     completedReviewWeeks,
     history,
-    homeworkCaptures,
     hydrated,
     intentions,
     learningSignals,
@@ -1032,6 +887,12 @@ export default function Home() {
   useEffect(() => {
     if (!hydrated || !isOnline || !user) return;
     let cancelled = false;
+    // The outbox flush and the cloud reload are independent. A failed
+    // flush (e.g. a block-choice row rejected by a DB constraint) must
+    // not block the rest of the calendar from loading, otherwise the user
+    // sees an empty agenda whenever a single mutation fails. We run them
+    // sequentially, but a non-empty failures list does not short-circuit
+    // loadCloud.
     flushPending(user.id)
       .then((failures) => {
         if (cancelled) return;
@@ -1039,18 +900,17 @@ export default function Home() {
           setNotice(
             `${failures.length} change${failures.length === 1 ? " is" : "s are"} waiting to sync. Retrying automatically.`,
           );
-          setSyncing(false);
-          return;
         }
         return loadCloud(user);
       })
       .catch((error) => {
-        if (!cancelled) {
-          setNotice(
-            `Cloud sync will retry automatically: ${syncErrorMessage(error)}`,
-          );
-          setSyncing(false);
-        }
+        if (cancelled) return;
+        setNotice(
+          `Cloud sync will retry automatically: ${syncErrorMessage(error)}`,
+        );
+        // Still try to load the calendar so the user is not stuck on an
+        // empty agenda when the outbox itself throws.
+        return loadCloud(user);
       });
     return () => {
       cancelled = true;
@@ -1109,18 +969,10 @@ export default function Home() {
         event.preventDefault();
         setPaletteOpen(true);
         setPaletteMode("command");
-        setHomeworkOpen(false);
         setIntentionsOpen(false);
         setIntentionSeed(null);
         setDeeperSource(null);
         setDeeperExploration(null);
-      }
-      if (modifier && event.shiftKey && event.key.toLowerCase() === "h") {
-        event.preventDefault();
-        setPaletteOpen(false);
-        setHomeworkOpen(true);
-        setInboxOpen(false);
-        setHudOpen(false);
       }
       if (
         modifier &&
@@ -1132,6 +984,10 @@ export default function Home() {
         undoLast();
       }
       if (event.key === "Escape") {
+        // A guided-tour step or the settings panel takes Escape for itself.
+        // Without this, one stray keypress closes the very surface a coachmark
+        // is pointing at.
+        if (hasBlockingOverlay()) return;
         setNowOpen(false);
         setPaletteOpen(false);
         setProposal(null);
@@ -1140,7 +996,6 @@ export default function Home() {
         setSelectedItem(null);
         setDraftItem(null);
         setIsCreatingItem(false);
-        setHomeworkOpen(false);
         setIntentionsOpen(false);
         setIntentionSeed(null);
         setMobileMenuOpen(false);
@@ -1205,6 +1060,103 @@ export default function Home() {
     }).catch(() => undefined);
   }
 
+  useEffect(() => {
+    if (!settingsOpen) return;
+    getDeadLetterMutations()
+      .then(setDeadLettered)
+      .catch(() => undefined);
+  }, [settingsOpen, syncTick]);
+
+  // Counted rather than assumed: the welcome-back surface tells a returning
+  // student how much never reached their account, and an invented zero there
+  // would be worse than saying nothing.
+  useEffect(() => {
+    if (!hydrated) return;
+    let alive = true;
+    getPendingMutations(user?.id ?? "local")
+      .then((queued) => {
+        if (alive) setPendingCount(queued.length);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [hydrated, syncTick, user]);
+
+  const onboarding = useOnboarding({
+    user,
+    isOnline,
+    cloudLoaded,
+    cloudOnboardingState,
+    cloudLastSeenAt,
+    subjectCount: subjects.length,
+    lessonCount: classes.length,
+    hasSchoolDaySettings: Boolean(schoolDaySettings.schoolLocation),
+    persistMutation,
+  });
+
+  // A coachmark cannot point at an element that is not rendered. Moving the app
+  // to the step's own view is the step's job, not the student's.
+  const onboardingStep = onboarding.step;
+  useEffect(() => {
+    if (!onboardingStep) return;
+    if (onboardingStep.requiresView) {
+      const target = onboardingStep.requiresView;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setZoom((current) => (current === target ? current : target));
+    }
+    if (onboardingStep.requiresDock) setInboxOpen(true);
+  }, [onboardingStep]);
+
+  const stalenessReport = useMemo(
+    () =>
+      buildStalenessReport({
+        items,
+        now: clockNow,
+        currentWeekStart: startOfWeek(clockNow),
+        pendingMutationCount: pendingCount,
+        awayDays: onboarding.awayDays,
+      }),
+    [clockNow, items, onboarding.awayDays, pendingCount],
+  );
+
+  function saveAccountPreferences(preferences: AccountPreferences) {
+    setAccountPreferences(preferences);
+    if (!user) return;
+    persistMutation({
+      table: "profiles",
+      action: "upsert",
+      recordId: user.id,
+      payload: { id: user.id, ...accountPreferencesToRow(preferences) },
+    }).catch(() => undefined);
+  }
+
+  /**
+   * Return stranded work to the list so it can be planned again.
+   *
+   * Recorded as a single history entry rather than one per item: undo history
+   * is capped at fifty, and a bulk release of more than that would evict
+   * everything else the student might want to undo — including this.
+   */
+  function releaseStrandedWork(stale: CalendarItem[]) {
+    if (!stale.length) return;
+    const before = items;
+    const released = new Map(
+      releaseStaleItems(stale, clockNow).map((item) => [item.id, item]),
+    );
+    const after = items.map((item) => released.get(item.id) ?? item);
+    recordHistory(
+      `Put ${stale.length} item${stale.length === 1 ? "" : "s"} back on the list`,
+      before,
+    );
+    transitionState(() => setItems(after));
+    syncSnapshotDiff(before, after);
+    setWelcomeBackDismissed(true);
+    setNotice(
+      `${stale.length} item${stale.length === 1 ? " is" : "s are"} back on your list.`,
+    );
+  }
+
   function undoLast() {
     const latest = undoStack[0];
     if (!latest) {
@@ -1222,7 +1174,11 @@ export default function Home() {
     setNotice(`Undid: ${latest.label}`);
   }
 
-  function syncSnapshotDiff(before: CalendarItem[], after: CalendarItem[]) {
+  function syncSnapshotDiff(
+    before: CalendarItem[],
+    after: CalendarItem[],
+    dependencyForItem?: (item: CalendarItem) => string | undefined,
+  ) {
     const beforeMap = new Map(before.map((item) => [item.id, item]));
     const afterMap = new Map(after.map((item) => [item.id, item]));
     beforeMap.forEach((_item, id) => {
@@ -1240,6 +1196,7 @@ export default function Home() {
         action: "upsert",
         recordId: item.id,
         payload: itemToRow(item),
+        dependsOn: dependencyForItem?.(item),
       }).catch(() => undefined);
     });
   }
@@ -1295,6 +1252,14 @@ export default function Home() {
   }
 
   function deleteItem(item: CalendarItem) {
+    if (item.classId) {
+      void persistClassOccurrence(item, true).catch(() =>
+        setNotice("Could not delete the class. Try again."),
+      );
+      closeCompactEditor();
+      setEventSelection([]);
+      return;
+    }
     recordHistory(`Delete “${item.title}”`);
     setItems((current) =>
       current.filter((candidate) => candidate.id !== item.id),
@@ -1306,12 +1271,14 @@ export default function Home() {
       action: "delete",
       recordId: item.id,
     }).catch(() => undefined);
-    setNotice(`Deleted “${item.title}”. Cmd+Z to undo.`);
+    setEventSelection([]);
   }
 
   function scheduleAt(itemId: string, day: string, hour: number, minute = 0) {
-    const item = items.find((candidate) => candidate.id === itemId);
-    if (!item || item.flexibility === "fixed") return;
+    const item = calendarDisplayItems.find(
+      (candidate) => candidate.id === itemId,
+    );
+    if (!item) return;
     const start = dateFromKey(day);
     start.setHours(hour, minute, 0, 0);
     const minutes = Math.max(item.durationMin, durationMinutes(item));
@@ -1320,10 +1287,19 @@ export default function Home() {
       item,
       start.toISOString(),
       end.toISOString(),
-      items,
+      [],
+      { allowFixedChange: true },
     );
     if (!validation.valid) {
       setNotice(validation.errors[0]);
+      return;
+    }
+    if (item.classId) {
+      void persistClassOccurrence({
+        ...item,
+        startsAt: start.toISOString(),
+        endsAt: end.toISOString(),
+      });
       return;
     }
     transitionState(() =>
@@ -1338,7 +1314,6 @@ export default function Home() {
       ),
     );
     setSelectedDay(day);
-    if (validation.warnings.length) setNotice(validation.warnings[0]);
   }
 
   function unscheduleItem(itemId: string) {
@@ -1352,1605 +1327,173 @@ export default function Home() {
     );
   }
 
-  function onDragStart(event: DragEvent, item: CalendarItem) {
-    if (resizeGestureActive.current || item.flexibility === "fixed") {
-      event.preventDefault();
-      return;
-    }
-
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/calendar-item", item.id);
-    event.dataTransfer.setData("text/plain", item.id);
-    const transparentDragImage = document.createElement("span");
-    transparentDragImage.style.cssText =
-      "position:fixed;top:-10px;left:-10px;width:1px;height:1px;opacity:0;pointer-events:none";
-    document.body.appendChild(transparentDragImage);
-    event.dataTransfer.setDragImage(transparentDragImage, 0, 0);
-    window.setTimeout(() => transparentDragImage.remove(), 0);
-    setDraggingItemId(item.id);
-    if (item.startsAt) {
-      const start = new Date(item.startsAt);
-      setDragSnap({
-        day: dateKey(start),
-        hour: start.getHours(),
-        minute: start.getMinutes(),
-      });
-    }
-  }
-
-  function onCalendarDragOver(
-    event: DragEvent,
-    day: string,
-    hour: number,
-    minute: number,
-  ) {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-    setDragSnap({ day, hour, minute });
-  }
-
-  function onCalendarDrop(
-    event: DragEvent,
-    day: string,
-    hour: number,
-    minute: number,
-  ) {
-    event.preventDefault();
-    const homeworkId = event.dataTransfer.getData("text/homework-capture");
-    if (homeworkId) {
-      scheduleHomework(homeworkId, day, hour, minute);
-      setDraggingItemId(null);
-      setDragSnap(null);
-      return;
-    }
-    const itemId =
-      event.dataTransfer.getData("text/calendar-item") ||
-      event.dataTransfer.getData("text/plain");
-    if (itemId) scheduleAt(itemId, day, hour, minute);
-    setDraggingItemId(null);
-    setDragSnap(null);
-  }
-
-  function onInboxDrop(event: DragEvent) {
-    event.preventDefault();
-    const itemId =
-      event.dataTransfer.getData("text/calendar-item") ||
-      event.dataTransfer.getData("text/plain");
-    if (itemId) unscheduleItem(itemId);
-    setDraggingItemId(null);
-    setDragSnap(null);
-  }
-
-  function endDrag() {
-    setDraggingItemId(null);
-    setDragSnap(null);
-  }
-
-  function beginResize(
-    event: ReactPointerEvent,
-    item: CalendarItem,
-    rowHeight: number,
-    edge: "start" | "end",
-  ) {
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (!item.startsAt || !item.endsAt) return;
-
-    const calendarBlock =
-      event.currentTarget.closest<HTMLElement>(".calendar-block");
-
-    const wasDraggable = calendarBlock?.draggable ?? false;
-
-    if (calendarBlock) {
-      calendarBlock.draggable = false;
-    }
-
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-
-    const startY = event.clientY;
-    const originalStart = new Date(item.startsAt);
-    const originalEnd = new Date(item.endsAt);
-    const original = durationMinutes(item);
-
-    let nextMinutes = original;
-    let nextStart = originalStart;
-    let nextEnd = originalEnd;
-
-    // Manual resizing shouldn't be restricted by the
-    // scheduler's preferred duration range.
-    const minimum = 15;
-    const maximum = 525_600;
-
-    const onMove = (moveEvent: PointerEvent) => {
-      moveEvent.preventDefault();
-
-      const deltaMinutes = ((moveEvent.clientY - startY) / rowHeight) * 60;
-
-      nextMinutes =
-        edge === "end"
-          ? Math.round((original + deltaMinutes) / 15) * 15
-          : Math.round((original - deltaMinutes) / 15) * 15;
-
-      nextMinutes = Math.max(minimum, Math.min(maximum, nextMinutes));
-
-      nextStart =
-        edge === "start"
-          ? new Date(originalEnd.getTime() - nextMinutes * 60_000)
-          : originalStart;
-
-      nextEnd =
-        edge === "end"
-          ? new Date(originalStart.getTime() + nextMinutes * 60_000)
-          : originalEnd;
-
-      setResizing({
-        id: item.id,
-        minutes: nextMinutes,
-        startsAt: nextStart.toISOString(),
-        endsAt: nextEnd.toISOString(),
-      });
-    };
-
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
-
-      if (calendarBlock) {
-        calendarBlock.draggable = wasDraggable;
-      }
-
-      setResizing(null);
-
-      if (nextMinutes === original) return;
-
-      const resizedItem = withResizedDuration(item, nextMinutes);
-      const validation = validatePlacement(
-        resizedItem,
-        nextStart.toISOString(),
-        nextEnd.toISOString(),
-        items,
-        { allowFixedChange: true },
-      );
-
-      if (!validation.valid) {
-        setNotice(validation.errors[0]);
-        return;
-      }
-
-      updateItem(
-        {
-          ...resizedItem,
-          startsAt: nextStart.toISOString(),
-          endsAt: nextEnd.toISOString(),
-        },
-        `Resize “${item.title}”`,
-      );
-    };
-
-    window.addEventListener("pointermove", onMove, { passive: false });
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
-  }
-
-  async function submitCommand(
-    event: FormEvent,
-    mode: PaletteMode = paletteMode,
-  ) {
-    event.preventDefault();
-    const clean = commandText.trim();
-    if (!clean) return;
-    if (mode === "filter") {
-      setFilterText(clean);
-      setPaletteOpen(false);
-      return;
-    }
-    const continuingConversation = commandConversation.length > 0;
-    const homework = parseHomework(clean, subjects, new Date());
-    if (!continuingConversation && looksLikeHomeworkCommand(clean, homework)) {
-      captureHomework(clean);
-      setPaletteOpen(false);
-      setCommandText("");
-      return;
-    }
-    if (!continuingConversation && isAttentionQuestion(clean)) {
-      setZoom("upcoming");
-      setPaletteOpen(false);
-      setCommandText("");
-      setNotice(
-        "Your attention home has been refreshed for the time and energy you have now.",
-      );
-      return;
-    }
-    const intentionDraft = continuingConversation
-      ? null
-      : intentionFromCommand(clean);
-    if (intentionDraft) {
-      setIntentionSeed(intentionDraft);
-      setIntentionsOpen(true);
-      setPaletteOpen(false);
-      setCommandText("");
-      return;
-    }
-    setCommandBusy(true);
-    let keepConversationOpen = false;
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), 7_500);
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData.session?.access_token) {
-        throw new Error("Sign in to use AI commands");
-      }
-      const response = await fetch("/api/command", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${sessionData.session.access_token}`,
-        },
-        signal: controller.signal,
-        body: JSON.stringify({
-          command: clean,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          items: relevantCommandItems(
-            [...commandConversation.map((turn) => turn.text), clean].join(" "),
-            items,
-          ).map(commandItem),
-          subjects: subjects.map((subject) => ({
-            id: subject.id,
-            name: subject.name,
-            shortName: subject.shortName,
-            teacher: subject.teacher,
-            room: subject.room,
-          })),
-          classes: classes.map((lesson) => ({
-            subjectId: lesson.subjectId,
-            weekday: lesson.weekday,
-            startTime: lesson.startTime,
-            endTime: lesson.endTime,
-            teacher: lesson.teacher,
-            room: lesson.room,
-          })),
-          conversation: commandConversation,
-        }),
-      });
-      if (!response.ok) throw new Error("AI command unavailable");
-      const raw: unknown = await response.json();
-      if (isClarificationResponse(raw)) {
-        keepConversationOpen = true;
-        setCommandConversation(
-          (current) =>
-            [
-              ...current,
-              { role: "user", text: clean },
-              { role: "assistant", text: raw.message },
-            ].slice(-8) as CommandTurn[],
-        );
-        setCommandQuestions(raw.questions);
-        setCommandText("");
-        setPaletteMode("command");
-        setPaletteOpen(true);
-        return;
-      }
-      if (!isCommandResponse(raw)) {
-        throw new Error("AI returned an invalid calendar proposal");
-      }
-      setProposal(proposalFromCommandResponse(raw, items));
-      setCommandConversation([]);
-      setCommandQuestions([]);
-    } catch {
-      if (
-        /^(?:add|create|schedule|new)\b/i.test(clean) &&
-        !/(?:move|delete|remove|cancel)\b/i.test(clean)
-      ) {
-        setProposal(simpleFallbackProposal(clean));
-      } else {
-        setNotice(
-          user
-            ? "I couldn't interpret that safely. Try a more specific command."
-            : "Sign in to use AI schedule changes. Local captures and intentions still work.",
-        );
-      }
-    } finally {
-      window.clearTimeout(timeoutId);
-      setCommandBusy(false);
-      if (!keepConversationOpen) {
-        setPaletteOpen(false);
-        setCommandText("");
-      }
-    }
-  }
-
-  async function onDocumentSelected(
-    file: File | null,
-    options: {
-      mode?: "calendar_document" | "school_timetable";
-      weekStart?: string;
-    } = {},
-  ) {
-    if (!file) return;
-    const timetableMode = options.mode === "school_timetable";
-    const mediaType = documentMediaType(file);
-    if (timetableMode && !mediaType.startsWith("image/")) {
-      setNotice("Choose an image screenshot for the weekly timetable import.");
-      return;
-    }
-    if (file.size > 5_000_000) {
-      setNotice("Choose a document smaller than 5 MB.");
-      return;
-    }
-    if (timetableMode) setTimetableImportBusy(true);
-    else setCommandBusy(true);
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData.session?.access_token)
-        throw new Error("Sign in to use document extraction");
-      const data = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = String(reader.result);
-          resolve(
-            result.startsWith("data:;base64,")
-              ? result.replace("data:;base64,", `data:${mediaType};base64,`)
-              : result,
-          );
-        };
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(file);
-      });
-      const response = await fetch("/api/extract", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${sessionData.session.access_token}`,
-        },
-        body: JSON.stringify({
-          filename: file.name,
-          mediaType,
-          data,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          mode: options.mode ?? "calendar_document",
-          weekStart: options.weekStart,
-          subjects: timetableMode
-            ? subjects.map((subject) => ({
-                name: subject.name ?? "",
-                shortName: subject.shortName ?? "",
-                teacher: subject.teacher ?? "",
-                room: subject.room ?? "",
-              }))
-            : [],
-        }),
-      });
-      const raw: unknown = await response.json().catch(() => null);
-      if (!response.ok) {
-        const message =
-          raw &&
-          typeof raw === "object" &&
-          "error" in raw &&
-          typeof raw.error === "string"
-            ? raw.error
-            : "Extraction failed";
-        throw new Error(message);
-      }
-      if (!isExtractionResponse(raw)) {
-        throw new Error("AI returned an invalid document proposal");
-      }
-      if (timetableMode && options.weekStart) {
-        const { lessons, newSubjects, rejected } = reconcileTimetableImport(
-          raw.items,
-          options.weekStart,
-          subjects,
-        );
-        if (!lessons.length) {
-          throw new Error("No exact lessons found in the selected week");
-        }
-        const previousWeek = items.filter(
-          (item) =>
-            isImportedTimetableItem(item) &&
-            isItemInWeek(item, options.weekStart!),
-        );
-        const changes: ProposalChange[] = [
-          ...previousWeek.map((item) => ({
-            id: crypto.randomUUID(),
-            type: "delete" as const,
-            itemId: item.id,
-            reason: "Replace the previous screenshot import for this week.",
-            before: item,
-            after: null,
-          })),
-          ...lessons.map(({ item, evidence }) => ({
-            id: crypto.randomUUID(),
-            type: "create" as const,
-            itemId: null,
-            reason: evidence,
-            before: null,
-            after: item,
-          })),
-        ];
-        const proposalId = crypto.randomUUID();
-        setProposal({
-          id: proposalId,
-          title: `Import ${lessons.length} timetable lesson${lessons.length === 1 ? "" : "s"}`,
-          summary: `${previousWeek.length ? `Replace ${previousWeek.length} earlier imported lesson${previousWeek.length === 1 ? "" : "s"}. ` : ""}${newSubjects.length ? `Add ${newSubjects.length} new subject${newSubjects.length === 1 ? "" : "s"}; similar labels were matched to subjects you already have. ` : ""}${rejected.length ? `Hold ${rejected.length} unclear or conflicting row${rejected.length === 1 ? "" : "s"} for review. ` : ""}This applies only to the week of ${options.weekStart}. Review everything before applying.`,
-          source: "document",
-          changes,
-        });
-        setTimetableImportIssues(
-          rejected.length ? { proposalId, issues: rejected } : null,
-        );
-        setTimetableSubjectProposal(
-          newSubjects.length
-            ? { proposalId, subjects: newSubjects, reviewed: false }
-            : null,
-        );
-        setAnchorDate(options.weekStart);
-        setSelectedDay(options.weekStart);
-        setPaletteOpen(false);
-        return;
-      }
-      const changes: ProposalChange[] = raw.items.map((candidate) => ({
-        id: crypto.randomUUID(),
-        type: "create",
-        itemId: null,
-        reason: candidate.evidence,
-        before: null,
-        after: makeItem({
-          ...candidate,
-          id: crypto.randomUUID(),
-          flexibility: flexibilityForNewItem({
-            kind: candidate.kind,
-            flexibility: candidate.flexibility,
-            constraints: candidate.constraints,
-          }),
-          source: "document",
-          syncStatus: "pending",
-        }),
-      }));
-      setProposal({
-        id: crypto.randomUUID(),
-        title: raw.title,
-        summary: raw.summary,
-        source: "document",
-        changes,
-      });
-      setTimetableSubjectProposal(null);
-      setPaletteOpen(false);
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : "";
-      setNotice(
-        timetableMode
-          ? reason ||
-              "I couldn’t find exact lessons in that screenshot. Check the selected week and try a clearer full timetable image."
-          : "I couldn’t read that file. Try a clear image, text file, or PDF.",
-      );
-    } finally {
-      if (timetableMode) setTimetableImportBusy(false);
-      else setCommandBusy(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  }
-
-  function approveProposal() {
-    if (!proposal) return;
-    if (
-      timetableSubjectProposal?.proposalId === proposal.id &&
-      !timetableSubjectProposal.reviewed
-    ) {
-      setNotice("Review the detected subjects before applying the timetable.");
-      return;
-    }
-    const validation = validateProposal(proposal, items);
-    if (!validation.valid) {
-      setNotice("This proposal failed deterministic scheduling checks.");
-      return;
-    }
-    recordHistory(proposal.title);
-    const next = applyProposal(proposal, items).map((item) => ({
-      ...item,
-      syncStatus: "pending" as const,
-    }));
-    transitionState(() => setItems(next));
-    syncSnapshotDiff(items, next);
-    const importedSubjects =
-      timetableSubjectProposal?.proposalId === proposal.id
-        ? timetableSubjectProposal.subjects
-        : [];
-    if (importedSubjects.length) {
-      setSubjects((current) => [
-        ...current.filter(
-          (subject) =>
-            !importedSubjects.some((candidate) => candidate.id === subject.id),
-        ),
-        ...importedSubjects,
-      ]);
-      importedSubjects.forEach((subject) => {
-        persistMutation({
-          table: "subjects",
-          action: "upsert",
-          recordId: subject.id,
-          payload: subjectToRow(subject),
-        }).catch(() => undefined);
-      });
-    }
-    setProposal(null);
-    setTimetableSubjectProposal(null);
-    setTimetableImportIssues(null);
-    setNotice(
-      `Applied: ${proposal.title}.${
-        importedSubjects.length
-          ? ` Added ${importedSubjects.length} subject${importedSubjects.length === 1 ? "" : "s"}.`
-          : ""
-      } Cmd+Z to undo calendar changes.`,
-    );
-  }
-
-  function closeProposal() {
-    setProposal(null);
-    setTimetableSubjectProposal(null);
-    setTimetableImportIssues(null);
-  }
-
-  function skipProposalChange(changeId: string) {
-    setProposal((current) =>
-      current
-        ? {
-            ...current,
-            changes: current.changes.filter((change) => change.id !== changeId),
-          }
-        : current,
-    );
-  }
-
-  function updateTimetableSubject(
-    subjectId: string,
-    patch: Partial<
-      Pick<Subject, "name" | "shortName" | "teacher" | "room" | "color">
-    >,
-  ) {
-    const currentSubject = timetableSubjectProposal?.subjects.find(
-      (subject) => subject.id === subjectId,
-    );
-    if (!currentSubject) return;
-    if (patch.name !== undefined && patch.name !== currentSubject.name) {
-      setProposal((current) =>
-        current
-          ? {
-              ...current,
-              changes: current.changes.map((change) =>
-                change.after?.title === currentSubject.name
-                  ? {
-                      ...change,
-                      after: {
-                        ...change.after,
-                        title: patch.name || currentSubject.name,
-                      },
-                    }
-                  : change,
-              ),
-            }
-          : current,
-      );
-    }
-    setTimetableSubjectProposal((current) =>
-      current
-        ? {
-            ...current,
-            subjects: current.subjects.map((subject) =>
-              subject.id === subjectId ? { ...subject, ...patch } : subject,
-            ),
-          }
-        : current,
-    );
-  }
-
-  function addTimetableSubject() {
-    const subject: Subject = {
-      id: crypto.randomUUID(),
-      name: "",
-      shortName: "",
-      teacher: "",
-      room: "",
-      color: "#7f70e8",
-      icon: "",
-      createdAt: new Date().toISOString(),
-    };
-    setTimetableSubjectProposal((current) =>
-      current
-        ? { ...current, subjects: [...current.subjects, subject] }
-        : current,
-    );
-  }
-
-  function removeTimetableSubject(subjectId: string) {
-    setTimetableSubjectProposal((current) =>
-      current
-        ? {
-            ...current,
-            subjects: current.subjects.filter(
-              (subject) => subject.id !== subjectId,
-            ),
-          }
-        : current,
-    );
-  }
-
-  function finishTimetableSubjectReview() {
-    const pending = timetableSubjectProposal?.subjects ?? [];
-    if (
-      pending.some(
-        (subject) => !subject.name.trim() || !subject.shortName.trim(),
-      )
-    ) {
-      setNotice("Give every new subject a name and short name, or remove it.");
-      return;
-    }
-    setProposal((current) =>
-      current
-        ? {
-            ...current,
-            changes: current.changes.map((change) => {
-              const subject = pending.find(
-                (candidate) => candidate.name === change.after?.title,
-              );
-              return subject && change.after
-                ? {
-                    ...change,
-                    after: { ...change.after, title: subject.name.trim() },
-                  }
-                : change;
-            }),
-          }
-        : current,
-    );
-    setTimetableSubjectProposal((current) =>
-      current
-        ? {
-            ...current,
-            reviewed: true,
-            subjects: current.subjects.map((subject) => ({
-              ...subject,
-              name: subject.name.trim(),
-              shortName: subject.shortName.trim().toUpperCase(),
-              teacher: subject.teacher.trim(),
-              room: subject.room.trim(),
-            })),
-          }
-        : current,
-    );
-  }
-
-  function openItem(item: CalendarItem) {
-    const editableItem = structuredClone(item);
-    if (isImportedTimetableItem(editableItem) && !editableItem.room) {
-      editableItem.room = timetableRoomForItem(editableItem);
-    }
-    setIsCreatingItem(false);
-    setSelectedItem(item);
-    setDraftItem(editableItem);
-  }
-
-  function renameItem(item: CalendarItem, title: string) {
-    const nextTitle = title.trim();
-    if (!nextTitle || nextTitle === item.title) return;
-    updateItem(
-      { ...item, title: nextTitle },
-      `Rename “${item.title}” to “${nextTitle}”`,
-    );
-    setNotice(`Renamed to “${nextTitle}”.`);
-  }
-
-  function openNewEvent(
-    day = selectedDay,
-    hour?: number,
-    minute?: number,
-    duration = 60,
-  ) {
-    const start = dateFromKey(day);
-    if (hour === undefined) {
-      const now = new Date();
-      if (day === dateKey(now)) {
-        const roundedMinutes = Math.ceil(now.getMinutes() / 30) * 30;
-        start.setHours(
-          now.getHours() + (roundedMinutes === 60 ? 1 : 0),
-          roundedMinutes % 60,
-          0,
-          0,
-        );
-      } else {
-        start.setHours(9, 0, 0, 0);
-      }
-    } else {
-      start.setHours(hour, minute ?? 0, 0, 0);
-    }
-    const minutes = Math.max(15, duration);
-    const end = new Date(start.getTime() + minutes * 60_000);
-    const item = makeItem({
-      kind: "event",
-      title: "",
-      startsAt: start.toISOString(),
-      endsAt: end.toISOString(),
-      durationMin: minutes,
-      durationMax: minutes,
-      status: "scheduled",
-      flexibility: "flexible",
-      source: "manual",
-    });
-    setSelectedDay(day);
-    setIsCreatingItem(true);
-    setSelectedItem(item);
-    setDraftItem(structuredClone(item));
-  }
-
-  function openNewSpan(startDay: string, endDay: string) {
-    const first = dateFromKey(startDay);
-    const last = dateFromKey(endDay);
-    const rangeStart = first <= last ? first : last;
-    const rangeLast = first <= last ? last : first;
-    rangeStart.setHours(0, 0, 0, 0);
-    rangeLast.setHours(0, 0, 0, 0);
-    const rangeEnd = addDays(rangeLast, 1);
-    rangeEnd.setHours(0, 0, 0, 0);
-    const duration = Math.max(
-      24 * 60,
-      Math.round((rangeEnd.getTime() - rangeStart.getTime()) / 60_000),
-    );
-    const item = makeItem({
-      kind: "event",
-      title: "",
-      startsAt: rangeStart.toISOString(),
-      endsAt: rangeEnd.toISOString(),
-      durationMin: duration,
-      durationMax: duration,
-      status: "scheduled",
-      flexibility: "flexible",
-      source: "manual",
-    });
-    setSelectedDay(dateKey(rangeStart));
-    setIsCreatingItem(true);
-    setSelectedItem(item);
-    setDraftItem(structuredClone(item));
-  }
-
-  function openNewTask() {
-    const item = makeItem({
-      kind: "task",
-      title: "",
-      startsAt: null,
-      endsAt: null,
-      durationMin: 30,
-      durationMax: 60,
-      status: "inbox",
-      flexibility: "flexible",
-      source: "manual",
-    });
-    setIsCreatingItem(true);
-    setSelectedItem(item);
-    setDraftItem(structuredClone(item));
-  }
-
-  function saveSubject(subject: Subject) {
-    setSubjects((current) => [
-      ...current.filter((entry) => entry.id !== subject.id),
-      subject,
-    ]);
-    persistMutation({
-      table: "subjects",
-      action: "upsert",
-      recordId: subject.id,
-      payload: subjectToRow(subject),
-    }).catch(() => undefined);
-    setNotice(`Saved ${subject.name}.`);
-  }
-
-  function deleteSubject(subject: Subject) {
-    if (
-      !window.confirm(
-        `Delete ${subject.name}? Its timetable lessons will also be removed. Assignments and assessments will be kept without a subject.`,
-      )
-    ) {
-      return;
-    }
-    const classIds = new Set(
-      classes
-        .filter((entry) => entry.subjectId === subject.id)
-        .map((entry) => entry.id),
-    );
-    setSubjects((current) =>
-      current.filter((entry) => entry.id !== subject.id),
-    );
-    setClasses((current) =>
-      current.filter((entry) => entry.subjectId !== subject.id),
-    );
-    setClassExceptions((current) =>
-      current.filter((entry) => !classIds.has(entry.classId)),
-    );
-    setAssignments((current) =>
-      current.map((entry) =>
-        entry.subjectId === subject.id ? { ...entry, subjectId: null } : entry,
-      ),
-    );
-    setAssessments((current) =>
-      current.map((entry) =>
-        entry.subjectId === subject.id ? { ...entry, subjectId: null } : entry,
-      ),
-    );
-    persistMutation({
-      table: "subjects",
-      action: "delete",
-      recordId: subject.id,
-    }).catch(() => undefined);
-    setNotice(`Deleted ${subject.name}.`);
-  }
-
-  function saveClass(schoolClass: SchoolClass) {
-    setClasses((current) => [
-      ...current.filter((entry) => entry.id !== schoolClass.id),
-      schoolClass,
-    ]);
-    persistMutation({
-      table: "classes",
-      action: "upsert",
-      recordId: schoolClass.id,
-      payload: classToRow(schoolClass),
-    }).catch(() => undefined);
-    setNotice("Timetable lesson saved.");
-  }
-
-  function saveSchoolDaySettings(settings: SchoolDaySettings) {
-    setSchoolDaySettings(settings);
-    if (user) {
-      persistMutation({
-        table: "profiles",
-        action: "upsert",
-        recordId: user.id,
-        payload: {
-          id: user.id,
-          ...schoolDaySettingsToRow(settings),
-        },
-      }).catch(() => undefined);
-      setNotice("School-day rules saved and ready to sync.");
-    } else {
-      setNotice("School-day rules saved offline. Sign in to sync them.");
-    }
-  }
-
-  function deleteClass(schoolClass: SchoolClass) {
-    if (!window.confirm("Delete this recurring lesson?")) return;
-    setClasses((current) =>
-      current.filter((entry) => entry.id !== schoolClass.id),
-    );
-    setClassExceptions((current) =>
-      current.filter((entry) => entry.classId !== schoolClass.id),
-    );
-    persistMutation({
-      table: "classes",
-      action: "delete",
-      recordId: schoolClass.id,
-    }).catch(() => undefined);
-    setNotice("Lesson deleted.");
-  }
-
-  function saveClassException(exception: ClassException) {
-    setClassExceptions((current) => [
-      ...current.filter((entry) => entry.id !== exception.id),
-      exception,
-    ]);
-    persistMutation({
-      table: "class_exceptions",
-      action: "upsert",
-      recordId: exception.id,
-      payload: classExceptionToRow(exception),
-    }).catch(() => undefined);
-    setNotice(
-      exception.status === "cancelled"
-        ? "Lesson marked cancelled."
-        : "Lesson rescheduled.",
-    );
-  }
-
-  function deleteClassException(exception: ClassException) {
-    setClassExceptions((current) =>
-      current.filter((entry) => entry.id !== exception.id),
-    );
-    persistMutation({
-      table: "class_exceptions",
-      action: "delete",
-      recordId: exception.id,
-    }).catch(() => undefined);
-    setNotice("Lesson change removed.");
-  }
-
-  function saveAssignment(assignment: Assignment) {
-    const normalized = normalizeAssignment(assignment);
-    setAssignments((current) => [
-      ...current.filter((entry) => entry.id !== normalized.id),
-      normalized,
-    ]);
-    const persistence = persistMutation({
-      table: "assignments",
-      action: "upsert",
-      recordId: normalized.id,
-      payload: assignmentToRow(normalized),
-    }).catch(() => undefined);
-    setNotice(`Saved ${normalized.title}.`);
-    return persistence;
-  }
-
-  function previewAssignmentPlan(assignment: Assignment) {
-    const result = planAssignment(assignment, items, new Date(), {
-      classes,
-      classExceptions,
-      settings: schoolDaySettings,
-      calendarItems: items,
-    });
-    if (!result.proposal) {
-      const progress = assignmentProgress(assignment, items);
-      setNotice(
-        progress.remainingMinutes === 0
-          ? "This assignment is already fully planned."
-          : "No free time fits the assignment’s planning rules before its deadline.",
-      );
-      return;
-    }
-    const first = result.proposal.changes[0]?.after?.startsAt;
-    if (first) {
-      const date = new Date(first);
-      setAnchorDate(dateKey(date));
-      setSelectedDay(dateKey(date));
-    }
-    setZoom("week");
-    setProposal(result.proposal);
-  }
-
-  function addAssignmentSession(assignment: Assignment) {
-    const progress = assignmentProgress(assignment, items);
-    const minutes = Math.max(
-      5,
-      Math.min(
-        assignment.maxSessionMinutes,
-        progress.remainingMinutes || assignment.minSessionMinutes,
-      ),
-    );
-    const session = makeItem({
-      kind: "task",
-      title: `${assignment.title} · work session`,
-      description: `Manual work session for ${assignment.title}`,
-      durationMin: Math.min(assignment.minSessionMinutes, minutes),
-      durationMax: Math.max(assignment.maxSessionMinutes, minutes),
-      deadline: assignment.dueAt,
-      energyType: energyTypeForWorkType(assignment.workType),
-      priority: assignment.priority,
-      flexibility: "elastic",
-      constraints: [
-        `Linked to ${assignment.title}`,
-        `${assignment.allowedWindowStart}–${assignment.allowedWindowEnd}`,
-      ],
-      assignmentId: assignment.id,
-      taskContext: assignment.taskContext,
-      computerRequired: assignment.computerRequired,
-      workType: assignment.workType,
-      requiredEnergy: assignment.requiredEnergy,
-      status: "inbox",
-      source: "manual",
-    });
-    createItem(session);
-    setNotice(
-      "Work session added to the flexible inbox. Drag it onto the calendar.",
-    );
-  }
-
-  function completeAssignment(assignment: Assignment) {
-    const progress = assignmentProgress(assignment, items);
-    const actualMinutes =
-      progress.completedMinutes > 0
-        ? progress.completedMinutes
-        : assignment.estimatedMinutes;
-    saveAssignment({
-      ...assignment,
-      status: "completed",
-      actualMinutes,
-    });
-    setNotice(
-      `Marked "${assignment.title}" complete — actual time ${formatWorkMinutes(actualMinutes)} (estimated ${formatWorkMinutes(assignment.estimatedMinutes)}).`,
-    );
-  }
-
-  function previewFreePeriodSession(
-    recommendation: FreePeriodRecommendation,
-    period: FreePeriod,
-  ) {
-    const minutes = recommendation.durationMinutes;
-    if (recommendation.sourceType === "calendar_item") {
-      const existing = recommendation.item;
-      const scheduled = {
-        ...existing,
-        startsAt: period.start.toISOString(),
-        endsAt: new Date(
-          period.start.getTime() + minutes * 60_000,
-        ).toISOString(),
-        status: "scheduled" as const,
-      };
-      setAnchorDate(dateKey(period.start));
-      setSelectedDay(dateKey(period.start));
-      setZoom("week");
-      setProposal({
-        id: crypto.randomUUID(),
-        title: `Use free period for ${existing.title}`,
-        summary: `${minutes} minutes at school. Nothing changes until you apply this preview.`,
-        source: "command",
-        changes: [
-          {
-            id: crypto.randomUUID(),
-            type: "update",
-            itemId: existing.id,
-            reason: "This flexible calendar item fits the verified school gap.",
-            before: existing,
-            after: scheduled,
-          },
-        ],
-      });
-      return;
-    }
-
-    const assignment = recommendation.assignment;
-    const item = makeItem({
-      kind: "task",
-      title: `${assignment.title} · free period`,
-      description: `School free-period work for ${assignment.title}`,
-      startsAt: period.start.toISOString(),
-      endsAt: new Date(period.start.getTime() + minutes * 60_000).toISOString(),
-      durationMin: Math.min(assignment.minSessionMinutes, minutes),
-      durationMax: Math.max(minutes, assignment.maxSessionMinutes),
-      deadline: assignment.dueAt,
-      windowStart: period.start.toISOString(),
-      windowEnd: period.end.toISOString(),
-      energyType: energyTypeForWorkType(assignment.workType),
-      priority: assignment.priority,
-      flexibility: "elastic",
-      constraints: ["Verified school free period", "Context compatible"],
-      assignmentId: assignment.id,
-      taskContext: assignment.taskContext,
-      computerRequired: assignment.computerRequired,
-      workType: assignment.workType,
-      requiredEnergy: assignment.requiredEnergy,
-      status: "scheduled",
-      source: "command",
-    });
-    setAnchorDate(dateKey(period.start));
-    setSelectedDay(dateKey(period.start));
-    setZoom("week");
-    setProposal({
-      id: crypto.randomUUID(),
-      title: `Use free period for ${assignment.title}`,
-      summary: `${minutes} minutes at school. Nothing changes until you apply this preview.`,
-      source: "command",
-      changes: [
-        {
-          id: crypto.randomUUID(),
-          type: "create",
-          itemId: null,
-          reason: "Fits the verified gap and matches the task context.",
-          before: null,
-          after: item,
-        },
-      ],
-    });
-  }
-
-  function toggleAssignmentSession(session: CalendarItem) {
-    updateItem(
-      {
-        ...session,
-        status:
-          session.status === "completed"
-            ? session.startsAt
-              ? "scheduled"
-              : "inbox"
-            : "completed",
-      },
-      `${session.status === "completed" ? "Reopen" : "Complete"} “${session.title}”`,
-    );
-    setNotice(
-      session.status === "completed"
-        ? "Work session reopened."
-        : session.intentionId
-          ? "Work session completed. Intention progress updated."
-          : "Work session completed. Assignment progress updated.",
-    );
-  }
-
-  function deleteAssignment(assignment: Assignment) {
-    if (!window.confirm(`Delete “${assignment.title}”?`)) return;
-    setAssignments((current) =>
-      current.filter((entry) => entry.id !== assignment.id),
-    );
-    persistMutation({
-      table: "assignments",
-      action: "delete",
-      recordId: assignment.id,
-    }).catch(() => undefined);
-    setNotice(`Deleted ${assignment.title}.`);
-  }
-
-  function saveAssessment(assessment: Assessment) {
-    const normalized = normalizeAssessment(assessment);
-    setAssessments((current) => [
-      ...current.filter((entry) => entry.id !== normalized.id),
-      normalized,
-    ]);
-    persistMutation({
-      table: "assessments",
-      action: "upsert",
-      recordId: normalized.id,
-      payload: assessmentToRow(normalized),
-    }).catch(() => undefined);
-    setNotice(`Saved ${normalized.title}.`);
-  }
-
-  function previewRevisionRunway(assessment: Assessment) {
-    const result = planRevisionRunway(assessment, items, new Date(), {
-      classes,
-      classExceptions,
-      settings: schoolDaySettings,
-      calendarItems: items,
-    });
-    if (!result.proposal) {
-      setNotice(
-        result.unscheduledMinutes === 0
-          ? "This exam’s revision requirement is already fully planned."
-          : "No free time fits the revision rules before this exam.",
-      );
-      return;
-    }
-    const first = result.proposal.changes[0]?.after?.startsAt;
-    if (first) {
-      const date = new Date(first);
-      setAnchorDate(dateKey(date));
-      setSelectedDay(dateKey(date));
-    }
-    setZoom("week");
-    setProposal(result.proposal);
-  }
-
-  function markRevisionLearned(session: CalendarItem, assessment: Assessment) {
-    const learnedAt = new Date();
-    updateItem(
-      {
-        ...session,
-        learnedAt: learnedAt.toISOString(),
-        status: "completed",
-      },
-      `Learn “${session.revisionStage ?? session.title}”`,
-    );
-    const reviewProposal = planSpacedReviews(
-      session,
-      assessment,
-      items.filter((item) => item.id !== session.id),
-      learnedAt,
-      {
-        classes,
-        classExceptions,
-        settings: schoolDaySettings,
-        calendarItems: items,
-      },
-    );
-    if (reviewProposal) {
-      setProposal(reviewProposal);
-      setNotice("Material learned. Review sessions are ready to preview.");
-    } else {
-      setNotice(
-        assessment.spacedRepetitionEnabled
-          ? "Material learned. No review interval fits before the exam."
-          : "Material learned. Enable spaced repetition on the exam to suggest reviews.",
-      );
-    }
-  }
-
-  function deleteAssessment(assessment: Assessment) {
-    if (!window.confirm(`Delete “${assessment.title}”?`)) return;
-    setAssessments((current) =>
-      current.filter((entry) => entry.id !== assessment.id),
-    );
-    persistMutation({
-      table: "assessments",
-      action: "delete",
-      recordId: assessment.id,
-    }).catch(() => undefined);
-    setNotice(`Deleted ${assessment.title}.`);
-  }
-
-  function saveHomeworkCapture(capture: HomeworkCapture) {
-    setHomeworkCaptures((current) => [
-      capture,
-      ...current.filter((entry) => entry.id !== capture.id),
-    ]);
-    return persistMutation({
-      table: "homework_captures",
-      action: "upsert",
-      recordId: capture.id,
-      payload: homeworkCaptureToRow(capture),
-    }).catch(() => undefined);
-  }
-
-  function captureHomework(
-    rawText: string,
-    overrides: {
-      subjectId?: string | null;
-      deadline?: string | null;
-      estimatedMinutes?: number | null;
-    } = {},
-  ) {
-    const parsed = parseHomework(
-      rawText,
-      subjects,
-      new Date(),
-      overrides.subjectId,
-    );
-    const capture: HomeworkCapture = {
-      id: crypto.randomUUID(),
-      rawText: parsed.rawText,
-      title: parsed.title,
-      subjectId: overrides.subjectId ?? parsed.subjectId,
-      deadline: overrides.deadline ?? parsed.deadline,
-      taskType: parsed.taskType,
-      estimatedMinutes: overrides.estimatedMinutes ?? parsed.estimatedMinutes,
-      status: "captured",
-      convertedAssignmentId: null,
-      scheduledCalendarItemId: null,
-      parsedMeta: {
-        confidence: parsed.confidence,
-        matched: parsed.matched,
-        parser: "local-v1",
-      },
-      createdAt: new Date().toISOString(),
-    };
-    saveHomeworkCapture(capture);
-    setNotice(`Captured “${capture.title}”.`);
-  }
-
-  async function convertHomeworkToAssignment(capture: HomeworkCapture) {
-    const remaining = capture.deadline
-      ? new Date(capture.deadline).getTime() - Date.now()
-      : Number.POSITIVE_INFINITY;
-    const assignment: Assignment = {
-      id: crypto.randomUUID(),
-      subjectId: capture.subjectId,
-      title: capture.title,
-      dueAt: capture.deadline,
-      estimatedMinutes: capture.estimatedMinutes,
-      priority:
-        remaining <= 24 * 60 * 60_000
-          ? "high"
-          : remaining <= 72 * 60 * 60_000
-            ? "medium"
-            : "low",
-      status: "inbox",
-      submissionMethod: "",
-      notes: `Captured from: ${capture.rawText}`,
-      gradeWeight: null,
-      taskContext: "anywhere",
-      actualMinutes: null,
-      computerRequired: false,
-      workType:
-        capture.taskType === "reading"
-          ? "reading"
-          : capture.taskType === "vocabulary"
-            ? "memorization"
-            : capture.taskType === "practice"
-              ? "problem_solving"
-              : capture.taskType === "writing" || capture.taskType === "project"
-                ? "creative_project"
-                : capture.taskType === "revision"
-                  ? "deep_focus"
-                  : null,
-      requiredEnergy:
-        capture.taskType === "practice" ||
-        capture.taskType === "writing" ||
-        capture.taskType === "project"
-          ? "high"
-          : capture.taskType === "reading" || capture.taskType === "vocabulary"
-            ? "low"
-            : "medium",
-      allowedWeekdays: [1, 2, 3, 4, 5, 6, 7],
-      allowedWindowStart: "15:00",
-      allowedWindowEnd: "21:00",
-      minSessionMinutes: 30,
-      maxSessionMinutes: 90,
-      splittable: true,
-      createdAt: new Date().toISOString(),
-    };
-    await saveAssignment(assignment);
-    const converted = {
-      ...capture,
-      status: "converted" as const,
-      convertedAssignmentId: assignment.id,
-    };
-    await saveHomeworkCapture(converted);
-    if (capture.scheduledCalendarItemId) {
-      const scheduled = items.find(
-        (item) => item.id === capture.scheduledCalendarItemId,
-      );
-      if (scheduled) {
-        updateItem(
-          { ...scheduled, assignmentId: assignment.id },
-          `Link “${scheduled.title}” to assignment`,
-        );
-      }
-    }
-    setNotice(`Converted “${capture.title}” to an assignment.`);
-  }
-
-  async function completeHomeworkCapture(capture: HomeworkCapture) {
-    if (capture.scheduledCalendarItemId) {
-      const scheduled = items.find(
-        (item) => item.id === capture.scheduledCalendarItemId,
-      );
-      if (scheduled && scheduled.status !== "completed") {
-        updateItem(
-          { ...scheduled, status: "completed" },
-          `Complete homework “${capture.title}”`,
-        );
-      }
-    }
-    await saveHomeworkCapture({ ...capture, status: "completed" });
-    setNotice(`Completed “${capture.title}”.`);
-  }
-
-  function deleteHomeworkCapture(capture: HomeworkCapture) {
-    if (!window.confirm(`Delete “${capture.title}” from homework?`)) return;
-    if (capture.scheduledCalendarItemId) {
-      const scheduled = items.find(
-        (item) => item.id === capture.scheduledCalendarItemId,
-      );
-      if (scheduled) {
-        updateItem(
-          { ...scheduled, homeworkCaptureId: null },
-          `Detach homework capture from “${scheduled.title}”`,
-        );
-      }
-    }
-    setHomeworkCaptures((current) =>
-      current.filter((entry) => entry.id !== capture.id),
-    );
-    persistMutation({
-      table: "homework_captures",
-      action: "delete",
-      recordId: capture.id,
-    }).catch(() => undefined);
-    setNotice(`Deleted “${capture.title}”.`);
-  }
-
-  async function scheduleHomework(
-    captureId: string,
-    day: string,
-    hour: number,
-    minute: number,
-  ) {
-    const capture = homeworkCaptures.find((entry) => entry.id === captureId);
-    if (!capture) return;
-    if (capture.scheduledCalendarItemId) {
-      const existing = items.find(
-        (item) => item.id === capture.scheduledCalendarItemId,
-      );
-      if (existing) {
-        scheduleAt(existing.id, day, hour, minute);
-        return;
-      }
-    }
-    const start = dateFromKey(day);
-    start.setHours(hour, minute, 0, 0);
-    const end = new Date(start.getTime() + capture.estimatedMinutes * 60_000);
-    const item = makeItem({
-      kind: "task",
-      title: capture.title,
-      startsAt: start.toISOString(),
-      endsAt: end.toISOString(),
-      durationMin: capture.estimatedMinutes,
-      durationMax: Math.max(
-        capture.estimatedMinutes,
-        capture.estimatedMinutes + 15,
-      ),
-      deadline: capture.deadline,
-      energyType:
-        capture.taskType === "vocabulary" || capture.taskType === "reading"
-          ? "light_work"
-          : "deep_focus",
-      priority: "medium",
-      flexibility: "flexible",
-      status: "scheduled",
-      source: "manual",
-      assignmentId: capture.convertedAssignmentId,
-      homeworkCaptureId: capture.id,
-      taskContext: "anywhere",
-      workType:
-        capture.taskType === "reading"
-          ? "reading"
-          : capture.taskType === "vocabulary"
-            ? "memorization"
-            : capture.taskType === "practice"
-              ? "problem_solving"
-              : capture.taskType === "writing" || capture.taskType === "project"
-                ? "creative_project"
-                : capture.taskType === "revision"
-                  ? "deep_focus"
-                  : null,
-      requiredEnergy:
-        capture.taskType === "practice" ||
-        capture.taskType === "writing" ||
-        capture.taskType === "project"
-          ? "high"
-          : capture.taskType === "reading" || capture.taskType === "vocabulary"
-            ? "low"
-            : "medium",
-    });
-    const validation = validatePlacement(
-      item,
-      item.startsAt!,
-      item.endsAt!,
-      items,
-    );
-    if (!validation.valid) {
-      setNotice(validation.errors[0]);
-      return;
-    }
-    await createItem(item);
-    await saveHomeworkCapture({
-      ...capture,
-      status: "scheduled",
-      scheduledCalendarItemId: item.id,
-    });
-    setSelectedDay(day);
-    setNotice(`Scheduled “${capture.title}”.`);
-  }
-
-  function saveDraft(event: FormEvent) {
-    event.preventDefault();
-    if (!draftItem) return;
-    let nextDraft =
-      isCreatingItem && !isImportedTimetableItem(draftItem)
-        ? {
-            ...draftItem,
-            flexibility: flexibilityForNewItem(draftItem),
-          }
-        : draftItem;
-    if (
-      nextDraft.flexibility === "fixed" &&
-      nextDraft.startsAt &&
-      nextDraft.endsAt
-    ) {
-      const minutes = Math.max(15, durationMinutes(nextDraft));
-      nextDraft = {
-        ...nextDraft,
-        durationMin: minutes,
-        durationMax: minutes,
-      };
-    }
-    if (
-      nextDraft.status === "scheduled" &&
-      nextDraft.startsAt &&
-      nextDraft.endsAt
-    ) {
-      const validation = validatePlacement(
-        nextDraft.flexibility === "fixed"
-          ? {
-              ...(selectedItem ?? nextDraft),
-              durationMin: nextDraft.durationMin,
-              durationMax: nextDraft.durationMax,
-            }
-          : (selectedItem ?? nextDraft),
-        nextDraft.startsAt,
-        nextDraft.endsAt,
-        items,
-        { allowFixedChange: true },
-      );
-      if (!validation.valid) {
-        setNotice(validation.errors[0]);
-        return;
-      }
-    }
-    if (isCreatingItem) {
-      createItem(nextDraft);
-      setNotice(`Created “${nextDraft.title}”.`);
-    } else {
-      updateItem(nextDraft, `Edit “${nextDraft.title}”`);
-    }
-    setSelectedItem(null);
-    setDraftItem(null);
-    setIsCreatingItem(false);
-  }
-
-  async function sendVerificationCode(event: FormEvent) {
-    event.preventDefault();
-    if (!email.trim()) return;
-    setAuthBusy(true);
-    let errorMessage = "";
-    if (inviteToken) {
-      const response = await fetch("/api/invitations/claim", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), token: inviteToken }),
-      });
-      const result = (await response.json()) as { error?: string };
-      if (!response.ok)
-        errorMessage = result.error ?? "Could not accept invitation";
-    } else {
-      const { error } = await supabase.auth.signInWithOtp({
-        email: email.trim(),
-        options: { shouldCreateUser: false },
-      });
-      errorMessage = error?.message ?? "";
-    }
-    setAuthBusy(false);
-    if (errorMessage) {
-      setNotice(errorMessage);
-      return;
-    }
-    setAuthSent(true);
-  }
-
-  async function verifyCode(event: FormEvent) {
-    event.preventDefault();
-    if (!email.trim() || !verificationCode.trim()) return;
-    setAuthBusy(true);
-    const { error } = await supabase.auth.verifyOtp({
-      email: email.trim(),
-      token: verificationCode.replace(/\s/g, ""),
-      type: "email",
-    });
-    setAuthBusy(false);
-    if (error) {
-      setNotice(error.message);
-      return;
-    }
-    if (inviteToken) {
-      window.history.replaceState({}, "", window.location.pathname);
-      setInviteToken("");
-    }
-    setVerificationCode("");
-    setAuthSent(false);
-    setNotice("Signed in. Your calendar is syncing now.");
-  }
-
-  async function createInvitation(sendCode: boolean) {
-    setInviteBusy(true);
-    setInviteUrl("");
-    const { data } = await supabase.auth.getSession();
-    const response = await fetch("/api/invitations", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${data.session?.access_token ?? ""}`,
-      },
-      body: JSON.stringify({ email: sendCode ? inviteEmail : "" }),
-    });
-    const result = (await response.json()) as {
-      error?: string;
-      inviteUrl?: string;
-    };
-    setInviteBusy(false);
-    if (!response.ok || !result.inviteUrl) {
-      setNotice(result.error ?? "Could not create invitation");
-      return;
-    }
-    if (sendCode) {
-      setInviteUrl("");
-      setNotice(
-        `Account ready. A verification code was sent to ${inviteEmail.trim()}.`,
-      );
-      setInviteEmail("");
-    } else {
-      setInviteUrl(result.inviteUrl);
-      try {
-        await navigator.clipboard.writeText(result.inviteUrl);
-        setNotice("One-time invite link copied.");
-      } catch {
-        setNotice("Invite link created. Copy it below.");
-      }
-    }
-  }
-
-  async function signOut() {
-    await supabase.auth.signOut();
+  const {
+    persistClassOccurrence,
+    saveCompactEvent,
+    editEventNaturally,
+    openItem,
+    renameItem,
+    openNewEvent,
+    openNewSpan,
+    openNewTask,
+  } = useEventEditor({
+    supabase,
+    user,
+    isOnline,
+    items,
+    subjects,
+    classes,
+    classExceptions,
+    selectedDay,
+    setItems,
+    setSubjects,
+    setClasses,
+    setClassExceptions,
+    setSelectedDay,
+    setSelectedItem,
+    setDraftItem,
+    setIsCreatingItem,
+    setEventAnchor,
+    setEventSelection,
+    setNotice,
+    persistMutation,
+    recordHistory,
+    updateItem,
+  });
+
+  const {
+    onDragStart,
+    onCalendarDragOver,
+    onCalendarDrop,
+    onInboxDrop,
+    endDrag,
+    beginResize,
+  } = useDragAndResize({
+    resizeGestureActive,
+    setDraggingItemId,
+    setDragSnap,
+    setResizing,
+    setNotice,
+    scheduleAt,
+    unscheduleItem,
+    updateItem,
+    persistClassOccurrence,
+  });
+
+  const {
+    saveSubject,
+    deleteSubject,
+    saveClass,
+    saveSchoolDaySettings,
+    deleteClass,
+    saveClassException,
+    deleteClassException,
+    saveAssignment,
+    previewAssignmentPlan,
+    addAssignmentSession,
+    completeAssignment,
+    previewFreePeriodSession,
+    toggleAssignmentSession,
+    deleteAssignment,
+    saveAssessment,
+    previewRevisionRunway,
+    markRevisionLearned,
+    deleteAssessment,
+  } = useSchoolRecords({
+    items,
+    classes,
+    classExceptions,
+    schoolDaySettings,
+    user,
+    setSubjects,
+    setClasses,
+    setClassExceptions,
+    setAssignments,
+    setAssessments,
+    setSchoolDaySettings,
+    setNotice,
+    setAnchorDate,
+    setSelectedDay,
+    setZoom,
+    setProposal,
+    persistMutation,
+    createItem,
+    updateItem,
+  });
+
+  const { createWorkItemFromText } = useWorkCapture({
+    items,
+    subjects,
+    createItem,
+    setNotice,
+    setSelectedDay,
+  });
+
+  const { submitCommand } = useCommandConsole({
+    supabase,
+    user,
+    items,
+    subjects,
+    classes,
+    paletteMode,
+    commandText,
+    commandBusy,
+    commandTargetId,
+    commandConversation,
+    setItems,
+    setFilterText,
+    setPaletteOpen,
+    setPaletteMode,
+    setCommandText,
+    setCommandBusy,
+    setCommandError,
+    setCommandTargetId,
+    setCommandConversation,
+    setCommandQuestions,
+    setIntentionSeed,
+    setIntentionsOpen,
+    setZoom,
+    setNotice,
+    createWorkItemFromText,
+    recordHistory,
+    syncSnapshotDiff,
+  });
+
+  const {
+    onDocumentSelected,
+    approveProposal,
+    closeProposal,
+    skipProposalChange,
+    updateTimetableSubject,
+    addTimetableSubject,
+    removeTimetableSubject,
+    finishTimetableSubjectReview,
+  } = useProposals({
+    supabase,
+    items,
+    subjects,
+    proposal,
+    timetableSubjectProposal,
+    fileInputRef,
+    setItems,
+    setSubjects,
+    setProposal,
+    setTimetableSubjectProposal,
+    setTimetableImportIssues,
+    setTimetableImportBusy,
+    setCommandBusy,
+    setPaletteOpen,
+    setAnchorDate,
+    setSelectedDay,
+    setNotice,
+    persistMutation,
+    recordHistory,
+    syncSnapshotDiff,
+  });
+
+  // Signing out must leave this device with an empty local calendar rather
+  // than the previous account's records.
+  async function clearLocalCalendar() {
     setUser(null);
     setItems([]);
     setHistory([]);
@@ -2963,7 +1506,6 @@ export default function Home() {
     setLearningSignals([]);
     setExplorations([]);
     setBlockChoices([]);
-    setHomeworkCaptures([]);
     setSchoolDaySettings(DEFAULT_SCHOOL_DAY_SETTINGS);
     setUndoStack([]);
     setCompletedReviewWeeks([]);
@@ -2980,438 +1522,84 @@ export default function Home() {
       learningSignals: [],
       explorations: [],
       blockChoices: [],
-      homeworkCaptures: [],
       completedReviewWeeks: [],
       schoolDaySettings: DEFAULT_SCHOOL_DAY_SETTINGS,
       ownerKey: "local",
     });
-    setNotice("Signed out. This device now has a fresh local calendar.");
   }
 
-  function nowRecommendations(at: Date) {
-    return recommendNow({
-      now: at,
+  const { sendVerificationCode, verifyCode, createInvitation, signOut } =
+    useAccountSession({
+      supabase,
+      email,
+      verificationCode,
+      inviteToken,
+      inviteEmail,
+      setAuthBusy,
+      setAuthSent,
+      setNotice,
+      setVerificationCode,
+      setInviteToken,
+      setInviteBusy,
+      setInviteUrl,
+      setInviteEmail,
+      clearLocalCalendar,
+    });
+
+  const {
+    saveIntention,
+    deleteIntention,
+    startIntention,
+    subjectName,
+    recordChallenge,
+    generateDeeper,
+    openGoDeeper,
+    saveExploration,
+    startExplorationDirection,
+  } = useLearningActions({
+    supabase,
+    items,
+    subjects,
+    explorations,
+    learningSignals,
+    deeperSource,
+    setIntentions,
+    setLearningSignals,
+    setExplorations,
+    setIntentionSeed,
+    setIntentionsOpen,
+    setDeeperSource,
+    setDeeperExploration,
+    setDeeperBusy,
+    setDeeperError,
+    setNotice,
+    createItem,
+    persistMutation,
+  });
+
+  const { nowRecommendations, openNowRecommendations, startNow } =
+    useNowSession({
       items,
       assignments,
       assessments,
       subjects,
       classes,
       classExceptions,
-      settings: schoolDaySettings,
-      currentLocation: nowLocation,
-      currentEnergy: nowEnergy,
-      computerAvailable: nowComputerAvailable,
+      schoolDaySettings,
       learningSignals,
+      nowLocation,
+      nowEnergy,
+      nowComputerAvailable,
+      setNowMoment,
+      setNowOpen,
+      setPaletteOpen,
+      setInboxOpen,
+      setHudOpen,
+      setNotice,
+      createItem,
+      updateItem,
+      openGoDeeper,
     });
-  }
-
-  function openNowRecommendations() {
-    setNowMoment(new Date().toISOString());
-    setNowOpen(true);
-    setPaletteOpen(false);
-    setInboxOpen(false);
-    setHomeworkOpen(false);
-    setHudOpen(false);
-  }
-
-  function startNow(recommendation: NowRecommendation) {
-    if (recommendation.source === "exploration") {
-      const subject = subjects.find(
-        (entry) => entry.id === recommendation.subjectId,
-      );
-      if (subject) {
-        openGoDeeper({
-          type: "subject",
-          id: subject.id,
-          title: subject.name,
-          subjectId: subject.id,
-          subjectName: subject.name,
-          context: "Suggested because recent work felt too easy.",
-        });
-      }
-      setNowOpen(false);
-      return;
-    }
-    const startedAt = new Date();
-    const fresh = nowRecommendations(startedAt).recommendations.find(
-      (candidate) => candidate.id === recommendation.id,
-    );
-    if (!fresh) {
-      setNowMoment(startedAt.toISOString());
-      setNotice(
-        "That option no longer fits the current slot. Recommendations were refreshed.",
-      );
-      return;
-    }
-    const start = new Date(startedAt);
-    start.setSeconds(0, 0);
-    const end = new Date(start.getTime() + fresh.durationMinutes * 60_000);
-    const existing = fresh.calendarItemId
-      ? items.find((item) => item.id === fresh.calendarItemId)
-      : null;
-    const sourceAssignment = fresh.assignmentId
-      ? assignments.find((assignment) => assignment.id === fresh.assignmentId)
-      : null;
-    const sourceAssessment = fresh.assessmentId
-      ? assessments.find((assessment) => assessment.id === fresh.assessmentId)
-      : null;
-    const template = fresh.workType
-      ? schoolDaySettings.focusTemplates[fresh.workType]
-      : null;
-    const sourceDurationMin =
-      sourceAssignment?.minSessionMinutes ??
-      sourceAssessment?.minRevisionSessionMinutes ??
-      template?.durationMin ??
-      fresh.durationMinutes;
-    const sourceDurationMax =
-      sourceAssignment?.maxSessionMinutes ??
-      sourceAssessment?.maxRevisionSessionMinutes ??
-      template?.durationMax ??
-      fresh.durationMinutes;
-    const started = existing
-      ? {
-          ...existing,
-          startsAt: start.toISOString(),
-          endsAt: end.toISOString(),
-          status: "scheduled" as const,
-        }
-      : makeItem({
-          kind: "task",
-          title: fresh.title,
-          description:
-            fresh.source === "assessment"
-              ? `Revision session started for ${fresh.title}.`
-              : `Focused work session started for ${fresh.title}.`,
-          startsAt: start.toISOString(),
-          endsAt: end.toISOString(),
-          durationMin: Math.min(fresh.durationMinutes, sourceDurationMin),
-          durationMax: Math.max(fresh.durationMinutes, sourceDurationMax),
-          deadline: fresh.deadline,
-          energyType: fresh.energyType,
-          priority:
-            fresh.source === "assessment"
-              ? (assessments.find(
-                  (assessment) => assessment.id === fresh.assessmentId,
-                )?.importance ?? "medium")
-              : (assignments.find(
-                  (assignment) => assignment.id === fresh.assignmentId,
-                )?.priority ?? "medium"),
-          flexibility: "elastic",
-          constraints: [
-            "Started from What should I do now?",
-            "Linked to its schoolwork source",
-          ],
-          assignmentId: fresh.assignmentId,
-          assessmentId: fresh.assessmentId,
-          subjectId: fresh.subjectId,
-          revisionStage: fresh.revisionStage,
-          taskContext: fresh.taskContext,
-          computerRequired: fresh.computerRequired,
-          workType: fresh.workType,
-          requiredEnergy: fresh.requiredEnergy,
-          status: "scheduled",
-          source: "manual",
-        });
-    const validation = validatePlacement(
-      started,
-      start.toISOString(),
-      end.toISOString(),
-      existing ? items.filter((item) => item.id !== existing.id) : items,
-    );
-    if (!validation.valid) {
-      setNotice(validation.errors[0] ?? "That session no longer fits.");
-      setNowMoment(startedAt.toISOString());
-      return;
-    }
-    if (existing) {
-      updateItem(started, `Start “${fresh.title}” now`);
-    } else {
-      createItem(started);
-    }
-    setNowOpen(false);
-    setNowMoment(null);
-    setNotice(
-      `Started “${fresh.title}” for ${fresh.durationMinutes} minutes.${
-        validation.warnings[0] ? ` ${validation.warnings[0]}` : ""
-      }`,
-    );
-  }
-
-  function saveIntention(intention: Intention) {
-    const normalized = makeIntention(intention);
-    setIntentions((current) => [
-      normalized,
-      ...current.filter((entry) => entry.id !== normalized.id),
-    ]);
-    persistMutation({
-      table: "intentions",
-      action: "upsert",
-      recordId: normalized.id,
-      payload: intentionToRow(normalized),
-    }).catch(() => undefined);
-    setIntentionSeed(null);
-    setNotice(
-      `Saved intention “${normalized.title}”. No calendar time was created.`,
-    );
-  }
-
-  function deleteIntention(intention: Intention) {
-    const archived = { ...intention, status: "archived" as const };
-    setIntentions((current) =>
-      current.map((entry) => (entry.id === archived.id ? archived : entry)),
-    );
-    persistMutation({
-      table: "intentions",
-      action: "update",
-      recordId: archived.id,
-      payload: { status: "archived" },
-    }).catch(() => undefined);
-    setNotice(`Archived “${intention.title}”.`);
-  }
-
-  function startIntention(
-    intention: Intention,
-    requestedMinutes = intention.preferredSessionMinutes,
-  ) {
-    const start = new Date();
-    start.setSeconds(0, 0);
-    const minutes = Math.max(5, Math.min(240, requestedMinutes));
-    const end = new Date(start.getTime() + minutes * 60_000);
-    const task = makeItem({
-      kind: "task",
-      title: intention.title,
-      description: intention.notes || "A small step toward this intention.",
-      startsAt: start.toISOString(),
-      endsAt: end.toISOString(),
-      durationMin: minutes,
-      durationMax: minutes,
-      deadline: intention.horizonEnd
-        ? `${intention.horizonEnd}T23:59:00`
-        : null,
-      energyType:
-        intention.workType === "deep_focus" ||
-        intention.workType === "problem_solving"
-          ? "deep_focus"
-          : "light_work",
-      priority: intention.priority,
-      flexibility: "elastic",
-      intentionId: intention.id,
-      subjectId: intention.subjectId,
-      taskContext: intention.taskContext,
-      workType: intention.workType,
-      requiredEnergy: intention.requiredEnergy,
-      status: "scheduled",
-      source: "manual",
-    });
-    const validation = validatePlacement(
-      task,
-      start.toISOString(),
-      end.toISOString(),
-      items,
-    );
-    if (!validation.valid) {
-      setNotice(
-        validation.errors[0] ?? "That intention does not fit right now.",
-      );
-      return;
-    }
-    createItem(task);
-    setIntentionsOpen(false);
-    setNotice(`Started “${intention.title}” for ${minutes} minutes.`);
-  }
-
-  function subjectName(subjectId: string | null) {
-    return subjects.find((subject) => subject.id === subjectId)?.name ?? null;
-  }
-
-  function sourceForCalendarItem(item: CalendarItem): LearningSource {
-    const assignment = item.assignmentId
-      ? assignments.find((entry) => entry.id === item.assignmentId)
-      : null;
-    const assessment = item.assessmentId
-      ? assessments.find((entry) => entry.id === item.assessmentId)
-      : null;
-    const subjectId =
-      item.subjectId ?? assignment?.subjectId ?? assessment?.subjectId ?? null;
-    return {
-      type: "calendar_item",
-      id: item.id,
-      title: item.title,
-      subjectId,
-      subjectName: subjectName(subjectId),
-      context: [item.description, item.revisionStage, item.workType]
-        .filter(Boolean)
-        .join(" · "),
-    };
-  }
-
-  function recordChallenge(
-    source: LearningSource,
-    challengeLevel: ChallengeLevel,
-  ) {
-    const signal = makeLearningSignal(source, challengeLevel);
-    setLearningSignals((current) => [signal, ...current]);
-    persistMutation({
-      table: "learning_signals",
-      action: "insert",
-      recordId: signal.id,
-      payload: learningSignalToRow(signal),
-    }).catch(() => undefined);
-    setNotice(
-      `Challenge noted: ${challengeLevel === "not_understood" ? "not understood yet" : challengeLevel.replace("_", " ")}.`,
-    );
-  }
-
-  async function generateDeeper(source: LearningSource, fresh = false) {
-    if (!fresh) {
-      const cached = explorations.find(
-        (entry) =>
-          entry.sourceType === source.type &&
-          entry.sourceId === source.id &&
-          entry.sourceTitle === source.title &&
-          entry.status !== "dismissed",
-      );
-      if (cached) {
-        setDeeperExploration(cached);
-        return;
-      }
-    }
-    setDeeperBusy(true);
-    setDeeperError("");
-    setDeeperExploration(null);
-    try {
-      const { data } = await supabase.auth.getSession();
-      if (!data.session?.access_token)
-        throw new Error(
-          "Sign in to use Go Deeper. Challenge feedback still works locally.",
-        );
-      const latest = latestSignalFor(source, learningSignals);
-      const summary = subjectChallengeSummary(
-        source.subjectId,
-        learningSignals,
-      );
-      const response = await fetch("/api/go-deeper", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${data.session.access_token}`,
-        },
-        body: JSON.stringify({
-          source: {
-            type: source.type,
-            title: source.title,
-            subjectName: source.subjectName ?? null,
-            context: source.context ?? "",
-          },
-          challengeLevel: latest?.challengeLevel ?? null,
-          challengeSummary: {
-            tooEasy: summary.counts.too_easy,
-            goodChallenge: summary.counts.good_challenge,
-            difficult: summary.counts.difficult,
-            notUnderstood: summary.counts.not_understood,
-          },
-        }),
-      });
-      const raw: unknown = await response.json();
-      if (!response.ok || !isDeeperResponse(raw))
-        throw new Error(
-          "No useful exploration was returned. Try again in a moment.",
-        );
-      const exploration: Exploration = {
-        id: crypto.randomUUID(),
-        sourceType: source.type,
-        sourceId: source.id,
-        sourceTitle: source.title,
-        sourceContext: source.context ?? "",
-        subjectId: source.subjectId,
-        challengeLevel: latest?.challengeLevel ?? null,
-        framing: raw.framing,
-        directions: raw.directions,
-        status: "generated",
-        promptVersion: 1,
-        createdAt: new Date().toISOString(),
-      };
-      setExplorations((current) => [exploration, ...current]);
-      setDeeperExploration(exploration);
-      persistMutation({
-        table: "explorations",
-        action: "insert",
-        recordId: exploration.id,
-        payload: explorationToRow(exploration),
-      }).catch(() => undefined);
-    } catch (error) {
-      setDeeperError(
-        error instanceof Error
-          ? error.message
-          : "Go Deeper is unavailable right now.",
-      );
-    } finally {
-      setDeeperBusy(false);
-    }
-  }
-
-  function openGoDeeper(source: LearningSource) {
-    setDeeperSource(source);
-    setDeeperExploration(null);
-    setDeeperError("");
-    generateDeeper(source).catch(() => undefined);
-  }
-
-  function saveExploration(exploration: Exploration) {
-    const saved = { ...exploration, status: "saved" as const };
-    setExplorations((current) =>
-      current.map((entry) => (entry.id === saved.id ? saved : entry)),
-    );
-    setDeeperExploration(saved);
-    persistMutation({
-      table: "explorations",
-      action: "update",
-      recordId: saved.id,
-      payload: { status: "saved" },
-    }).catch(() => undefined);
-    setNotice("Exploration saved for later.");
-  }
-
-  function startExplorationDirection(direction: ExplorationDirection) {
-    if (!deeperSource) return;
-    const start = new Date();
-    start.setSeconds(0, 0);
-    const end = new Date(start.getTime() + 15 * 60_000);
-    const base = makeItem({
-      kind: "task",
-      title: `${direction.title} · explore`,
-      description: `${direction.prompt}\n\nWhy it is useful: ${direction.whyUseful}`,
-      durationMin: 15,
-      durationMax: 15,
-      startsAt: start.toISOString(),
-      endsAt: end.toISOString(),
-      energyType: "deep_focus",
-      priority: "low",
-      flexibility: "elastic",
-      subjectId: deeperSource.subjectId,
-      workType: "problem_solving",
-      requiredEnergy: "high",
-      status: "scheduled",
-      source: "manual",
-      constraints: ["Chosen from Go Deeper", `Source: ${deeperSource.title}`],
-    });
-    const validation = validatePlacement(
-      base,
-      base.startsAt!,
-      base.endsAt!,
-      items,
-    );
-    if (validation.valid) {
-      createItem(base);
-      setNotice(`Started a 15-minute exploration: “${direction.title}”.`);
-    } else {
-      createItem({ ...base, startsAt: null, endsAt: null, status: "inbox" });
-      setNotice(
-        `Saved “${direction.title}” as a 15-minute possibility; your current fixed event stays protected.`,
-      );
-    }
-    setDeeperSource(null);
-  }
 
   function openAttentionCard(card: AttentionCard) {
     if (card.source === "calendar_item" && card.sourceId) {
@@ -3533,15 +1721,6 @@ export default function Home() {
   const inboxItems = filteredItems.filter(
     (item) => item.status === "inbox" && item.kind !== "event",
   );
-  const activeHomework = homeworkCaptures.filter(
-    (capture) =>
-      capture.status === "captured" || capture.status === "scheduled",
-  );
-  const prioritizedSubjects = recentSubjects(
-    subjects,
-    homeworkCaptures,
-    assignments,
-  );
   const scheduledItems = filteredItems.filter(
     (item) => item.status === "scheduled" && item.startsAt && item.endsAt,
   );
@@ -3551,6 +1730,44 @@ export default function Home() {
     zoom === "day"
       ? [dateFromKey(selectedDay)]
       : Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
+  const classOccurrences = classCalendarItems(
+    classes,
+    classExceptions,
+    subjects,
+    visibleDays[0],
+    visibleDays.at(-1)!,
+  );
+  const calendarDisplayItems = [
+    ...filteredItems.filter(
+      (entry) => !classes.some((lesson) => lesson.id === entry.id),
+    ),
+    ...classOccurrences,
+  ].filter((entry) => !classesOnly || isClassEvent(entry));
+  useEffect(() => {
+    const handle = (event: KeyboardEvent) => {
+      if (
+        event.target instanceof Element &&
+        event.target.closest(
+          "input, textarea, select, [contenteditable=true], [role=dialog]",
+        )
+      )
+        return;
+      if (event.key === "Escape") {
+        setEventSelection([]);
+        setBulkDeleteOpen(false);
+        closeCompactEditor();
+      }
+      if (
+        (event.key === "Delete" || event.key === "Backspace") &&
+        eventSelection.length > 1
+      ) {
+        event.preventDefault();
+        setBulkDeleteOpen(true);
+      }
+    };
+    window.addEventListener("keydown", handle);
+    return () => window.removeEventListener("keydown", handle);
+  }, [eventSelection, closeCompactEditor]);
   const dayCapacity = capacityForDay(items, selectedDay);
   const insights = scheduleInsights(items, selectedDay);
   const now = clockNow;
@@ -3717,135 +1934,59 @@ export default function Home() {
     : null;
   const commandPreview = parsedCommand(commandText);
   const homeworkCommandPreview = parseHomework(commandText, subjects, now);
+  const reviewCommandPreview = parseReviewSession(commandText, subjects, now);
   const commandIsHomework = looksLikeHomeworkCommand(
     commandText,
     homeworkCommandPreview,
   );
   const nowResult = nowMoment ? nowRecommendations(new Date(nowMoment)) : null;
-  const draftTimingError =
-    draftItem?.startsAt &&
-    draftItem.endsAt &&
-    new Date(draftItem.endsAt) <= new Date(draftItem.startsAt)
-      ? "End must be after start."
-      : null;
-  const draftDurationOptions = draftItem
-    ? Array.from(
-        new Set([15, 30, 45, 60, 90, 120, durationMinutes(draftItem)]),
-      ).sort((a, b) => a - b)
-    : [];
-
-  function moveAnchor(amount: number) {
-    const next =
-      zoom === "month" || zoom === "semester"
-        ? new Date(
-            anchor.getFullYear(),
-            anchor.getMonth() + amount * (zoom === "semester" ? 6 : 1),
-            1,
-            12,
-          )
-        : addDays(anchor, amount * (zoom === "day" ? 1 : 7));
-    setAnchorDate(dateKey(next));
-    if (zoom === "day") {
-      setSelectedDay(dateKey(next));
-    } else if (zoom === "week") {
-      setSelectedDay(dateKey(addDays(dateFromKey(selectedDay), amount * 7)));
-    }
-  }
-
-  function canStartCalendarSwipe(target: EventTarget | null) {
-    return !(
-      target instanceof Element &&
-      target.closest(
-        "input, textarea, select, [contenteditable='true'], [draggable='true'], .resize-handle, .mobile-date-ribbon, .block-choice-carousel, .overview-grid.months-6, .multi-day-strip, [data-horizontal-scroll]",
-      )
-    );
-  }
-
-  function onCalendarPointerDown(event: ReactPointerEvent<HTMLElement>) {
-    if (
-      !isCompact ||
-      !(["day", "week", "month"] as Zoom[]).includes(zoom) ||
-      event.pointerType === "mouse" ||
-      draggingItemId ||
-      event.button !== 0 ||
-      !canStartCalendarSwipe(event.target)
-    ) {
-      calendarSwipeStartRef.current = null;
-      return;
-    }
-    const point = { x: event.clientX, y: event.clientY, at: performance.now() };
-    calendarSwipeStartRef.current = point;
-    calendarSwipeLastRef.current = point;
-  }
-
-  function onCalendarPointerMove(event: ReactPointerEvent<HTMLElement>) {
-    const start = calendarSwipeStartRef.current;
-    if (!start) return;
-    const point = { x: event.clientX, y: event.clientY, at: performance.now() };
-    calendarSwipeLastRef.current = point;
-    if (
-      Math.abs(point.x - start.x) > 12 &&
-      Math.abs(point.x - start.x) > Math.abs(point.y - start.y)
-    ) {
-      event.preventDefault();
-    }
-  }
-
-  function finishCalendarPointerSwipe(event: ReactPointerEvent<HTMLElement>) {
-    const start = calendarSwipeStartRef.current;
-    const end = calendarSwipeLastRef.current;
-    calendarSwipeStartRef.current = null;
-    calendarSwipeLastRef.current = null;
-    if (!start || !end || draggingItemId) return;
-    const direction = calendarSwipeDirection(start, end);
-    if (!direction) return;
-    event.preventDefault();
-    event.stopPropagation();
-    suppressSwipeClickUntilRef.current = performance.now() + 450;
-    moveAnchor(direction);
-  }
-
-  function onWeekWheel(event: ReactWheelEvent<HTMLElement>) {
-    if (
-      zoom !== "week" ||
-      draggingItemId ||
-      event.ctrlKey ||
-      event.metaKey ||
-      Math.abs(event.deltaX) <= Math.abs(event.deltaY) * 1.15
-    ) {
-      return;
-    }
-    const gesture = weekWheelRef.current;
-    const current = performance.now();
-    event.preventDefault();
-    if (current < gesture.lockedUntil) return;
-    if (current - gesture.lastAt > 180) gesture.totalX = 0;
-    gesture.totalX += event.deltaX;
-    gesture.lastAt = current;
-    if (Math.abs(gesture.totalX) < 80) return;
-    const direction = gesture.totalX > 0 ? 1 : -1;
-    gesture.totalX = 0;
-    gesture.lockedUntil = current + 650;
-    moveAnchor(direction);
-  }
+  const {
+    moveAnchor,
+    onCalendarPointerDown,
+    onCalendarPointerMove,
+    finishCalendarPointerSwipe,
+    onWeekWheel,
+  } = useCalendarNavigation({
+    zoom,
+    anchor,
+    selectedDay,
+    isCompact,
+    draggingItemId,
+    calendarSwipeStartRef,
+    calendarSwipeLastRef,
+    suppressSwipeClickUntilRef,
+    weekWheelRef,
+    setAnchorDate,
+    setSelectedDay,
+  });
 
   if (!gateAllowed) {
     return <AccessGate denied={gateDenied} />;
   }
 
   return (
-    <main id="main-content" className={`flex-shell ${draggingItemId ? "is-dragging" : ""}`}>
+    <main
+      id="main-content"
+      className={`flex-shell calendar-redesign ${
+        draggingItemId ? "is-dragging" : ""
+      } ${isDockRepositioning ? "is-dock-repositioning" : ""} ${
+        isCalendarItemRepositioning ? "is-calendar-item-repositioning" : ""
+      }`}
+    >
       <CalendarRail
         zoom={zoom}
         inboxOpen={inboxOpen}
-        homeworkOpen={homeworkOpen}
         hudOpen={hudOpen}
         historyOpen={historyOpen}
         weeklyReviewOpen={weeklyReviewOpen}
         weeklyReviewAvailable={weeklyReviewAvailable}
-        activeHomeworkCount={activeHomework.length}
         inboxCount={inboxItems.length}
         userEmail={user?.email}
+        onCalendar={() => {
+          setInboxOpen(false);
+          setHudOpen(false);
+          setZoom("week");
+        }}
         onToday={() => {
           const today = dateKey(new Date());
           setAnchorDate(today);
@@ -3853,51 +1994,40 @@ export default function Home() {
         }}
         onHome={() => {
           setInboxOpen(false);
-          setHomeworkOpen(false);
           setHudOpen(false);
           transitionState(() => setZoom("upcoming"));
         }}
         onSchool={() => {
           setInboxOpen(false);
-          setHomeworkOpen(false);
           setHudOpen(false);
           transitionState(() => setZoom("school"));
         }}
-        onToggleHomework={() => {
-          setHomeworkOpen((current) => !current);
-          setInboxOpen(false);
-          setHudOpen(false);
-        }}
         onToggleInbox={() => {
           setInboxOpen((current) => !current);
-          setHomeworkOpen(false);
           setHudOpen(false);
         }}
         onWeeklyReview={() => {
           setWeeklyReviewOpen(true);
           setInboxOpen(false);
-          setHomeworkOpen(false);
           setHudOpen(false);
         }}
         onOpenCommand={() => {
           setPaletteOpen(true);
           setInboxOpen(false);
-          setHomeworkOpen(false);
           setHudOpen(false);
         }}
         onToggleHud={() => {
           setHudOpen((current) => !current || historyOpen);
           setHistoryOpen(false);
           setInboxOpen(false);
-          setHomeworkOpen(false);
         }}
         onOpenHistory={() => {
           setHistoryOpen(true);
           setHudOpen(true);
           setInboxOpen(false);
-          setHomeworkOpen(false);
         }}
         onToggleAccount={() => setAccountOpen((current) => !current)}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
 
       <nav className="mobile-tab-bar" aria-label="Mobile navigation">
@@ -3906,7 +2036,6 @@ export default function Home() {
           type="button"
           onClick={() => {
             setInboxOpen(false);
-            setHomeworkOpen(false);
             setHudOpen(false);
             setMobileMenuOpen(false);
             setMobileCreateOpen(false);
@@ -3921,7 +2050,6 @@ export default function Home() {
           type="button"
           onClick={() => {
             setInboxOpen(false);
-            setHomeworkOpen(false);
             setHudOpen(false);
             setMobileMenuOpen(false);
             setMobileCreateOpen(false);
@@ -3935,10 +2063,12 @@ export default function Home() {
           className="mobile-create-button"
           type="button"
           aria-label="Add something"
-          aria-expanded={mobileCreateOpen}
+          aria-expanded={paletteOpen}
           onClick={() => {
             setMobileMenuOpen(false);
-            setMobileCreateOpen((current) => !current);
+            setMobileCreateOpen(false);
+            setPaletteMode("command");
+            setPaletteOpen(true);
           }}
         >
           <Plus size={23} />
@@ -3949,7 +2079,6 @@ export default function Home() {
           type="button"
           onClick={() => {
             setInboxOpen(false);
-            setHomeworkOpen(false);
             setHudOpen(false);
             setMobileMenuOpen(false);
             setMobileCreateOpen(false);
@@ -3977,7 +2106,6 @@ export default function Home() {
         createOpen={mobileCreateOpen}
         menuOpen={mobileMenuOpen}
         weeklyReviewAvailable={weeklyReviewAvailable}
-        activeHomeworkCount={activeHomework.length}
         inboxCount={inboxItems.length}
         undoCount={undoStack.length}
         signedIn={Boolean(user)}
@@ -3997,10 +2125,6 @@ export default function Home() {
         onNewTask={() => {
           setMobileCreateOpen(false);
           openNewTask();
-        }}
-        onOpenHomework={() => {
-          setMobileCreateOpen(false);
-          setHomeworkOpen(true);
         }}
         onWeeklyReview={() => {
           setMobileMenuOpen(false);
@@ -4032,7 +2156,9 @@ export default function Home() {
 
       <TaskDock
         open={inboxOpen}
+        position={inboxDockPosition}
         items={inboxItems}
+        subjects={subjects}
         draggingItemId={draggingItemId}
         filterText={filterText}
         syncing={syncing}
@@ -4044,32 +2170,12 @@ export default function Home() {
         onDragEnd={endDrag}
         onOpenItem={openItem}
         onOpenCommand={() => setPaletteOpen(true)}
+        onQuickCreate={createWorkItemFromText}
         onClose={() => setInboxOpen(false)}
+        onPositionChange={setInboxDockPosition}
+        onRepositioningChange={setIsDockRepositioning}
         onFilterChange={setFilterText}
       />
-
-      {homeworkOpen && (
-        <Suspense fallback={null}>
-          <HomeworkInbox
-            open={homeworkOpen}
-            captures={activeHomework}
-            subjects={subjects}
-            recentSubjects={prioritizedSubjects}
-            onClose={() => setHomeworkOpen(false)}
-            onCapture={captureHomework}
-            onConvert={convertHomeworkToAssignment}
-            onComplete={completeHomeworkCapture}
-            onDelete={deleteHomeworkCapture}
-            onDragState={(id) => setDraggingItemId(id ? `homework:${id}` : null)}
-            onOpenWeek={() => {
-              setHomeworkOpen(false);
-              setInboxOpen(false);
-              setHudOpen(false);
-              transitionState(() => setZoom("week"));
-            }}
-          />
-        </Suspense>
-      )}
 
       {weeklyReviewOpen && (
         <Suspense fallback={null}>
@@ -4166,6 +2272,10 @@ export default function Home() {
         onWheel={onWeekWheel}
       >
         <CalendarHeader
+          onCapture={() => {
+            setPaletteMode("command");
+            setPaletteOpen(true);
+          }}
           zoom={zoom}
           anchor={anchor}
           anchorDate={anchorDate}
@@ -4186,9 +2296,95 @@ export default function Home() {
           onUndo={undoLast}
         />
 
+        <OnboardingFlow
+          open={onboarding.mode === "new" || onboarding.mode === "resuming"}
+          step={onboarding.step}
+          completedSteps={onboarding.completedSteps}
+          hasAccount={Boolean(user)}
+          isOnline={isOnline}
+          awayDays={onboarding.awayDays}
+          stepNumber={onboarding.stepNumber}
+          stepCount={onboarding.stepCount}
+          schoolDaySettings={schoolDaySettings}
+          onChangeSchoolDaySettings={saveSchoolDaySettings}
+          onSkipStep={() => onboarding.step && onboarding.skipStep(onboarding.step.id)}
+          onDismiss={onboarding.dismiss}
+          onSignIn={() => setAccountOpen(true)}
+          onRunStepAction={(step) => onboarding.completeStep(step.id)}
+          onManualAlternative={(step) => {
+            transitionState(() => setZoom("school"));
+            onboarding.completeStep(step.id);
+          }}
+        />
+
+        <WelcomeBack
+          open={onboarding.mode === "returning" && !welcomeBackDismissed}
+          report={stalenessReport}
+          onClose={() => setWelcomeBackDismissed(true)}
+          onRelease={releaseStrandedWork}
+          onReimportTimetable={() => {
+            setWelcomeBackDismissed(true);
+            transitionState(() => setZoom("school"));
+          }}
+          onReplayTour={() => {
+            setWelcomeBackDismissed(true);
+            onboarding.replayTour();
+          }}
+        />
+
+        <SettingsPanel
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          hasAccount={Boolean(user)}
+          showDeveloperOverride={process.env.NODE_ENV !== "production"}
+          schoolDaySettings={schoolDaySettings}
+          onSaveSchoolDaySettings={saveSchoolDaySettings}
+          accountPreferences={accountPreferences}
+          onSaveAccountPreferences={saveAccountPreferences}
+          onboardingState={onboarding.state}
+          onReplayTour={onboarding.replayTour}
+          onReimportTimetable={() => {
+            onboarding.restartSetup();
+            transitionState(() => setZoom("school"));
+          }}
+          onRestartEverything={onboarding.restartEverything}
+          onForceOnboardingMode={(mode) => {
+            setWelcomeBackDismissed(false);
+            onboarding.setForcedMode(mode);
+          }}
+          pendingCount={pendingCount}
+          hasAlternatingClasses={classes.some(
+            (entry) => entry.weekPattern !== "every",
+          )}
+          deadLettered={deadLettered}
+          onRetryDeadLetter={(mutation) => {
+            queueMutation({ ...mutation, failureCount: 0 });
+            if (mutation.id !== undefined) {
+              removeDeadLetterMutation(mutation.id).catch(() => undefined);
+            }
+            setDeadLettered((current) =>
+              current.filter((entry) => entry.id !== mutation.id),
+            );
+            setSyncTick((tick) => tick + 1);
+          }}
+          onDiscardDeadLetter={(mutation) => {
+            if (mutation.id !== undefined) {
+              removeDeadLetterMutation(mutation.id).catch(() => undefined);
+            }
+            setDeadLettered((current) =>
+              current.filter((entry) => entry.id !== mutation.id),
+            );
+          }}
+        />
+
         {notice && (
           <div className="toast" role="status">
             <span>{notice}</span>
+            {undoStack.length > 0 && (
+              <button type="button" onClick={undoLast}>
+                Undo
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setNotice("")}
@@ -4202,10 +2398,7 @@ export default function Home() {
         {weeklyReviewAvailable && !weeklyReviewOpen && (
           <aside className="toast weekly-review-toast" role="status">
             <span>Weekly review is ready.</span>
-            <button
-              type="button"
-              onClick={() => setWeeklyReviewOpen(true)}
-            >
+            <button type="button" onClick={() => setWeeklyReviewOpen(true)}>
               Open
             </button>
           </aside>
@@ -4256,6 +2449,13 @@ export default function Home() {
           </Suspense>
         ) : zoom === "upcoming" ? (
           <AttentionHome
+            now={now}
+            loading={!hydrated}
+            blockChoice={currentBlockChoice}
+            onSelectBlockSuggestion={selectBlockSuggestion}
+            onBlockStatus={setBlockChoiceStatus}
+            onChangeBlockSuggestion={changeBlockSuggestion}
+            onOpenBlockSuggestion={openBlockSuggestion}
             snapshot={attentionSnapshot}
             commandText={commandText}
             commandBusy={commandBusy}
@@ -4285,11 +2485,6 @@ export default function Home() {
               setIntentionsOpen(true);
             }}
             onOpenCalendar={() => transitionState(() => setZoom("week"))}
-            blockChoice={currentBlockChoice}
-            onSelectBlockSuggestion={selectBlockSuggestion}
-            onBlockStatus={setBlockChoiceStatus}
-            onChangeBlockSuggestion={changeBlockSuggestion}
-            onOpenBlockSuggestion={openBlockSuggestion}
           />
         ) : isCompact && zoom === "week" ? (
           <Suspense fallback={<CalendarFallback />}>
@@ -4325,9 +2520,68 @@ export default function Home() {
           </Suspense>
         ) : (
           <Suspense fallback={<CalendarFallback />}>
+            <div className="calendar-class-filter" aria-label="Calendar filter">
+              <button
+                type="button"
+                aria-pressed={!classesOnly}
+                onClick={() => {
+                  setClassesOnly(false);
+                  setEventSelection([]);
+                }}
+              >
+                All events
+              </button>
+              <button
+                type="button"
+                aria-pressed={classesOnly}
+                onClick={() => {
+                  setClassesOnly(true);
+                  setEventSelection([]);
+                }}
+              >
+                Classes only
+              </button>
+              {eventSelection.length > 1 && (
+                <div className="calendar-selection-bar">
+                  <span>{eventSelection.length} selected</span>
+                  <button type="button" onClick={() => setBulkDeleteOpen(true)}>
+                    Delete selection
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Clear selection"
+                    onClick={() => setEventSelection([])}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
+            </div>
             <TimeCalendar
               days={visibleDays}
-              items={filteredItems}
+              items={calendarDisplayItems}
+              selectedIds={eventSelection}
+              onSelectItem={(item, shift) => {
+                if (shift) {
+                  closeCompactEditor();
+                  setEventSelection((current) =>
+                    current.includes(item.id)
+                      ? current.filter((id) => id !== item.id)
+                      : [...current, item.id],
+                  );
+                } else openItem(item);
+              }}
+              onClearSelection={() => setEventSelection([])}
+              onCompleteItem={(item) =>
+                void saveCompactEvent(
+                  {
+                    ...item,
+                    status:
+                      item.status === "completed" ? "scheduled" : "completed",
+                  },
+                  { isClass: false, repeat: "once", scope: "occurrence" },
+                )
+              }
               subjects={subjects}
               proposal={proposal}
               rowHeight={zoom === "day" ? 72 : 52}
@@ -4348,10 +2602,27 @@ export default function Home() {
               onResize={beginResize}
               onCreateAt={openNewEvent}
               onCreateSpan={openNewSpan}
-              onMoveAt={(item, day, hour, minute) =>
-                scheduleAt(item.id, day, hour, minute)
-              }
+              onMoveAt={(item, day, hour, minute, duration) => {
+                if (duration != null) {
+                  const start = dateFromKey(day);
+                  start.setHours(hour, minute, 0, 0);
+                  const next = {
+                    ...item,
+                    startsAt: start.toISOString(),
+                    endsAt: new Date(
+                      start.getTime() + duration * 60000,
+                    ).toISOString(),
+                    durationMin: duration,
+                    durationMax: duration,
+                  };
+                  if (item.classId) void persistClassOccurrence(next);
+                  else updateItem(next, `Move “${item.title}”`);
+                } else scheduleAt(item.id, day, hour, minute);
+                closeCompactEditor();
+              }}
+              onDesktopMoveStateChange={setIsCalendarItemRepositioning}
               compact={isCompact && zoom === "day"}
+              touchMode={isCompact}
             />
           </Suspense>
         )}
@@ -4375,14 +2646,13 @@ export default function Home() {
         onOpenItem={openItem}
       />
 
-      {(inboxOpen || homeworkOpen || hudOpen) && (
+      {(inboxOpen || hudOpen) && (
         <button
           className="panel-scrim"
           type="button"
           aria-label="Close contextual panel"
           onClick={() => {
             setInboxOpen(false);
-            setHomeworkOpen(false);
             setHudOpen(false);
           }}
         />
@@ -4453,6 +2723,7 @@ export default function Home() {
       )}
 
       <CommandPalette
+        error={commandError}
         open={paletteOpen}
         mode={paletteMode}
         commandText={commandText}
@@ -4461,8 +2732,12 @@ export default function Home() {
         commandQuestions={commandQuestions}
         commandPreview={commandPreview}
         homeworkCommandPreview={homeworkCommandPreview}
+        reviewCommandPreview={reviewCommandPreview}
         commandIsHomework={commandIsHomework}
-        onClose={() => setPaletteOpen(false)}
+        onClose={() => {
+          setPaletteOpen(false);
+          setCommandTargetId(null);
+        }}
         onModeChange={setPaletteMode}
         onCommandTextChange={setCommandText}
         onSubmit={(event) => submitCommand(event, "command")}
@@ -4494,33 +2769,47 @@ export default function Home() {
         timetableImportIssues={timetableImportIssues}
       />
       {selectedItem && draftItem && (
-        <EventModal
-          selectedItem={selectedItem}
-          draftItem={draftItem}
+        <CompactEventEditor
+          key={selectedItem.id}
+          item={draftItem}
+          creating={isCreatingItem}
+          anchor={eventAnchor}
           subjects={subjects}
-          assessments={assessments}
-          learningSource={sourceForCalendarItem(selectedItem)}
-          challengeLevel={latestSignalFor(
-            sourceForCalendarItem(selectedItem),
-            learningSignals,
-          )?.challengeLevel ?? null}
-          isCreatingItem={isCreatingItem}
-          draftTimingError={draftTimingError}
-          durationOptions={draftDurationOptions}
-          focusTemplates={schoolDaySettings.focusTemplates}
-          onDraftChange={setDraftItem}
-          onClose={() => {
-            setSelectedItem(null);
-            setDraftItem(null);
-            setIsCreatingItem(false);
-          }}
-          onSubmit={saveDraft}
+          classes={classes}
+          occurrences={classOccurrences}
+          onSave={saveCompactEvent}
+          onClose={closeCompactEditor}
           onDelete={deleteItem}
-          onUnschedule={unscheduleItem}
-          onToggleAssignmentSession={toggleAssignmentSession}
-          onMarkRevisionLearned={markRevisionLearned}
-          onChallenge={recordChallenge}
-          onGoDeeper={openGoDeeper}
+          onNaturalEdit={editEventNaturally}
+        />
+      )}
+      {bulkDeleteOpen && (
+        <SelectionDeleteDialog
+          count={eventSelection.length}
+          onClose={() => setBulkDeleteOpen(false)}
+          onDelete={async () => {
+            const selection = calendarDisplayItems.filter((item) =>
+              eventSelection.includes(item.id),
+            );
+            recordHistory(`Delete ${selection.length} events`);
+            for (const item of selection) {
+              if (item.classId) await persistClassOccurrence(item, true);
+              else {
+                await persistMutation({
+                  table: "calendar_items",
+                  action: "delete",
+                  recordId: item.id,
+                });
+                setItems((current) =>
+                  current.filter((entry) => entry.id !== item.id),
+                );
+              }
+              setEventSelection((current) =>
+                current.filter((id) => id !== item.id),
+              );
+            }
+            closeCompactEditor();
+          }}
         />
       )}
 

@@ -1,0 +1,105 @@
+/* Control surface refinements for the HUD and history. */
+
+.quick-hud {
+  right: 10px;
+  left: auto;
+  width: var(--hud);
+  display: block;
+  transform: translateX(calc(100% + 18px));
+  opacity: 0;
+  border-left: 1px solid #d6d9d2;
+}
+
+.quick-hud.is-open {
+  display: block;
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.hud-header {
+  min-height: 66px;
+  padding: 13px 14px;
+  background: rgb(246 247 243 / 94%);
+  border-color: #dfe2db;
+}
+
+.hud-header h2 {
+  color: #3c3d43;
+  font-size: 14px;
+}
+
+.hud-header > svg {
+  margin-left: auto;
+  margin-right: 8px;
+  color: #8173d3;
+}
+
+.temporal-hud {
+  padding: 3px 14px 9px;
+}
+
+.hud-row {
+  grid-template-columns: 32px 1fr;
+  padding: 10px 0;
+  border-color: #e1e3dd;
+}
+
+.hud-row time {
+  color: #6559b7;
+}
+
+.capacity-card,
+.insight-card {
+  margin: 0 11px 10px;
+  padding: 11px 12px;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid #dde0da;
+  border-radius: 0;
+}
+
+.capacity-track {
+  height: 2px;
+  background: #dcdfd8;
+}
+
+.capacity-track i {
+  background: #8374dc;
+}
+
+.capacity-card dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px 12px;
+}
+
+.capacity-dot {
+  width: 5px;
+  height: 5px;
+}
+
+.insight-card p {
+  margin: 0;
+  color: #858780;
+  font-size: 9px;
+}
+
+.history-list {
+  padding: 8px;
+}
+
+.history-list button {
+  padding: 9px;
+  background: transparent;
+  border-color: transparent;
+  border-radius: 6px;
+}
+
+.history-list button:hover {
+  background: #eceee9;
+  border-color: #dfe2db;
+}
+
+.panel-scrim {
+  display: none;
+}

@@ -8,7 +8,6 @@ export const SYNC_TABLES: PendingMutation["table"][] = [
   "class_exceptions",
   "assignments",
   "assessments",
-  "homework_captures",
   "intentions",
   "learning_signals",
   "explorations",

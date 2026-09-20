@@ -1,4 +1,4 @@
-import { openDB } from "idb";
+import { openDB, type IDBPDatabase } from "idb";
 import type { CalendarItem, HistoryEntry } from "@/lib/calendar-engine";
 import type { Intention } from "@/lib/intentions";
 import type { Exploration, LearningSignal } from "@/lib/study-intelligence";
@@ -18,6 +18,7 @@ export type OfflineState = SchoolState & {
 };
 
 export type PendingMutation = {
+  dependsOn?: string;
   id?: number;
   table:
     | "calendar_items"
@@ -27,7 +28,6 @@ export type PendingMutation = {
     | "class_exceptions"
     | "assignments"
     | "assessments"
-    | "homework_captures"
     | "intentions"
     | "learning_signals"
     | "explorations"
@@ -47,7 +47,7 @@ export type LastViewState = {
   selectedDay: string;
   nowOpen: boolean;
   inboxOpen: boolean;
-  homeworkOpen: boolean;
+  inboxDockPosition?: { x: number; y: number };
   intentionsOpen: boolean;
   hudOpen: boolean;
   historyOpen: boolean;
@@ -61,10 +61,12 @@ export type LastViewState = {
   visibleMinute?: number;
 };
 
-const dbPromise =
+const DEAD_LETTER_STORE = "calendar-mutations-dead-letter";
+
+const dbPromise: Promise<IDBPDatabase> | null =
   typeof window === "undefined"
     ? null
-    : openDB("syllabi-offline", 7, {
+    : openDB("syllabi-offline", 8, {
         upgrade(database) {
           if (!database.objectStoreNames.contains("calendar-state")) {
             database.createObjectStore("calendar-state");
@@ -75,6 +77,15 @@ const dbPromise =
               autoIncrement: true,
             });
           }
+          if (!database.objectStoreNames.contains(DEAD_LETTER_STORE)) {
+            database.createObjectStore(DEAD_LETTER_STORE, {
+              keyPath: "id",
+              autoIncrement: true,
+            });
+          }
+        },
+        blocking() {
+          void dbPromise?.then((database) => database.close());
         },
       });
 
@@ -90,10 +101,7 @@ export async function getOfflineState(): Promise<OfflineState | null> {
   return (await database.get("calendar-state", "current")) ?? null;
 }
 
-export async function saveLastViewState(
-  key: string,
-  state: LastViewState,
-) {
+export async function saveLastViewState(key: string, state: LastViewState) {
   const database = await dbPromise;
   if (!database) return;
   await database.put("calendar-state", state, key);
@@ -107,13 +115,52 @@ export async function getLastViewState(
   return ((await database.get("calendar-state", key)) as LastViewState) ?? null;
 }
 
+/**
+ * What this device knows about setup and when it last saw the student.
+ *
+ * Stored per owner so that signing in on a shared device does not inherit
+ * somebody else's progress, and stored locally at all because a session with no
+ * account still needs both answers.
+ */
+export type DeviceOnboardingRecord = {
+  state: unknown;
+  lastSeenAt: string | null;
+};
+
+const EMPTY_DEVICE_ONBOARDING: DeviceOnboardingRecord = {
+  state: null,
+  lastSeenAt: null,
+};
+
+function onboardingKey(ownerKey: string) {
+  return `onboarding:${ownerKey}`;
+}
+
+export async function getDeviceOnboarding(
+  ownerKey: string,
+): Promise<DeviceOnboardingRecord> {
+  const database = await dbPromise;
+  if (!database) return EMPTY_DEVICE_ONBOARDING;
+  const stored = (await database.get(
+    "calendar-state",
+    onboardingKey(ownerKey),
+  )) as DeviceOnboardingRecord | undefined;
+  return stored ?? EMPTY_DEVICE_ONBOARDING;
+}
+
+export async function saveDeviceOnboarding(
+  ownerKey: string,
+  record: DeviceOnboardingRecord,
+) {
+  const database = await dbPromise;
+  if (!database) return;
+  await database.put("calendar-state", record, onboardingKey(ownerKey));
+}
+
 export async function queueMutation(mutation: PendingMutation) {
   const database = await dbPromise;
   if (!database) return;
-  const transaction = database.transaction(
-    "calendar-mutations",
-    "readwrite",
-  );
+  const transaction = database.transaction("calendar-mutations", "readwrite");
   const store = transaction.objectStore("calendar-mutations");
   const existing = (await store.getAll()).filter(
     (candidate) =>
@@ -129,7 +176,9 @@ export async function queueMutation(mutation: PendingMutation) {
       .filter((candidate) => candidate.id !== undefined)
       .map((candidate) => store.delete(candidate.id!)),
   );
-  await store.add({ ...compacted, id: undefined });
+  const queued = { ...compacted };
+  delete queued.id;
+  await store.add(queued);
   await transaction.done;
 }
 
@@ -168,35 +217,7 @@ export type DeadLetterMutation = PendingMutation & {
   lastError: string;
 };
 
-const DEAD_LETTER_STORE = "calendar-mutations-dead-letter";
-
-const dbWithDeadLetterPromise =
-  typeof window === "undefined"
-    ? null
-    : openDB("syllabi-offline", 8, {
-        upgrade(database, oldVersion) {
-          if (oldVersion < 7) {
-            if (!database.objectStoreNames.contains("calendar-state")) {
-              database.createObjectStore("calendar-state");
-            }
-            if (!database.objectStoreNames.contains("calendar-mutations")) {
-              database.createObjectStore("calendar-mutations", {
-                keyPath: "id",
-                autoIncrement: true,
-              });
-            }
-          }
-          if (
-            oldVersion < 8 &&
-            !database.objectStoreNames.contains(DEAD_LETTER_STORE)
-          ) {
-            database.createObjectStore(DEAD_LETTER_STORE, {
-              keyPath: "id",
-              autoIncrement: true,
-            });
-          }
-        },
-      });
+const dbWithDeadLetterPromise = dbPromise;
 
 export function shouldDeadLetter(mutation: PendingMutation): boolean {
   return (mutation.failureCount ?? 0) >= MAX_PENDING_FAILURES;
@@ -220,7 +241,9 @@ export async function moveToDeadLetter(
     attempts: mutation.failureCount ?? 0,
     lastError,
   };
-  await deadLetterStore.add({ ...dead, id: undefined });
+  const queuedDead = { ...dead };
+  delete queuedDead.id;
+  await deadLetterStore.add(queuedDead);
   await liveStore.delete(mutation.id);
   await transaction.done;
 }

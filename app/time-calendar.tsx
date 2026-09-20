@@ -12,10 +12,8 @@ import {
   type DragEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
-  type TouchEvent as ReactTouchEvent,
   useEffect,
   useRef,
-  useState,
 } from "react";
 import {
   DAY_HOURS,
@@ -27,7 +25,7 @@ import {
   timeOffset,
 } from "@/app/calendar-geometry";
 import {
-  classColorStyle,
+  classGlassStyle,
   InlineItemTitle,
   NowLine,
 } from "@/app/calendar-ui";
@@ -37,22 +35,24 @@ import {
   formatTime,
   urgencyClass,
 } from "@/app/calendar-format";
-import { JapaneseDateExplanation } from "@/app/japanese-date-explanation";
 import {
   addDays,
   capacityForDay,
   dateFromKey,
   dateKey,
   durationMinutes,
-  energyLabels,
   isCalendarSpanItem,
   itemOverlapsDay,
   validatePlacement,
   type CalendarItem,
   type CalendarProposal,
 } from "@/lib/calendar-engine";
-import { getJapaneseCalendarDetails } from "@/lib/japanese-calendar";
 import type { Subject } from "@/lib/school";
+import { useTimeCalendarGestures } from "@/app/calendar/use-time-calendar-gestures";
+import {
+  ENERGY_USAGE_LABELS,
+  isClassEvent,
+} from "@/lib/calendar/interactions";
 import {
   isImportedTimetableItem,
   timetableRoomForItem,
@@ -78,7 +78,18 @@ export function TimeCalendar({
   onCreateSpan,
   onMoveAt,
   compact = false,
+  touchMode = compact,
+  selectedIds = [],
+  onSelectItem,
+  onClearSelection,
+  onCompleteItem,
+  onDesktopMoveStateChange,
 }: {
+  selectedIds?: string[];
+  onSelectItem?: (item: CalendarItem, shift: boolean) => void;
+  onClearSelection?: () => void;
+  onCompleteItem?: (item: CalendarItem) => void;
+  onDesktopMoveStateChange?: (isMoving: boolean) => void;
   days: Date[];
   items: CalendarItem[];
   subjects: Subject[];
@@ -121,77 +132,12 @@ export function TimeCalendar({
     day: string,
     hour: number,
     minute: number,
+    duration?: number,
   ) => void;
   compact?: boolean;
+  touchMode?: boolean;
 }) {
   const hours = DAY_HOURS;
-  const [explainingDay, setExplainingDay] = useState<string | null>(null);
-  const [creationRange, setCreationRange] = useState<{
-    day: string;
-    startMinute: number;
-    endMinute: number;
-  } | null>(null);
-  const creationGesture = useRef<{
-    day: string;
-    anchorMinute: number;
-    moved: boolean;
-  } | null>(null);
-  const mobileCreationGesture = useRef<{
-    day: string;
-    anchorMinute: number;
-    currentMinute: number;
-    startX: number;
-    startY: number;
-    activated: boolean;
-    timer: number;
-  } | null>(null);
-  const mobileCreationScrollBlocker = useRef<
-    ((event: globalThis.TouchEvent) => void) | null
-  >(null);
-  const [mobileMovePreview, setMobileMovePreview] = useState<{
-    id: string;
-    startsAt: string;
-    endsAt: string;
-  } | null>(null);
-  const [desktopMovePreview, setDesktopMovePreview] = useState<{
-    item: CalendarItem;
-    day: string;
-    startsAt: string;
-    endsAt: string;
-  } | null>(null);
-  const desktopMoveGesture = useRef<{
-    item: CalendarItem;
-    pointerId: number;
-    startX: number;
-    startY: number;
-    grabOffsetMinutes: number;
-    active: boolean;
-    preview: {
-      day: string;
-      startsAt: string;
-      endsAt: string;
-    } | null;
-  } | null>(null);
-  const suppressDesktopMoveClickUntil = useRef(0);
-  const mobileMoveGesture = useRef<{
-    item: CalendarItem;
-    day: string;
-    grabOffsetMinutes: number;
-    currentStartMinute: number;
-    startX: number;
-    startY: number;
-    activated: boolean;
-    timer: number;
-  } | null>(null);
-  const suppressMobileMoveClickUntil = useRef(0);
-  const suppressCreateClick = useRef(false);
-  const [spanCreation, setSpanCreation] = useState<{
-    startIndex: number;
-    endIndex: number;
-  } | null>(null);
-  const spanCreationGesture = useRef<{
-    anchorIndex: number;
-  } | null>(null);
   const calendarRef = useRef<HTMLElement>(null);
   const dayHeadRef = useRef<HTMLDivElement>(null);
   const autoScrolledDayRef = useRef<string | null>(null);
@@ -200,6 +146,48 @@ export function TimeCalendar({
     (total, hour) => total + hourHeight(hour, rowHeight),
     0,
   );
+
+  const {
+    creationRange,
+    mobileMovePreview,
+    desktopMovePreview,
+    spanCreation,
+    suppressCreateClick,
+    suppressDesktopMoveClickUntil,
+    suppressMobileMoveClickUntil,
+    minuteFromClientY,
+    clearMobileCreation,
+    clearMobileMove,
+    beginDesktopMove,
+    moveDesktopEvent,
+    finishDesktopMove,
+    cancelDesktopMove,
+    beginMobileCreation,
+    moveMobileCreation,
+    finishMobileCreation,
+    beginMobileMove,
+    moveMobileEvent,
+    finishMobileMove,
+    beginCreation,
+    moveCreation,
+    finishCreation,
+    cancelCreation,
+    beginSpanCreation,
+    moveSpanCreation,
+    finishSpanCreation,
+    cancelSpanCreation,
+  } = useTimeCalendarGestures({
+    days,
+    rowHeight,
+    axisWidth,
+    compact,
+    touchMode,
+    calendarRef,
+    onCreateAt,
+    onCreateSpan,
+    onMoveAt,
+    onDesktopMoveStateChange,
+  });
   const proposalOrigins = new Set(
     proposal?.changes
       .filter((change) => change.before)
@@ -221,24 +209,6 @@ export function TimeCalendar({
       isCalendarSpanItem(item) &&
       days.some((day) => itemOverlapsDay(item, dateKey(day))),
   );
-
-  useEffect(() => {
-    if (!explainingDay) return;
-    function closeOnOutsidePointer(event: PointerEvent) {
-      if (!dayHeadRef.current?.contains(event.target as Node)) {
-        setExplainingDay(null);
-      }
-    }
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setExplainingDay(null);
-    }
-    document.addEventListener("pointerdown", closeOnOutsidePointer);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsidePointer);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [explainingDay]);
 
   useEffect(() => {
     if (!compact || days.length !== 1) return;
@@ -265,464 +235,22 @@ export function TimeCalendar({
     return () => window.cancelAnimationFrame(frame);
   }, [compact, days, rowHeight]);
 
-  useEffect(
-    () => () => {
-      const gesture = mobileCreationGesture.current;
-      if (gesture) window.clearTimeout(gesture.timer);
-      const moveGesture = mobileMoveGesture.current;
-      if (moveGesture) window.clearTimeout(moveGesture.timer);
-      const blocker = mobileCreationScrollBlocker.current;
-      if (blocker) document.removeEventListener("touchmove", blocker);
-    },
-    [],
-  );
-
-  function minuteFromClientY(element: HTMLElement, clientY: number) {
-    const column = element.closest<HTMLElement>(".day-column");
-    if (!column) return 0;
-    const rect = column.getBoundingClientRect();
-    const time = timeAtOffset(clientY - rect.top, rowHeight);
-    return time.hour * 60 + time.minute;
-  }
-
-  function minuteFromPointer(event: ReactPointerEvent<HTMLButtonElement>) {
-    return minuteFromClientY(event.currentTarget, event.clientY);
-  }
-
-  function clearMobileCreation(clearSelection = true) {
-    const gesture = mobileCreationGesture.current;
-    if (gesture) window.clearTimeout(gesture.timer);
-    mobileCreationGesture.current = null;
-    unlockMobileCreationScroll();
-    if (clearSelection) setCreationRange(null);
-  }
-
-  function clearMobileMove(clearPreview = true) {
-    const gesture = mobileMoveGesture.current;
-    if (gesture) window.clearTimeout(gesture.timer);
-    mobileMoveGesture.current = null;
-    unlockMobileCreationScroll();
-    if (clearPreview) setMobileMovePreview(null);
-  }
-
-  function clearDesktopMove(clearPreview = true) {
-    desktopMoveGesture.current = null;
-    if (clearPreview) setDesktopMovePreview(null);
-  }
-
-  function desktopMovePosition(
-    gesture: NonNullable<typeof desktopMoveGesture.current>,
-    clientX: number,
-    clientY: number,
-  ) {
-    const body = calendarRef.current?.querySelector<HTMLElement>(".time-body");
-    if (!body || days.length === 0) return null;
-    const rect = body.getBoundingClientRect();
-    const columnsWidth = Math.max(1, rect.width - axisWidth);
-    const dayWidth = columnsWidth / days.length;
-    const relativeX = Math.max(
-      0,
-      Math.min(columnsWidth - 1, clientX - rect.left - axisWidth),
-    );
-    const day = dateKey(days[Math.floor(relativeX / dayWidth)] ?? days[0]);
-    const pointerTime = timeAtOffset(clientY - rect.top, rowHeight);
-    const pointerMinute = pointerTime.hour * 60 + pointerTime.minute;
-    const duration = Math.max(15, durationMinutes(gesture.item));
-    const startMinute = Math.max(
-      0,
-      Math.min(
-        24 * 60 - duration,
-        Math.round((pointerMinute - gesture.grabOffsetMinutes) / 15) * 15,
-      ),
-    );
-    const start = dateFromKey(day);
-    start.setHours(Math.floor(startMinute / 60), startMinute % 60, 0, 0);
-    return {
-      item: gesture.item,
-      day,
-      startsAt: start.toISOString(),
-      endsAt: new Date(start.getTime() + duration * 60_000).toISOString(),
-    };
-  }
-
-  function beginDesktopMove(
-    event: ReactPointerEvent<HTMLElement>,
-    item: CalendarItem,
-  ) {
-    if (
-      compact ||
-      event.pointerType === "touch" ||
-      event.button !== 0 ||
-      item.flexibility === "fixed" ||
-      (event.target instanceof Element &&
-        event.target.closest(".resize-handle"))
-    ) {
-      return;
-    }
-    clearDesktopMove();
-    const pointerMinute = minuteFromClientY(event.currentTarget, event.clientY);
-    const start = new Date(item.startsAt!);
-    desktopMoveGesture.current = {
-      item,
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      grabOffsetMinutes:
-        pointerMinute - (start.getHours() * 60 + start.getMinutes()),
-      active: false,
-      preview: null,
-    };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  }
-
-  function moveDesktopEvent(event: ReactPointerEvent<HTMLElement>) {
-    const gesture = desktopMoveGesture.current;
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
-    if (!gesture.active) {
-      const distance = Math.hypot(
-        event.clientX - gesture.startX,
-        event.clientY - gesture.startY,
-      );
-      if (distance < 5) return;
-      gesture.active = true;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    const preview = desktopMovePosition(gesture, event.clientX, event.clientY);
-    if (preview) {
-      gesture.preview = {
-        day: preview.day,
-        startsAt: preview.startsAt,
-        endsAt: preview.endsAt,
-      };
-      setDesktopMovePreview(preview);
-    }
-  }
-
-  function finishDesktopMove(event: ReactPointerEvent<HTMLElement>) {
-    const gesture = desktopMoveGesture.current;
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
-    const preview = gesture.preview;
-    clearDesktopMove();
-    if (!gesture.active || !preview) return;
-    event.preventDefault();
-    event.stopPropagation();
-    suppressDesktopMoveClickUntil.current = event.timeStamp + 500;
-    const start = new Date(preview.startsAt);
-    onMoveAt(gesture.item, preview.day, start.getHours(), start.getMinutes());
-  }
-
-  function cancelDesktopMove() {
-    clearDesktopMove();
-  }
-
-  function lockMobileCreationScroll() {
-    if (mobileCreationScrollBlocker.current) return;
-    const blocker = (event: globalThis.TouchEvent) => {
-      if (
-        mobileCreationGesture.current?.activated ||
-        mobileMoveGesture.current?.activated
-      ) {
-        event.preventDefault();
-      }
-    };
-    mobileCreationScrollBlocker.current = blocker;
-    document.addEventListener("touchmove", blocker, { passive: false });
-  }
-
-  function unlockMobileCreationScroll() {
-    const blocker = mobileCreationScrollBlocker.current;
-    if (!blocker) return;
-    document.removeEventListener("touchmove", blocker);
-    mobileCreationScrollBlocker.current = null;
-  }
-
-  function beginMobileCreation(
-    event: ReactTouchEvent<HTMLButtonElement>,
-    day: string,
-  ) {
-    if (!compact || event.touches.length !== 1) return;
-    clearMobileMove();
-    clearMobileCreation();
-    const touch = event.touches[0];
-    const button = event.currentTarget;
-    const anchorMinute = minuteFromClientY(button, touch.clientY);
-    const gesture = {
-      day,
-      anchorMinute,
-      currentMinute: Math.min(24 * 60, anchorMinute + 60),
-      startX: touch.clientX,
-      startY: touch.clientY,
-      activated: false,
-      timer: 0,
-    };
-    gesture.timer = window.setTimeout(() => {
-      if (mobileCreationGesture.current !== gesture) return;
-      gesture.activated = true;
-      lockMobileCreationScroll();
-      setCreationRange({
-        day,
-        startMinute: anchorMinute,
-        endMinute: gesture.currentMinute,
-      });
-      navigator.vibrate?.(10);
-    }, 420);
-    mobileCreationGesture.current = gesture;
-  }
-
-  function moveMobileCreation(event: ReactTouchEvent<HTMLButtonElement>) {
-    const gesture = mobileCreationGesture.current;
-    const touch = event.touches[0];
-    if (!gesture || !touch) return;
-    if (!gesture.activated) {
-      const distance = Math.hypot(
-        touch.clientX - gesture.startX,
-        touch.clientY - gesture.startY,
-      );
-      if (distance > 10) clearMobileCreation();
-      return;
-    }
-
-    event.preventDefault();
-    gesture.currentMinute = minuteFromClientY(
-      event.currentTarget,
-      touch.clientY,
-    );
-    const startMinute = Math.min(gesture.anchorMinute, gesture.currentMinute);
-    const endMinute = Math.max(
-      Math.max(gesture.anchorMinute, gesture.currentMinute),
-      Math.min(24 * 60, startMinute + 15),
-    );
-    setCreationRange({ day: gesture.day, startMinute, endMinute });
-  }
-
-  function finishMobileCreation(event: ReactTouchEvent<HTMLButtonElement>) {
-    const gesture = mobileCreationGesture.current;
-    if (!gesture) return;
-    window.clearTimeout(gesture.timer);
-    mobileCreationGesture.current = null;
-    unlockMobileCreationScroll();
-    setCreationRange(null);
-    if (!gesture.activated) return;
-
-    event.preventDefault();
-    const startMinute = Math.min(gesture.anchorMinute, gesture.currentMinute);
-    const endMinute = Math.max(
-      Math.max(gesture.anchorMinute, gesture.currentMinute),
-      Math.min(24 * 60, startMinute + 15),
-    );
-    onCreateAt(
-      gesture.day,
-      Math.floor(startMinute / 60),
-      startMinute % 60,
-      Math.max(15, endMinute - startMinute),
-    );
-  }
-
-  function setMobileMovePosition(
-    gesture: NonNullable<typeof mobileMoveGesture.current>,
-    startMinute: number,
-  ) {
-    const duration = Math.max(15, durationMinutes(gesture.item));
-    const boundedStart = Math.max(0, Math.min(24 * 60 - duration, startMinute));
-    gesture.currentStartMinute = boundedStart;
-    const start = dateFromKey(gesture.day);
-    start.setHours(Math.floor(boundedStart / 60), boundedStart % 60, 0, 0);
-    setMobileMovePreview({
-      id: gesture.item.id,
-      startsAt: start.toISOString(),
-      endsAt: new Date(start.getTime() + duration * 60_000).toISOString(),
-    });
-  }
-
-  function beginMobileMove(
-    event: ReactTouchEvent<HTMLElement>,
-    item: CalendarItem,
-    day: string,
-  ) {
-    if (
-      !compact ||
-      item.flexibility === "fixed" ||
-      event.touches.length !== 1
-    ) {
-      return;
-    }
-    clearMobileCreation();
-    clearMobileMove();
-    const touch = event.touches[0];
-    const touchMinute = minuteFromClientY(event.currentTarget, touch.clientY);
-    const start = new Date(item.startsAt!);
-    const startMinute = start.getHours() * 60 + start.getMinutes();
-    const gesture = {
-      item,
-      day,
-      grabOffsetMinutes: touchMinute - startMinute,
-      currentStartMinute: startMinute,
-      startX: touch.clientX,
-      startY: touch.clientY,
-      activated: false,
-      timer: 0,
-    };
-    gesture.timer = window.setTimeout(() => {
-      if (mobileMoveGesture.current !== gesture) return;
-      gesture.activated = true;
-      lockMobileCreationScroll();
-      setMobileMovePosition(gesture, startMinute);
-      navigator.vibrate?.(10);
-    }, 420);
-    mobileMoveGesture.current = gesture;
-  }
-
-  function moveMobileEvent(event: ReactTouchEvent<HTMLElement>) {
-    const gesture = mobileMoveGesture.current;
-    const touch = event.touches[0];
-    if (!gesture || !touch) return;
-    if (!gesture.activated) {
-      const distance = Math.hypot(
-        touch.clientX - gesture.startX,
-        touch.clientY - gesture.startY,
-      );
-      if (distance > 10) clearMobileMove();
-      return;
-    }
-    event.preventDefault();
-    const touchMinute = minuteFromClientY(event.currentTarget, touch.clientY);
-    const startMinute =
-      Math.round((touchMinute - gesture.grabOffsetMinutes) / 15) * 15;
-    setMobileMovePosition(gesture, startMinute);
-  }
-
-  function finishMobileMove(event: ReactTouchEvent<HTMLElement>) {
-    const gesture = mobileMoveGesture.current;
-    if (!gesture) return;
-    window.clearTimeout(gesture.timer);
-    mobileMoveGesture.current = null;
-    unlockMobileCreationScroll();
-    setMobileMovePreview(null);
-    if (!gesture.activated) return;
-    event.preventDefault();
-    suppressMobileMoveClickUntil.current = event.timeStamp + 500;
-    onMoveAt(
-      gesture.item,
-      gesture.day,
-      Math.floor(gesture.currentStartMinute / 60),
-      gesture.currentStartMinute % 60,
-    );
-  }
-
-  function beginCreation(
-    event: ReactPointerEvent<HTMLButtonElement>,
-    day: string,
-  ) {
-    if (event.button !== 0 || (compact && event.pointerType !== "mouse"))
-      return;
-    const anchorMinute = minuteFromPointer(event);
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    creationGesture.current = { day, anchorMinute, moved: false };
-    setCreationRange({
-      day,
-      startMinute: anchorMinute,
-      endMinute: Math.min(24 * 60, anchorMinute + 15),
-    });
-  }
-
-  function moveCreation(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (compact && event.pointerType !== "mouse") return;
-    const gesture = creationGesture.current;
-    if (!gesture) return;
-    const currentMinute = minuteFromPointer(event);
-    if (Math.abs(currentMinute - gesture.anchorMinute) >= 15) {
-      gesture.moved = true;
-    }
-    setCreationRange({
-      day: gesture.day,
-      startMinute: Math.min(gesture.anchorMinute, currentMinute),
-      endMinute: Math.max(
-        Math.max(gesture.anchorMinute, currentMinute),
-        Math.min(24 * 60, Math.min(gesture.anchorMinute, currentMinute) + 15),
-      ),
-    });
-  }
-
-  function finishCreation(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (compact && event.pointerType !== "mouse") return;
-    const gesture = creationGesture.current;
-    if (!gesture) return;
-    const currentMinute = minuteFromPointer(event);
-    creationGesture.current = null;
-    setCreationRange(null);
-    if (!gesture.moved) return;
-    const startMinute = Math.min(gesture.anchorMinute, currentMinute);
-    const endMinute = Math.max(gesture.anchorMinute, currentMinute);
-    const duration = Math.max(15, endMinute - startMinute);
-    suppressCreateClick.current = true;
-    window.setTimeout(() => {
-      suppressCreateClick.current = false;
-    }, 0);
-    onCreateAt(
-      gesture.day,
-      Math.floor(startMinute / 60),
-      startMinute % 60,
-      duration,
-    );
-  }
-
-  function cancelCreation() {
-    creationGesture.current = null;
-    setCreationRange(null);
-  }
-
-  function spanIndexFromPointer(event: ReactPointerEvent<HTMLButtonElement>) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const ratio = rect.width > 0 ? (event.clientX - rect.left) / rect.width : 0;
-    return Math.max(
-      0,
-      Math.min(days.length - 1, Math.floor(ratio * days.length)),
-    );
-  }
-
-  function beginSpanCreation(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (event.button !== 0 || days.length === 0) return;
-    const anchorIndex = spanIndexFromPointer(event);
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    spanCreationGesture.current = { anchorIndex };
-    setSpanCreation({ startIndex: anchorIndex, endIndex: anchorIndex });
-  }
-
-  function moveSpanCreation(event: ReactPointerEvent<HTMLButtonElement>) {
-    const gesture = spanCreationGesture.current;
-    if (!gesture) return;
-    const currentIndex = spanIndexFromPointer(event);
-    setSpanCreation({
-      startIndex: Math.min(gesture.anchorIndex, currentIndex),
-      endIndex: Math.max(gesture.anchorIndex, currentIndex),
-    });
-  }
-
-  function finishSpanCreation(event: ReactPointerEvent<HTMLButtonElement>) {
-    const gesture = spanCreationGesture.current;
-    if (!gesture || days.length === 0) return;
-    const currentIndex = spanIndexFromPointer(event);
-    const startIndex = Math.min(gesture.anchorIndex, currentIndex);
-    const endIndex = Math.max(gesture.anchorIndex, currentIndex);
-    spanCreationGesture.current = null;
-    setSpanCreation(null);
-    onCreateSpan(dateKey(days[startIndex]), dateKey(days[endIndex]));
-  }
-
-  function cancelSpanCreation() {
-    spanCreationGesture.current = null;
-    setSpanCreation(null);
-  }
 
   return (
     <section
       ref={calendarRef}
       className={`time-calendar ${compact ? "mobile-day-calendar" : ""}`}
+      onClick={(event) => {
+        if (
+          event.target instanceof Element &&
+          !event.target.closest("[data-event-id], .multi-day-item")
+        )
+          onClearSelection?.();
+      }}
       style={{ "--row-height": `${rowHeight}px` } as CSSProperties}
     >
       <div
-        className={`day-head ${explainingDay ? "has-date-popover" : ""}`}
+        className="day-head"
         ref={dayHeadRef}
         style={{
           gridTemplateColumns: `${axisWidth}px repeat(${days.length}, minmax(${compact ? 0 : 110}px, 1fr))`,
@@ -732,7 +260,6 @@ export function TimeCalendar({
         {days.map((day) => {
           const key = dateKey(day);
           const capacity = capacityForDay(items, key);
-          const japaneseDate = getJapaneseCalendarDetails(day);
           return (
             <button
               className={`${key === selectedDay ? "selected" : ""} ${
@@ -740,37 +267,24 @@ export function TimeCalendar({
               }`}
               type="button"
               key={key}
-              aria-expanded={explainingDay === key}
+              aria-pressed={selectedDay === key}
               onClick={() => {
                 onSelectDay(key);
-                setExplainingDay((current) => (current === key ? null : key));
               }}
               aria-label={`${formatDate(day, {
                 weekday: "long",
                 month: "long",
                 day: "numeric",
-              })}, ${japaneseDate.era}, ${japaneseDate.rokuyo}`}
+              })}`}
             >
               <span>{formatDate(day, { weekday: "short" })}</span>
               <strong>{day.getDate()}</strong>
-              <span className="day-cultural-meta">
-                <small>{japaneseDate.era}</small>
-                <b className={`rokuyo-tag tone-${japaneseDate.tone}`}>
-                  {japaneseDate.rokuyo}
-                </b>
-              </span>
               <i>
                 <b style={{ width: `${capacity.load}%` }} />
               </i>
             </button>
           );
         })}
-        {explainingDay && (
-          <JapaneseDateExplanation
-            date={dateFromKey(explainingDay)}
-            onClose={() => setExplainingDay(null)}
-          />
-        )}
       </div>
       <div
         className="multi-day-strip"
@@ -826,14 +340,21 @@ export function TimeCalendar({
           const continuesAfter = new Date(item.endsAt!) > visibleEnd;
           return (
             <button
-              className={`multi-day-item kind-${item.kind} energy-${item.energyType} flex-${item.flexibility} ${
+              className={`multi-day-item ${isClassEvent(item) ? "is-class-event" : ""} kind-${item.kind} energy-${item.energyType} flex-${item.flexibility} ${
                 proposed ? "proposal-target" : ""
               } ${continuesBefore ? "continues-before" : ""} ${
                 continuesAfter ? "continues-after" : ""
               }`}
               type="button"
               key={`${proposed ? "proposal-" : ""}${item.id}`}
-              onClick={() => !proposed && onOpenItem(item)}
+              data-event-id={proposed ? undefined : item.id}
+              data-selected={selectedIds.includes(item.id)}
+              onClick={(event) => {
+                if (!proposed) {
+                  if (onSelectItem) onSelectItem(item, event.shiftKey);
+                  else onOpenItem(item);
+                }
+              }}
               aria-label={`${item.title}, ${formatSpan(item)}${
                 continuesBefore || continuesAfter
                   ? ", continues beyond this week"
@@ -842,7 +363,7 @@ export function TimeCalendar({
               style={{
                 gridColumn: `${first + 2} / ${last + 3}`,
                 gridRow: row + 2,
-                ...classColorStyle(item, subjects),
+                ...classGlassStyle(item, subjects),
               }}
             >
               {item.flexibility === "fixed" ? (
@@ -888,7 +409,7 @@ export function TimeCalendar({
             (item) =>
               item.startsAt &&
               item.endsAt &&
-              item.status === "scheduled" &&
+              (item.status === "scheduled" || item.status === "completed") &&
               !isCalendarSpanItem(item) &&
               dateKey(new Date(item.startsAt)) === key,
           );
@@ -960,10 +481,11 @@ export function TimeCalendar({
               endsAt: previewSource.endsAt,
             };
             const validation = validatePlacement(
-              previewItem,
+              { ...previewItem, durationMin: 5, durationMax: 525600 },
               candidate.startsAt,
               candidate.endsAt,
-              items,
+              [],
+              { allowFixedChange: true },
             );
             const geometry = itemGeometry(candidate, rowHeight);
             desktopDropPreview = {
@@ -1002,12 +524,16 @@ export function TimeCalendar({
                       day: "numeric",
                     })} ${hour}:00`}
                     onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
-                      if (compact) {
+                      if (touchMode) {
                         event.preventDefault();
                         return;
                       }
                       if (suppressCreateClick.current) {
                         event.preventDefault();
+                        return;
+                      }
+                      if (event.detail !== 0) {
+                        onClearSelection?.();
                         return;
                       }
                       const rect = event.currentTarget.getBoundingClientRect();
@@ -1018,6 +544,15 @@ export function TimeCalendar({
                         ) * 15,
                       );
                       onCreateAt(key, hour, minute);
+                    }}
+                    onDoubleClick={(event) => {
+                      if (!compact) {
+                        const minute = minuteFromClientY(
+                          event.currentTarget,
+                          event.clientY,
+                        );
+                        onCreateAt(key, Math.floor(minute / 60), minute % 60);
+                      }
                     }}
                     onPointerDown={(event) => beginCreation(event, key)}
                     onPointerMove={moveCreation}
@@ -1071,12 +606,16 @@ export function TimeCalendar({
               {desktopDropPreview && (
                 <div
                   className={`calendar-drop-preview ${
+                    isClassEvent(desktopDropPreview.item)
+                      ? "is-class-event"
+                      : ""
+                  } ${
                     desktopDropPreview.valid ? "is-valid" : "is-invalid"
                   }`}
                   style={{
                     top: desktopDropPreview.top,
                     height: desktopDropPreview.height,
-                    ...classColorStyle(desktopDropPreview.item, subjects),
+                    ...classGlassStyle(desktopDropPreview.item, subjects),
                   }}
                   aria-live="polite"
                 >
@@ -1200,7 +739,14 @@ export function TimeCalendar({
                 const width = 100 / placement.lanes;
                 return (
                   <article
+                    data-event-id={item.id}
+                    aria-pressed={selectedIds.includes(item.id)}
+                    data-selected={selectedIds.includes(item.id)}
+                    data-completed={item.status === "completed"}
+                    data-conflict={placement.lanes > 1}
                     className={`calendar-block ${
+                      isClassEvent(item) ? "is-class-event" : ""
+                    } ${
                       resizing?.id === item.id ? "is-resizing" : ""
                     } ${
                       mobileMovePreview?.id === item.id
@@ -1221,8 +767,25 @@ export function TimeCalendar({
                         ? "micro"
                         : displayHeight < 68
                           ? "compact"
-                          : "roomy"
+                          : displayHeight < 118
+                            ? "roomy"
+                            : displayHeight < 180
+                              ? "tall"
+                              : "spacious"
                     }
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`${item.title}, ${formatTime(item.startsAt)} to ${formatTime(item.endsAt)}${item.room ? `, Room ${item.room}` : ""}`}
+                    onKeyDown={(event) => {
+                      if (
+                        event.target === event.currentTarget &&
+                        (event.key === "Enter" || event.key === " ")
+                      ) {
+                        event.preventDefault();
+                        if (onSelectItem) onSelectItem(item, event.shiftKey);
+                        else onOpenItem(item);
+                      }
+                    }}
                     data-lanes={Math.min(3, placement.lanes)}
                     onPointerDown={(event) => beginDesktopMove(event, item)}
                     onPointerMove={moveDesktopEvent}
@@ -1238,7 +801,9 @@ export function TimeCalendar({
                         event.stopPropagation();
                         return;
                       }
-                      onOpenItem(item);
+                      event.stopPropagation();
+                      if (onSelectItem) onSelectItem(item, event.shiftKey);
+                      else onOpenItem(item);
                     }}
                     onTouchStart={(event) => beginMobileMove(event, item, key)}
                     onTouchMove={moveMobileEvent}
@@ -1252,11 +817,13 @@ export function TimeCalendar({
                         right: "auto",
                         width: `calc(${width}% - 6px)`,
                         viewTransitionName: `calendar-item-${item.id}`,
-                        ...classColorStyle(item, subjects),
+                        ...classGlassStyle(item, subjects),
                       } as CSSProperties
                     }
                   >
-                    {!compact && (
+                    {!compact &&
+                      !isClassEvent(item) &&
+                      selectedIds.includes(item.id) && (
                       <button
                         className="resize-handle resize-handle-start"
                         type="button"
@@ -1282,17 +849,40 @@ export function TimeCalendar({
                       )}
                       <time>{formatTime(item.startsAt)}</time>
                     </div>
-                    <InlineItemTitle
-                      key={item.title}
-                      item={item}
-                      onRename={onRenameItem}
-                    />
-                    {isImportedTimetableItem(item) &&
-                      timetableRoomForItem(item) && (
-                        <span className="calendar-class-room">
-                          Room {timetableRoomForItem(item)}
-                        </span>
-                      )}
+                    <strong className="event-block-title">
+                      {item.status === "completed" ? "✓ " : ""}
+                      {item.title}
+                    </strong>
+                    {item.kind === "task" && (
+                      <button
+                        type="button"
+                        className="event-hover-complete"
+                        aria-label={`${item.status === "completed" ? "Reopen" : "Complete"} ${item.title}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onCompleteItem?.(item);
+                        }}
+                      >
+                        ✓
+                      </button>
+                    )}
+                    {item.kind === "task" && item.subjectId && (
+                      <span className="homework-subject-label">
+                        {
+                          subjects.find(
+                            (subject) => subject.id === item.subjectId,
+                          )?.shortName
+                        }
+                        {item.linkedOccurrenceDate
+                          ? ` · ${item.linkedOccurrenceDate.slice(5)}`
+                          : ""}
+                      </span>
+                    )}
+                    {timetableRoomForItem(item) && displayHeight >= 32 && (
+                      <span className="calendar-class-room">
+                        Room {timetableRoomForItem(item)}
+                      </span>
+                    )}
                     {mobileMovePreview?.id === item.id && (
                       <span className="mobile-move-time-badge">
                         {formatTime(previewItem.startsAt)}–
@@ -1302,7 +892,7 @@ export function TimeCalendar({
                     <small>
                       {isImportedTimetableItem(item)
                         ? item.description || "Click to edit this period"
-                        : `${energyLabels[item.energyType]}${
+                        : `${ENERGY_USAGE_LABELS[(item.energyUsage ?? 3) - 1]}${
                             item.constraints.length
                               ? ` · ${item.constraints.length} constraint${
                                   item.constraints.length === 1 ? "" : "s"
@@ -1310,7 +900,9 @@ export function TimeCalendar({
                               : ""
                           }`}
                     </small>
-                    {!compact && (
+                    {!compact &&
+                      !isClassEvent(item) &&
+                      selectedIds.includes(item.id) && (
                       <button
                         className="resize-handle resize-handle-end"
                         type="button"

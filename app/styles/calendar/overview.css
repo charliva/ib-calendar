@@ -1,0 +1,107 @@
+/* Overview and month surfaces. */
+
+.overview-grid {
+  display: grid;
+  padding: 22px;
+  gap: 22px;
+  background: var(--canvas);
+}
+
+.overview-grid.months-1 {
+  grid-template-columns: minmax(420px, 780px);
+  justify-content: center;
+}
+
+.overview-grid.months-6 {
+  grid-template-columns: repeat(2, minmax(310px, 1fr));
+}
+
+.month-card {
+  padding: 18px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 4px 18px rgb(29 26 31 / 4%);
+}
+
+.month-card header h2 {
+  margin: 0 0 15px;
+  font-size: 14px;
+  font-weight: 670;
+  letter-spacing: -.025em;
+}
+
+.month-weekdays,
+.month-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.month-weekdays span {
+  padding-bottom: 8px;
+  color: #99938b;
+  text-align: center;
+  font-family: var(--font-mono), monospace;
+  font-size: 7px;
+  font-weight: 700;
+}
+
+.month-days button,
+.month-days > span {
+  position: relative;
+  min-height: 54px;
+}
+
+.month-days button {
+  padding: 6px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  border-right: 1px solid var(--line-soft);
+}
+
+.month-days button:hover {
+  background: #f2efff;
+}
+
+.month-days button.today strong {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  color: #fff;
+  background: #211f24;
+  border-radius: 50%;
+}
+
+.month-days button.overloaded {
+  background: #fff3f2;
+}
+
+.month-days strong {
+  font-size: 9px;
+  font-weight: 620;
+}
+
+.month-days button > div {
+  display: flex;
+  margin-top: 8px;
+  gap: 3px;
+}
+
+.month-days i {
+  width: 5px;
+  height: 5px;
+  background: var(--energy);
+  border-radius: 50%;
+}
+
+.month-days em {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 12px;
+  height: 2px;
+  background: var(--rose);
+}

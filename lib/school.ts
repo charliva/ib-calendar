@@ -5,15 +5,12 @@ import type {
   TaskContext,
 } from "@/lib/calendar-engine";
 
+import { DEFAULT_WEEK_PATTERN_ANCHOR } from "./school/week-pattern.ts";
+
 export type { TaskContext } from "@/lib/calendar-engine";
 export type WeekPattern = "every" | "a" | "b";
 export type AssignmentStatus =
-  | "inbox"
-  | "planned"
-  | "in_progress"
-  | "submitted"
-  | "completed"
-  | "archived";
+  "inbox" | "planned" | "in_progress" | "submitted" | "completed" | "archived";
 export type AssessmentStatus = "upcoming" | "completed" | "cancelled";
 export type LessonExceptionStatus = "cancelled" | "rescheduled";
 export type HomeworkTaskType =
@@ -24,12 +21,6 @@ export type HomeworkTaskType =
   | "vocabulary"
   | "project"
   | "other";
-export type HomeworkCaptureStatus =
-  | "captured"
-  | "scheduled"
-  | "converted"
-  | "completed"
-  | "archived";
 
 export type SchoolDaySettings = {
   schoolLocation: string;
@@ -46,6 +37,12 @@ export type SchoolDaySettings = {
   minimumFreePeriodMinutes: number;
   lowEnergyStart: string;
   lowEnergyEnd: string;
+  /**
+   * Monday of a week the student has confirmed runs the A timetable. Schools
+   * decide which week is which, so the fortnightly cycle is anchored to an
+   * answer rather than to a constant.
+   */
+  weekPatternAnchor: string;
   focusTemplates: Record<SchoolWorkType, FocusTemplate>;
 };
 
@@ -64,10 +61,7 @@ export const WORK_TYPE_LABELS: Record<SchoolWorkType, string> = {
   creative_project: "Creative / project",
 };
 
-export const DEFAULT_FOCUS_TEMPLATES: Record<
-  SchoolWorkType,
-  FocusTemplate
-> = {
+export const DEFAULT_FOCUS_TEMPLATES: Record<SchoolWorkType, FocusTemplate> = {
   deep_focus: { durationMin: 45, durationMax: 60 },
   light_work: { durationMin: 25, durationMax: 25 },
   reading: { durationMin: 25, durationMax: 25 },
@@ -92,9 +86,10 @@ export const DEFAULT_SCHOOL_DAY_SETTINGS: SchoolDaySettings = {
   preferredStudyEnd: "19:00",
   allowCommuteScheduling: false,
   schoolComputerAccess: false,
-  minimumFreePeriodMinutes: 20,
+  minimumFreePeriodMinutes: 45,
   lowEnergyStart: "19:00",
   lowEnergyEnd: "21:00",
+  weekPatternAnchor: DEFAULT_WEEK_PATTERN_ANCHOR,
   focusTemplates: DEFAULT_FOCUS_TEMPLATES,
 };
 
@@ -110,6 +105,8 @@ export type Subject = {
 };
 
 export type SchoolClass = {
+  energyUsage?: number;
+  locationContext?: "school" | "home" | "library" | "city" | "anywhere";
   id: string;
   subjectId: string;
   weekday: number;
@@ -124,6 +121,9 @@ export type SchoolClass = {
 };
 
 export type ClassException = {
+  replacementTitle?: string;
+  energyUsage?: number;
+  locationContext?: string;
   id: string;
   classId: string;
   occurrenceDate: string;
@@ -183,34 +183,16 @@ export type Assessment = {
   createdAt: string;
 };
 
-export type HomeworkCapture = {
-  id: string;
-  rawText: string;
-  title: string;
-  subjectId: string | null;
-  deadline: string | null;
-  taskType: HomeworkTaskType;
-  estimatedMinutes: number;
-  status: HomeworkCaptureStatus;
-  convertedAssignmentId: string | null;
-  scheduledCalendarItemId: string | null;
-  parsedMeta: Record<string, unknown>;
-  createdAt: string;
-};
-
 export type SchoolState = {
   subjects: Subject[];
   classes: SchoolClass[];
   classExceptions: ClassException[];
   assignments: Assignment[];
   assessments: Assessment[];
-  homeworkCaptures: HomeworkCapture[];
   schoolDaySettings: SchoolDaySettings;
 };
 
-export function normalizeAssignment(
-  assignment: Assignment,
-): Assignment {
+export function normalizeAssignment(assignment: Assignment): Assignment {
   return {
     ...assignment,
     allowedWeekdays:
@@ -254,7 +236,6 @@ export const EMPTY_SCHOOL_STATE: SchoolState = {
   classExceptions: [],
   assignments: [],
   assessments: [],
-  homeworkCaptures: [],
   schoolDaySettings: DEFAULT_SCHOOL_DAY_SETTINGS,
 };
 
@@ -339,15 +320,18 @@ export function rowToSchoolDaySettings(
     travelHomeMinutes: numeric(row.travel_home_minutes, 30),
     recoveryAfterHomeMinutes: numeric(row.recovery_after_home_minutes, 30),
     schoolworkCutoff: text(row.schoolwork_cutoff).slice(0, 5) || "21:00",
-    preferredStudyStart:
-      text(row.preferred_study_start).slice(0, 5) || "16:00",
-    preferredStudyEnd:
-      text(row.preferred_study_end).slice(0, 5) || "19:00",
+    preferredStudyStart: text(row.preferred_study_start).slice(0, 5) || "16:00",
+    preferredStudyEnd: text(row.preferred_study_end).slice(0, 5) || "19:00",
     allowCommuteScheduling: Boolean(row.allow_commute_scheduling),
     schoolComputerAccess: Boolean(row.school_computer_access),
-    minimumFreePeriodMinutes: numeric(row.minimum_free_period_minutes, 20),
+    minimumFreePeriodMinutes: Math.max(
+      45,
+      numeric(row.minimum_free_period_minutes, 45),
+    ),
     lowEnergyStart: text(row.low_energy_start).slice(0, 5) || "19:00",
     lowEnergyEnd: text(row.low_energy_end).slice(0, 5) || "21:00",
+    weekPatternAnchor:
+      text(row.week_pattern_anchor).slice(0, 10) || DEFAULT_WEEK_PATTERN_ANCHOR,
     focusTemplates: focusTemplates(row.focus_templates),
   };
 }
@@ -358,6 +342,9 @@ export function normalizeSchoolDaySettings(
   return {
     ...DEFAULT_SCHOOL_DAY_SETTINGS,
     ...settings,
+    minimumFreePeriodMinutes: Math.max(45, settings.minimumFreePeriodMinutes),
+    weekPatternAnchor:
+      settings.weekPatternAnchor?.trim() || DEFAULT_WEEK_PATTERN_ANCHOR,
     focusTemplates: focusTemplates(settings.focusTemplates),
   };
 }
@@ -378,12 +365,16 @@ export function schoolDaySettingsToRow(settings: SchoolDaySettings) {
     minimum_free_period_minutes: settings.minimumFreePeriodMinutes,
     low_energy_start: settings.lowEnergyStart,
     low_energy_end: settings.lowEnergyEnd,
+    week_pattern_anchor: settings.weekPatternAnchor,
     focus_templates: settings.focusTemplates,
   };
 }
 
 export function rowToClass(row: Record<string, unknown>): SchoolClass {
   return {
+    energyUsage: numeric(row.energy_usage, 3),
+    locationContext:
+      (row.location_context as SchoolClass["locationContext"]) ?? "school",
     id: text(row.id),
     subjectId: text(row.subject_id),
     weekday: numeric(row.weekday, 1),
@@ -400,6 +391,8 @@ export function rowToClass(row: Record<string, unknown>): SchoolClass {
 
 export function classToRow(schoolClass: SchoolClass) {
   return {
+    energy_usage: schoolClass.energyUsage ?? 3,
+    location_context: schoolClass.locationContext ?? "school",
     id: schoolClass.id,
     subject_id: schoolClass.subjectId,
     weekday: schoolClass.weekday,
@@ -417,13 +410,19 @@ export function rowToClassException(
   row: Record<string, unknown>,
 ): ClassException {
   return {
+    replacementTitle: text(row.replacement_title),
+    energyUsage:
+      row.energy_usage == null ? undefined : numeric(row.energy_usage, 3),
+    locationContext: text(row.location_context),
     id: text(row.id),
     classId: text(row.class_id),
     occurrenceDate: text(row.occurrence_date),
     status: (text(row.status) || "cancelled") as LessonExceptionStatus,
     replacementDate: nullableText(row.replacement_date),
-    replacementStartTime: nullableText(row.replacement_start_time)?.slice(0, 5) ?? null,
-    replacementEndTime: nullableText(row.replacement_end_time)?.slice(0, 5) ?? null,
+    replacementStartTime:
+      nullableText(row.replacement_start_time)?.slice(0, 5) ?? null,
+    replacementEndTime:
+      nullableText(row.replacement_end_time)?.slice(0, 5) ?? null,
     replacementRoom: text(row.replacement_room),
     notes: text(row.notes),
     createdAt: text(row.created_at) || new Date().toISOString(),
@@ -432,6 +431,9 @@ export function rowToClassException(
 
 export function classExceptionToRow(exception: ClassException) {
   return {
+    replacement_title: exception.replacementTitle || null,
+    energy_usage: exception.energyUsage ?? null,
+    location_context: exception.locationContext || null,
     id: exception.id,
     class_id: exception.classId,
     occurrence_date: exception.occurrenceDate,
@@ -470,8 +472,8 @@ export function rowToAssignment(row: Record<string, unknown>): Assignment {
     taskContext: (text(row.task_context) || "anywhere") as TaskContext,
     computerRequired: Boolean(row.computer_required),
     workType: nullableText(row.work_type) as SchoolWorkType | null,
-    requiredEnergy:
-      (text(row.required_energy) || "medium") as EnergyRequirement,
+    requiredEnergy: (text(row.required_energy) ||
+      "medium") as EnergyRequirement,
     allowedWeekdays: numericArray(row.allowed_weekdays, [1, 2, 3, 4, 5, 6, 7]),
     allowedWindowStart: text(row.allowed_window_start).slice(0, 5) || "15:00",
     allowedWindowEnd: text(row.allowed_window_end).slice(0, 5) || "21:00",
@@ -580,45 +582,5 @@ export function normalizeAssessment(assessment: Assessment): Assessment {
       assessment.reviewIntervalsDays?.length > 0
         ? assessment.reviewIntervalsDays
         : [1, 3, 7, 14],
-  };
-}
-
-export function rowToHomeworkCapture(
-  row: Record<string, unknown>,
-): HomeworkCapture {
-  return {
-    id: text(row.id),
-    rawText: text(row.raw_text),
-    title: text(row.title),
-    subjectId: nullableText(row.subject_id),
-    deadline: nullableText(row.deadline),
-    taskType: (text(row.task_type) || "other") as HomeworkTaskType,
-    estimatedMinutes: numeric(row.estimated_minutes, 30),
-    status: (text(row.status) || "captured") as HomeworkCaptureStatus,
-    convertedAssignmentId: nullableText(row.converted_assignment_id),
-    scheduledCalendarItemId: nullableText(row.scheduled_calendar_item_id),
-    parsedMeta:
-      row.parsed_meta &&
-      typeof row.parsed_meta === "object" &&
-      !Array.isArray(row.parsed_meta)
-        ? (row.parsed_meta as Record<string, unknown>)
-        : {},
-    createdAt: text(row.created_at) || new Date().toISOString(),
-  };
-}
-
-export function homeworkCaptureToRow(capture: HomeworkCapture) {
-  return {
-    id: capture.id,
-    raw_text: capture.rawText,
-    title: capture.title,
-    subject_id: capture.subjectId,
-    deadline: capture.deadline,
-    task_type: capture.taskType,
-    estimated_minutes: capture.estimatedMinutes,
-    status: capture.status,
-    converted_assignment_id: capture.convertedAssignmentId,
-    scheduled_calendar_item_id: capture.scheduledCalendarItemId,
-    parsed_meta: capture.parsedMeta,
   };
 }

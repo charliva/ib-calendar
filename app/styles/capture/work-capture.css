@@ -1,0 +1,459 @@
+/* Batch 2 - fast homework capture. */
+
+/* Batch 2 — fast homework capture */
+
+.homework-dock {
+  position: fixed;
+  z-index: 57;
+  top: 10px;
+  bottom: 10px;
+  left: calc(var(--rail) + 10px);
+  display: flex;
+  width: 340px;
+  overflow: hidden;
+  flex-direction: column;
+  background: rgb(246 247 243 / 98%);
+  border: 1px solid #d6d9d2;
+  border-radius: 14px;
+  box-shadow:
+    0 22px 54px rgb(52 54 49 / 14%),
+    0 3px 12px rgb(52 54 49 / 6%);
+  backdrop-filter: blur(20px);
+  transform: translateX(calc(-100% - var(--rail) - 18px));
+  opacity: 0;
+  transition:
+    transform 220ms cubic-bezier(.22, .8, .25, 1),
+    opacity 160ms ease;
+}
+
+.homework-dock.is-open {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.homework-dock > header {
+  display: flex;
+  min-height: 70px;
+  padding: 15px 15px 11px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.homework-dock > header h1 {
+  margin: 3px 0 0;
+  color: #34353b;
+  font-size: 19px;
+  font-weight: 660;
+  letter-spacing: -.045em;
+}
+
+.homework-dock > header button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  place-items: center;
+  color: #7d7f79;
+  background: #e9ebe6;
+  border: 1px solid #daddd6;
+  border-radius: 7px;
+}
+
+.homework-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.homework-header-actions kbd {
+  color: #858780;
+  background: #e9ebe6;
+  border-color: #daddd6;
+}
+
+.homework-capture-form {
+  margin: 0 11px 10px;
+  overflow: hidden;
+  background: #f8f8f5;
+  border: 1px solid #ccc7e3;
+  border-radius: 9px;
+  box-shadow:
+    0 7px 20px rgb(64 56 106 / 7%),
+    0 0 0 3px rgb(114 96 212 / 4%);
+}
+
+.homework-capture-form > div:first-child {
+  display: grid;
+  min-height: 43px;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  padding: 0 9px 0 10px;
+  gap: 7px;
+  color: #7061cb;
+}
+
+.homework-capture-form input {
+  min-width: 0;
+  height: 42px;
+  padding: 0;
+  color: #404147;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 10px;
+}
+
+.homework-capture-form input::placeholder {
+  color: #9b9c98;
+}
+
+.homework-capture-form kbd {
+  color: #8d8f88;
+  background: #ebece8;
+  border-color: #dcdfd8;
+}
+
+.capture-parse-preview {
+  display: flex;
+  min-height: 32px;
+  padding: 6px 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  background: #efeff3;
+  border-top: 1px solid #dfdce9;
+}
+
+.capture-parse-preview span,
+.capture-parse-preview strong {
+  padding: 3px 6px;
+  color: #8a8c86;
+  background: #e4e6e1;
+  border-radius: 4px;
+  font-size: 7px;
+  font-weight: 560;
+}
+
+.capture-parse-preview span.detected {
+  color: #50479e;
+  background: #e1def2;
+}
+
+.capture-parse-preview strong {
+  margin-left: auto;
+  color: #62645e;
+  background: transparent;
+  font-family: var(--font-mono), monospace;
+}
+
+.recent-subjects {
+  display: grid;
+  padding: 0 12px 11px;
+  gap: 6px;
+  border-bottom: 1px solid #e0e2dc;
+}
+
+.recent-subjects > span {
+  color: #92948e;
+  font-size: 7px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.recent-subjects > div {
+  display: flex;
+  overflow-x: auto;
+  gap: 4px;
+}
+
+.recent-subjects button {
+  display: flex;
+  min-width: max-content;
+  min-height: 25px;
+  padding: 0 7px;
+  align-items: center;
+  gap: 5px;
+  color: #777973;
+  background: #eceee9;
+  border: 1px solid #dfe2db;
+  border-radius: 6px;
+  font-size: 7px;
+  font-weight: 650;
+}
+
+.recent-subjects button.active {
+  color: #4d4499;
+  background: #e5e2f3;
+  border-color: #d0cbe9;
+}
+
+.recent-subjects button i {
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+}
+
+.homework-dock-heading {
+  display: flex;
+  min-height: 38px;
+  padding: 0 13px;
+  align-items: center;
+  justify-content: space-between;
+  color: #858780;
+}
+
+.homework-dock-heading span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 8px;
+  font-weight: 620;
+}
+
+.homework-dock-heading strong {
+  font-family: var(--font-mono), monospace;
+  font-size: 8px;
+}
+
+.homework-capture-list {
+  min-height: 0;
+  padding: 0 7px 10px;
+  overflow: auto;
+  flex: 1;
+}
+
+.homework-capture {
+  --capture: #7f70e8;
+  position: relative;
+  display: grid;
+  min-height: 92px;
+  grid-template-columns: 3px minmax(0, 1fr) auto;
+  margin-bottom: 4px;
+  padding: 10px 7px 9px 8px;
+  gap: 9px;
+  cursor: grab;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+}
+
+.homework-capture:hover {
+  background: #eceee9;
+  border-color: #dfe2db;
+}
+
+.homework-capture:active {
+  cursor: grabbing;
+  transform: translateY(-2px) rotate(-.25deg);
+  box-shadow: 0 12px 24px rgb(56 54 66 / 13%);
+}
+
+.homework-capture > i {
+  width: 3px;
+  height: 48px;
+  margin-top: 1px;
+  border-radius: 2px;
+}
+
+.homework-capture > div:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 3px;
+}
+
+.homework-capture > div > span {
+  color: #8d8f89;
+  font-family: var(--font-mono), monospace;
+  font-size: 7px;
+  text-transform: capitalize;
+}
+
+.homework-capture > div > strong {
+  overflow: hidden;
+  color: #414248;
+  font-size: 10px;
+  font-weight: 640;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.homework-capture small,
+.homework-capture em {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #8d8f89;
+  font-size: 7px;
+  font-style: normal;
+}
+
+.homework-capture em {
+  width: max-content;
+  margin-top: 2px;
+  padding: 2px 5px;
+  color: #3e7b64;
+  background: #dfeee7;
+  border-radius: 4px;
+}
+
+.capture-actions {
+  display: grid;
+  align-content: center;
+  justify-items: end;
+  gap: 4px;
+}
+
+.capture-actions button {
+  display: inline-flex;
+  min-height: 24px;
+  padding: 0 6px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: #7165b7;
+  background: #e7e4f4;
+  border: 0;
+  border-radius: 5px;
+  font-size: 7px;
+  font-weight: 610;
+}
+
+.capture-actions .capture-convert,
+.capture-actions .capture-delete {
+  width: 24px;
+  padding: 0;
+}
+
+.capture-actions .capture-convert {
+  min-height: 20px;
+  color: #7165b7;
+  background: transparent;
+}
+
+.capture-actions .capture-convert:hover {
+  background: #e7e4f4;
+}
+
+.capture-actions .capture-done {
+  color: #39745e;
+  background: #dfeee7;
+}
+
+.capture-actions .capture-delete {
+  color: #999b95;
+  background: transparent;
+}
+
+.capture-actions .capture-delete:hover {
+  color: #a44e61;
+  background: #f0e3e6;
+}
+
+.homework-empty {
+  display: grid;
+  min-height: 260px;
+  margin: 2px 4px;
+  padding: 20px;
+  place-items: center;
+  align-content: center;
+  color: #aaaCa6;
+  border: 1px dashed #d4d7d0;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.homework-empty h3 {
+  margin: 10px 0 0;
+  color: #5a5b61;
+  font-size: 12px;
+}
+
+.homework-empty p {
+  margin: 5px 0 0;
+  color: #92948e;
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.homework-dock-footer {
+  display: flex;
+  min-height: 49px;
+  padding: 7px 11px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: #eceee9;
+  border-top: 1px solid #daddd6;
+}
+
+.homework-dock-footer button {
+  display: inline-flex;
+  min-height: 30px;
+  padding: 0 8px;
+  align-items: center;
+  gap: 5px;
+  color: #5b50a6;
+  background: #e2dff0;
+  border: 1px solid #d4cfe9;
+  border-radius: 6px;
+  font-size: 7px;
+  font-weight: 620;
+}
+
+.homework-dock-footer span {
+  color: #92948e;
+  font-size: 7px;
+  text-align: right;
+}
+
+.parsed-intent.homework-intent {
+  background: #ecefea;
+  border-color: #d9ded6;
+}
+
+.parsed-intent.homework-intent > span {
+  color: #4f806b;
+}
+
+@media (max-width: 780px) {
+  .icon-rail nav {
+    gap: 3px;
+  }
+
+  .icon-rail nav button {
+    width: 34px;
+  }
+
+  .homework-dock {
+    z-index: 85;
+    top: auto;
+    right: 8px;
+    bottom: 65px;
+    left: 8px;
+    width: auto;
+    height: min(660px, 76vh);
+    max-height: 76vh;
+    border-radius: 14px;
+    transform: translateY(calc(100% + 80px));
+  }
+
+  .homework-dock.is-open {
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 380px) {
+  .icon-rail nav {
+    gap: 0;
+  }
+
+  .icon-rail nav button {
+    width: 31px;
+  }
+
+  .homework-dock-footer span {
+    display: none;
+  }
+}

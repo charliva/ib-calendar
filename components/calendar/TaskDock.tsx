@@ -10,7 +10,15 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import type { CSSProperties, DragEvent } from "react";
+import {
+  type CSSProperties,
+  type DragEvent,
+  type FormEvent,
+  type PointerEvent as ReactPointerEvent,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   kindLabels,
   type CalendarItem,
@@ -20,10 +28,18 @@ import {
   formatTime,
   urgencyClass,
 } from "../../app/calendar-format.ts";
+import {
+  looksLikeHomeworkCommand,
+  parseHomework,
+  parseReviewSession,
+} from "../../lib/homework-parser.ts";
+import type { Subject } from "../../lib/school.ts";
 
 export function TaskDock({
   open,
+  position,
   items,
+  subjects,
   draggingItemId,
   filterText,
   syncing,
@@ -35,11 +51,16 @@ export function TaskDock({
   onDragEnd,
   onOpenItem,
   onOpenCommand,
+  onQuickCreate,
   onClose,
+  onPositionChange,
+  onRepositioningChange,
   onFilterChange,
 }: {
   open: boolean;
+  position: { x: number; y: number };
   items: CalendarItem[];
+  subjects: Subject[];
   draggingItemId: string | null;
   filterText: string;
   syncing: boolean;
@@ -51,23 +72,150 @@ export function TaskDock({
   onDragEnd: () => void;
   onOpenItem: (item: CalendarItem) => void;
   onOpenCommand: () => void;
+  onQuickCreate: (text: string) => void;
   onClose: () => void;
+  onPositionChange: (position: { x: number; y: number }) => void;
+  onRepositioningChange: (isRepositioning: boolean) => void;
   onFilterChange: (value: string) => void;
 }) {
+  const [captureText, setCaptureText] = useState("");
+  const dockRef = useRef<HTMLElement>(null);
+  const dockGesture = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    active: boolean;
+  } | null>(null);
   const hasRanges = items.some(
     (item) => item.status === "inbox" && item.windowStart && item.windowEnd,
   );
+  const capturePreview = useMemo(() => {
+    const text = captureText.trim();
+    if (!text) return null;
+    const review = parseReviewSession(text, subjects, new Date());
+    if (review) {
+      return `${review.subjectId ? "Review session" : "Study session"} · ${review.durationMinutes} min`;
+    }
+    const homework = parseHomework(text, subjects, new Date());
+    if (looksLikeHomeworkCommand(text, homework)) {
+      return `Homework · ${homework.estimatedMinutes} min${homework.deadline ? " · due set" : ""}`;
+    }
+    return "Work item · add details later";
+  }, [captureText, subjects]);
+
+  function submitQuickCreate(event: FormEvent) {
+    event.preventDefault();
+    const text = captureText.trim();
+    if (!text) return;
+    onQuickCreate(text);
+    setCaptureText("");
+  }
+
+  function positionFor(event: ReactPointerEvent<HTMLElement>) {
+    const rect = dockRef.current?.getBoundingClientRect();
+    const gesture = dockGesture.current;
+    if (!rect || !gesture) return position;
+    return {
+      x: Math.max(
+        64,
+        Math.min(
+          window.innerWidth - rect.width - 10,
+          gesture.originX + event.clientX - gesture.startX,
+        ),
+      ),
+      y: Math.max(
+        10,
+        Math.min(
+          window.innerHeight - rect.height - 10,
+          gesture.originY + event.clientY - gesture.startY,
+        ),
+      ),
+    };
+  }
+
+  function beginDockMove(event: ReactPointerEvent<HTMLElement>) {
+    if (
+      event.pointerType === "touch" ||
+      event.button !== 0 ||
+      (event.target instanceof Element && event.target.closest("button"))
+    ) {
+      return;
+    }
+    dockGesture.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: position.x,
+      originY: position.y,
+      active: false,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    onRepositioningChange(true);
+  }
+
+  function moveDock(event: ReactPointerEvent<HTMLElement>) {
+    const gesture = dockGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    if (
+      Math.hypot(
+        event.clientX - gesture.startX,
+        event.clientY - gesture.startY,
+      ) < 12
+    ) {
+      return;
+    }
+    gesture.active = true;
+    onPositionChange(positionFor(event));
+    event.preventDefault();
+  }
+
+  function finishDockMove(event: ReactPointerEvent<HTMLElement>) {
+    const gesture = dockGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    if (gesture.active) onPositionChange(positionFor(event));
+    dockGesture.current = null;
+    onRepositioningChange(false);
+    if (!gesture.active) return;
+    event.preventDefault();
+  }
+
+  function cancelDockMove() {
+    if (!dockGesture.current) return;
+    dockGesture.current = null;
+    onRepositioningChange(false);
+  }
 
   return (
     <aside
+      ref={dockRef}
       className={`task-dock ${open ? "is-open" : ""}`}
+      // Hidden by opacity alone, this panel stayed focusable and selectable
+      // while invisible. `inert` takes it out of the tab order, hit testing and
+      // the accessibility tree together.
+      inert={!open}
+      data-tour="task-dock"
+      style={
+        {
+          "--dock-x": `${position.x}px`,
+          "--dock-y": `${position.y}px`,
+        } as CSSProperties
+      }
       onDragOver={(event) => event.preventDefault()}
       onDrop={onDrop}
     >
-      <header>
+      <header
+        className="task-dock-drag-handle"
+        aria-label="Drag flexible work panel"
+        onPointerDown={beginDockMove}
+        onPointerMove={moveDock}
+        onPointerUp={finishDockMove}
+        onPointerCancel={cancelDockMove}
+      >
         <div>
           <span className="micro-label">Flexible work</span>
-          <h1>Syllabi</h1>
+          <h1>Work queue</h1>
         </div>
         <div className="panel-actions">
           <button
@@ -86,6 +234,19 @@ export function TaskDock({
           </button>
         </div>
       </header>
+
+      <form className="work-capture" onSubmit={submitQuickCreate}>
+        <input
+          value={captureText}
+          onChange={(event) => setCaptureText(event.target.value)}
+          placeholder="Add work…"
+          aria-label="Add work"
+        />
+        <button type="submit" disabled={!captureText.trim()}>
+          Add
+        </button>
+        {capturePreview && <small>{capturePreview}</small>}
+      </form>
 
       <button
         className="command-trigger"
@@ -144,7 +305,12 @@ export function TaskDock({
                 <GripVertical size={14} />
                 <div>
                   <span>
-                    {kindLabels[item.kind]} · {item.durationMin}
+                    {item.workItemType === "homework"
+                      ? "Homework"
+                      : item.workItemType === "review"
+                        ? "Review"
+                        : kindLabels[item.kind]}{" "}
+                    · {item.durationMin}
                     {item.durationMax !== item.durationMin
                       ? `–${item.durationMax}`
                       : ""}{" "}

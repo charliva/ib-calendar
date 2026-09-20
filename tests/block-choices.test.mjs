@@ -511,3 +511,50 @@ test("integration: telemetry is silent unless SYLLABI_DEV_TELEMETRY=true", () =>
     }
   }
 });
+
+// Regression test: rowToBlockChoice must re-validate through the chokepoint
+// on read. A row written by a pre-PR1 client (3 suggestions including a
+// blocked term, or an out-of-band DB write that bypassed the app) must not
+// surface a blocked term to the panel.
+
+import { rowToBlockChoice } from "../lib/block-choices.ts";
+
+test("integration: rowToBlockChoice re-validates through the chokepoint on read", () => {
+  const dirtyRow = {
+    id: "abc",
+    block_key: "2026-08-10T15:00-evening",
+    block_type: "evening",
+    starts_at: "2026-08-10T15:00:00.000Z",
+    ends_at: "2026-08-10T18:00:00.000Z",
+    context: { label: "After school", location: "home" },
+    suggestions: [
+      {
+        id: "good",
+        category: "meaningful",
+        sourceType: "generic",
+        sourceId: "walk",
+        title: "Take a walk",
+        description: "Step outside for a few minutes.",
+        estimatedDuration: 20,
+        reason: null,
+      },
+      {
+        id: "bad",
+        category: "meaningful",
+        sourceType: "generic",
+        sourceId: "watch-gilmore",
+        title: "Watch Gilmore Girls",
+        description: "One episode, then done.",
+        estimatedDuration: 45,
+        reason: null,
+      },
+    ],
+    selected_suggestion_id: null,
+    status: "suggested",
+    selected_at: null,
+  };
+  const result = rowToBlockChoice(dirtyRow);
+  assert.equal(result.suggestions.length, 1, "the chokepoint must drop the dirty row");
+  assert.equal(result.suggestions[0].id, "good");
+  assert.ok(!/Gilmore Girls/i.test(result.suggestions[0].title));
+});

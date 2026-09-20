@@ -2,7 +2,7 @@ import type {
   BlockSuggestion,
   BlockSuggestionCategory,
   BlockSuggestionSource,
-} from "./block-choices.ts";
+} from "./block-choices/types.ts";
 
 /**
  * Block-suggestion safety floor (PR1).

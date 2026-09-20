@@ -1,0 +1,96 @@
+/* Document and form-element defaults, and the skip link. */
+
+html {
+  min-width: 320px;
+  background: var(--canvas);
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--canvas);
+  font-family: var(--font-sans), Arial, sans-serif;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body::after {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  inset: 0;
+  opacity: 0.032;
+  content: "";
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='128' height='128' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+}
+
+button,
+input,
+select,
+textarea {
+  color: inherit;
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  cursor: pointer;
+  transition: background-color 200ms ease, border-color 200ms ease,
+    color 200ms ease, transform 150ms ease, box-shadow 200ms ease,
+  opacity 200ms ease;
+}
+
+time {
+  font-variant-numeric: tabular-nums;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--lilac);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.skip-link {
+  position: absolute;
+  z-index: 999;
+  top: -48px;
+  left: 12px;
+  padding: 10px 16px;
+  color: white;
+  background: var(--ink);
+  border-radius: 0 0 8px 8px;
+  font-size: 13px;
+  text-decoration: none;
+  transition: top 200ms ease;
+}
+
+.skip-link:focus-visible {
+  top: 0;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  border-radius: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--lilac);
+  outline-offset: 2px;
+}

@@ -1,11 +1,13 @@
 import {
   addDays,
+  dateKey,
   dateFromKey,
   makeItem,
   TIMETABLE_IMPORT_MARKER,
   type CalendarItem,
+  type CalendarProposal,
 } from "./calendar-engine.ts";
-import type { Subject } from "./school.ts";
+import type { SchoolClass, Subject } from "./school.ts";
 
 export type TimetableExtractionCandidate = Partial<CalendarItem> & {
   title: string;
@@ -243,6 +245,46 @@ export function isItemInWeek(item: CalendarItem, weekStart: string) {
   const end = addDays(start, 7);
   const itemStart = new Date(item.startsAt);
   return itemStart >= start && itemStart < end;
+}
+
+export function importedLessonMatchesClass(
+  item: CalendarItem,
+  lesson: Pick<SchoolClass, "subjectId" | "weekday" | "startTime" | "endTime">,
+  occurrenceDate: string,
+) {
+  if (!isImportedTimetableItem(item) || !item.startsAt || !item.endsAt) {
+    return false;
+  }
+  const start = new Date(item.startsAt);
+  const end = new Date(item.endsAt);
+  if (
+    !Number.isFinite(start.getTime()) ||
+    !Number.isFinite(end.getTime()) ||
+    dateKey(start) !== occurrenceDate ||
+    start.getDay() !== lesson.weekday
+  ) {
+    return false;
+  }
+  const timeKey = (date: Date) =>
+    `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  return (
+    Boolean(item.subjectId) &&
+    item.subjectId === lesson.subjectId &&
+    timeKey(start) === lesson.startTime &&
+    timeKey(end) === lesson.endTime
+  );
+}
+
+export function removeSubjectFromTimetableProposal(
+  proposal: CalendarProposal,
+  subjectId: string,
+) {
+  return {
+    ...proposal,
+    changes: proposal.changes.filter(
+      (change) => change.after?.subjectId !== subjectId,
+    ),
+  };
 }
 
 export function normalizeTimetableLessons(

@@ -13,7 +13,7 @@ export function classColorStyle(
   item: CalendarItem,
   subjects: Subject[],
 ): CSSProperties | undefined {
-  if (!isImportedTimetableItem(item)) return undefined;
+  if (!item.classId && !isImportedTimetableItem(item)) return undefined;
   const subject = subjects.find(
     (candidate) =>
       candidate.id === item.subjectId ||
@@ -25,9 +25,37 @@ export function classColorStyle(
       ),
   );
   const color = subject?.color;
-  return color?.startsWith("#")
-    ? ({ "--energy": color } as CSSProperties)
-    : undefined;
+  if (!color?.startsWith("#")) return undefined;
+  const hex = color.slice(1);
+  const normalized = hex.length === 3
+    ? hex.split("").map((value) => `${value}${value}`).join("")
+    : hex;
+  if (!/^[0-9a-f]{6}$/i.test(normalized)) return undefined;
+  const rgb = [0, 2, 4]
+    .map((offset) => Number.parseInt(normalized.slice(offset, offset + 2), 16))
+    .join(" ");
+  return {
+    "--energy": color,
+    "--class-rgb": rgb,
+  } as CSSProperties;
+}
+
+export function classGlassStyle(
+  item: CalendarItem,
+  subjects: Subject[],
+): CSSProperties | undefined {
+  const colorStyle = classColorStyle(item, subjects) as
+    | (CSSProperties & { "--class-rgb"?: string; "--energy"?: string })
+    | undefined;
+  if (!item.classId && !isImportedTimetableItem(item)) return undefined;
+  const rgb = colorStyle?.["--class-rgb"] ?? "127 112 232";
+  return {
+    ...colorStyle,
+    backgroundColor: "rgb(255 253 248 / 82%)",
+    backgroundImage: `linear-gradient(112deg, transparent 24%, rgb(127 112 232 / 7%) 44%, rgb(${rgb} / 7%) 55%, transparent 72%), linear-gradient(145deg, rgb(${rgb} / 15%), rgb(${rgb} / 8%))`,
+    borderColor: `rgb(${rgb} / 28%)`,
+    borderLeftColor: colorStyle?.["--energy"],
+  };
 }
 
 export function CalendarFallback() {

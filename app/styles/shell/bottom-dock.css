@@ -1,0 +1,60 @@
+/* Bottom dock, including the phone-like pill dock. */
+
+/* --- Bottom dock --- */
+.bottom-dock {
+  position: fixed;
+  bottom: max(14px, calc(env(safe-area-inset-bottom) + 10px));
+  left: 50%;
+  z-index: 220;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(520px, calc(100% - 28px));
+  transform: translateX(-50%);
+}
+
+.bottom-dock button {
+  min-height: 48px;
+  border: 0;
+  background: var(--ink);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity .15s ease, transform .15s ease;
+}
+
+.bottom-dock button:hover { opacity: .92; }
+.bottom-dock button:active { transform: scale(.99); }
+.bottom-dock button:disabled { opacity: .42; cursor: not-allowed; }
+
+.bottom-dock .dock-primary {
+  flex: 1;
+  border-radius: 9px;
+}
+
+.bottom-dock .dock-back {
+  display: grid;
+  flex: 0 0 52px;
+  width: 52px;
+  place-items: center;
+  border-radius: 9px;
+}
+
+/* Phone-like: pill dock */
+@media (max-width: 600px) {
+  .weekly-review-overlay { padding: 16px 12px 88px; }
+  .weekly-review-panel { border-radius: 14px; }
+  .weekly-review-header { padding: 16px 16px 14px; }
+  .bottom-dock .dock-primary { border-radius: 999px; }
+  .bottom-dock .dock-back { border-radius: 999px; }
+  .bottom-dock { width: calc(100% - 28px); }
+  .receipt-row { padding: 12px 14px 12px 18px; }
+  .receipt-title b { font-size: 11px; }
+  .review-progress { padding: 8px 16px; }
+  .plan-rows { padding: 14px 16px; }
+}
+
+@media (min-width: 601px) and (max-width: 880px) {
+  .bottom-dock { width: calc(100% - 56px); }
+}

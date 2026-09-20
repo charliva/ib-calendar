@@ -35,10 +35,21 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local CLI/tool scratch state (leaks project refs, pooler URLs, local certs)
+/supabase/.temp/
+/.openai/
+
 # typescript
 next-env.d.ts
 *.tsbuildinfo
+
+# build output and tool state
 /dist/
 /.wrangler/
 /outputs/
 /work/
+/.unlazy/
+
+# OneDrive/iCloud sync conflict copies ("index 2.ts") are not ignored here on
+# purpose: a pattern broad enough to catch them would also swallow legitimate
+# names like "Phase 2.md". `npm run doctor` finds and removes them instead.

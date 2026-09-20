@@ -1,6 +1,12 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, GraduationCap, Undo2 } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  GraduationCap,
+  Undo2,
+  Plus,
+} from "lucide-react";
 import { TemporalField } from "../../app/ui/temporal-field.tsx";
 import { formatDate } from "../../app/calendar-format.ts";
 import type { CalendarZoom } from "./CalendarRail.tsx";
@@ -16,6 +22,7 @@ export function CalendarHeader({
   onAnchorChange,
   onZoomChange,
   onUndo,
+  onCapture,
 }: {
   zoom: CalendarZoom;
   anchor: Date;
@@ -27,10 +34,28 @@ export function CalendarHeader({
   onAnchorChange: (value: string) => void;
   onZoomChange: (zoom: CalendarZoom) => void;
   onUndo: () => void;
+  onCapture: () => void;
 }) {
   return (
     <header className="calendar-toolbar">
-      {zoom === "school" ? (
+      {zoom === "upcoming" ? (
+        <>
+          <strong className="home-wordmark">
+            Syllabi<span> / Home</span>
+          </strong>
+          <button type="button" className="capture-button" onClick={onCapture}>
+            <Plus size={16} /> Add anything
+          </button>
+          <button
+            className="undo-button"
+            type="button"
+            onClick={onUndo}
+            disabled={undoCount === 0}
+          >
+            <Undo2 size={14} /> Undo
+          </button>
+        </>
+      ) : zoom === "school" ? (
         <div className="school-toolbar-title">
           <GraduationCap size={15} />
           <strong>School foundation</strong>
@@ -77,19 +102,21 @@ export function CalendarHeader({
             </h2>
           </div>
           <div className="zoom-control" aria-label="Temporal zoom">
-            {(
-              ["upcoming", "day", "week", "month", "semester"] as const
-            ).map((level) => (
+            {(["day", "week", "month", "semester"] as const).map((level) => (
               <button
                 className={zoom === level ? "active" : ""}
                 type="button"
                 key={level}
+                aria-pressed={zoom === level}
                 onClick={() => onZoomChange(level)}
               >
-                {level === "upcoming" ? "home" : level}
+                {level}
               </button>
             ))}
           </div>
+          <button type="button" className="capture-button" onClick={onCapture}>
+            <Plus size={16} /> Add
+          </button>
           <button
             className="undo-button"
             type="button"

@@ -21,19 +21,22 @@ export function timeOffset(hour: number, minute: number, rowHeight: number) {
   return wholeHours + (minute / 60) * hourHeight(hour, rowHeight);
 }
 
-export function timeAtOffset(offset: number, rowHeight: number) {
+export function timeAtOffset(offset: number, rowHeight: number, step = 15) {
   let remaining = Math.max(0, offset);
   for (const hour of DAY_HOURS) {
     const height = hourHeight(hour, rowHeight);
     if (remaining <= height) {
       return {
         hour,
-        minute: Math.min(45, Math.round((remaining / height) * 4) * 15),
+        minute: Math.min(
+          60 - step,
+          Math.round(((remaining / height) * 60) / step) * step,
+        ),
       };
     }
     remaining -= height;
   }
-  return { hour: 23, minute: 45 };
+  return { hour: 23, minute: 60 - step };
 }
 
 export function itemGeometry(item: CalendarItem, rowHeight: number) {
@@ -69,7 +72,9 @@ export function overlapLayout(items: CalendarItem[]) {
       return { item, lane };
     });
     const lanes = Math.max(1, laneEnds.length);
-    placements.forEach(({ item, lane }) => result.set(item.id, { lane, lanes }));
+    placements.forEach(({ item, lane }) =>
+      result.set(item.id, { lane, lanes }),
+    );
   };
 
   sorted.forEach((item) => {

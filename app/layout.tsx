@@ -23,7 +23,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const origin = host ? `${protocol}://${host}` : "http://localhost:3000";
   const description =
     "A tactile, constraint-based calendar for fixed events, flexible tasks, and intentions.";
-  const socialImage = `${origin}/og-almanac.png`;
+  const socialImage = `${origin}/og-flex.png`;
 
   return {
     title: "Syllabi — time, without the rigidity",
@@ -52,7 +52,7 @@ export async function generateMetadata(): Promise<Metadata> {
           url: socialImage,
           width: 1731,
           height: 909,
-          alt: "Syllabi Japanese almanac-inspired weekly calendar preview",
+          alt: "Syllabi weekly calendar preview",
         },
       ],
     },

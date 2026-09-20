@@ -1,0 +1,167 @@
+/* Timetable days and lesson cards. */
+
+.timetable-day {
+  min-width: 112px;
+  min-height: 310px;
+  border-right: 1px solid #dcdfd8;
+}
+
+.timetable-day:last-child {
+  border-right: 0;
+}
+
+.timetable-day > header {
+  display: flex;
+  height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  background: #f1f2ee;
+  border-bottom: 1px solid #dcdfd8;
+}
+
+.timetable-day > header span {
+  color: #959790;
+  font-family: var(--font-mono), monospace;
+  font-size: 7px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.timetable-day > header strong {
+  color: #55565c;
+  font-size: 13px;
+  font-weight: 580;
+}
+
+.timetable-day > div {
+  display: grid;
+  padding: 6px;
+  align-content: start;
+  gap: 5px;
+}
+
+.timetable-empty {
+  padding: 18px 3px;
+  color: #b0b2ac;
+  font-size: 8px;
+  text-align: center;
+}
+
+.lesson-card {
+  --subject: #7f70e8;
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--subject) 8%, #f8f8f5);
+  border: 1px solid color-mix(in srgb, var(--subject) 32%, #d7dad3);
+  border-left: 3px solid var(--subject);
+  border-radius: 6px;
+}
+
+.lesson-card > button:first-child {
+  display: grid;
+  width: 100%;
+  min-height: 76px;
+  padding: 8px 22px 8px 8px;
+  gap: 3px;
+  color: #4f5056;
+  text-align: left;
+  background: transparent;
+  border: 0;
+}
+
+.lesson-card > button:first-child > span {
+  color: color-mix(in srgb, var(--subject) 68%, #62635f);
+  font-family: var(--font-mono), monospace;
+  font-size: 9px;
+}
+
+.lesson-card strong {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.lesson-card strong i {
+  font-size: 11px;
+  font-style: normal;
+}
+
+.lesson-card small {
+  overflow: hidden;
+  color: #898b85;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lesson-card .lesson-change {
+  position: absolute;
+  top: 5px;
+  right: 4px;
+  display: grid;
+  width: 21px;
+  height: 21px;
+  padding: 0;
+  place-items: center;
+  color: #92948e;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+}
+
+.lesson-card .lesson-change:hover {
+  color: #5147a5;
+  background: rgb(255 255 255 / 55%);
+}
+
+.lesson-card.is-cancelled {
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgb(210 112 132 / 7%),
+      rgb(210 112 132 / 7%) 5px,
+      transparent 5px,
+      transparent 9px
+    ),
+    #f5f3f1;
+  border-color: #d7b8be;
+  border-left-color: #bd6e7e;
+}
+
+.lesson-card.is-cancelled strong {
+  text-decoration: line-through;
+}
+
+.lesson-card.is-rescheduled {
+  background: color-mix(in srgb, var(--subject) 5%, #f8f8f5);
+  border-style: dashed;
+}
+
+.lesson-card.is-imported {
+  border-style: solid;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 45%);
+}
+
+.lesson-card.is-imported > button:first-child {
+  padding-right: 8px;
+}
+
+.lesson-imported-badge {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  padding: 2px 4px;
+  color: #6558b3;
+  background: rgb(244 241 255 / 90%);
+  border: 1px solid rgb(207 199 236 / 80%);
+  border-radius: 4px;
+  font-family: var(--font-mono), monospace;
+  font-size: 5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  pointer-events: none;
+}

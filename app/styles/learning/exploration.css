@@ -1,0 +1,179 @@
+/* Phase 2 - challenge and intellectual exploration. */
+
+/* Phase 2 — challenge and intellectual exploration */
+.learning-controls {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  margin: 14px 0;
+  padding: 10px;
+  border: 1px solid rgb(28 47 38 / 9%);
+  border-radius: 12px;
+  background: rgb(247 247 242 / 72%);
+}
+
+.learning-controls-label {
+  color: color-mix(in srgb, currentColor 48%, transparent);
+  font-size: 10px;
+  font-weight: 720;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.challenge-dial {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(30px, 1fr));
+  gap: 4px;
+  padding: 3px;
+  border-radius: 9px;
+  background: rgb(25 47 37 / 5%);
+}
+
+.challenge-dial button,
+.go-deeper-button {
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+}
+
+.challenge-dial button {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 5px;
+  color: color-mix(in srgb, currentColor 56%, transparent);
+  font-size: 10px;
+}
+
+.challenge-dial button:hover { background: rgb(255 255 255 / 70%); }
+.challenge-dial button.active { color: #183b2d; background: #e1eee5; box-shadow: 0 1px 3px rgb(18 43 32 / 8%); }
+
+.go-deeper-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  color: #254b3c;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.go-deeper-button:hover { background: #e7f0e9; }
+
+.learning-controls.is-compact {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 2px;
+  padding: 6px;
+  background: transparent;
+}
+
+.learning-controls.is-compact .learning-controls-label { display: none; }
+.learning-controls.is-compact .challenge-dial button span { display: none; }
+.learning-controls.is-compact .challenge-dial { max-width: 150px; }
+.learning-controls.is-compact .go-deeper-button {
+  margin-left: auto;
+  padding-block: 6px;
+}
+
+.intention-list article { flex-wrap: wrap; }
+.intention-list article > .learning-controls { flex-basis: 100%; }
+
+.go-deeper-overlay { z-index: 100; padding: 24px; }
+.go-deeper-panel {
+  width: min(920px, 100%);
+  max-height: min(820px, calc(100dvh - 48px));
+  overflow: auto;
+  margin: auto;
+  padding: clamp(22px, 4vw, 40px);
+  border: 1px solid rgb(22 42 33 / 9%);
+  border-radius: 24px;
+  background: #fbfaf6;
+  box-shadow: 0 30px 100px rgb(15 29 23 / 22%);
+}
+
+.go-deeper-panel > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.go-deeper-panel > header h2 { margin: 7px 0 6px; font-size: clamp(28px, 4vw, 44px); letter-spacing: -.04em; }
+.go-deeper-panel > header p { margin: 0; color: color-mix(in srgb, currentColor 56%, transparent); }
+.go-deeper-panel > header button { align-self: flex-start; border: 0; background: transparent; color: inherit; padding: 8px; }
+.go-deeper-panel .micro-label { display: inline-flex; align-items: center; gap: 6px; }
+
+.exploration-framing {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  margin: 0 0 24px;
+  padding: 15px 17px;
+  border-radius: 12px;
+  background: #e8f0e9;
+  color: #284b3d;
+  line-height: 1.55;
+}
+
+.exploration-framing svg { flex: 0 0 auto; margin-top: 3px; }
+.exploration-directions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.exploration-directions article { display: flex; flex-direction: column; min-height: 230px; padding: 20px; border: 1px solid rgb(23 43 34 / 9%); border-radius: 15px; background: white; }
+.exploration-directions article > span { color: #65786f; font-size: 10px; font-weight: 720; letter-spacing: .1em; text-transform: uppercase; }
+.exploration-directions h3 { margin: 8px 0; font-size: 18px; letter-spacing: -.02em; }
+.exploration-directions p { margin: 0 0 10px; line-height: 1.55; }
+.exploration-directions small { color: color-mix(in srgb, currentColor 53%, transparent); line-height: 1.45; }
+.exploration-directions button { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; margin-top: auto; padding: 8px 10px; border: 0; border-radius: 8px; color: #254b3c; background: #e8f0e9; }
+.go-deeper-panel > footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.go-deeper-panel > footer button, .go-deeper-empty button { display: inline-flex; gap: 7px; align-items: center; border: 0; border-radius: 9px; padding: 10px 13px; color: inherit; background: #eeede8; }
+.go-deeper-panel > footer button.primary, .go-deeper-empty button { color: white; background: #213b30; }
+.go-deeper-loading, .go-deeper-empty { display: grid; justify-items: center; text-align: center; padding: 72px 24px; }
+.go-deeper-loading strong, .go-deeper-empty h3 { margin: 14px 0 5px; }
+.go-deeper-loading p, .go-deeper-empty p { max-width: 480px; margin: 0 0 18px; color: color-mix(in srgb, currentColor 55%, transparent); }
+.spin { animation: phase-two-spin 1s linear infinite; }
+@keyframes phase-two-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 760px) {
+  .learning-controls { grid-template-columns: 1fr auto; }
+  .learning-controls-label { display: none; }
+  .challenge-dial button span { display: none; }
+  .go-deeper-overlay { padding: 0; }
+  .go-deeper-panel { max-height: 100dvh; min-height: 100dvh; border-radius: 0; }
+  .exploration-directions { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 480px) {
+  .date-navigation h2 {
+    max-width: 150px;
+    margin: 0 2px;
+    font-size: 12px;
+  }
+
+  .calendar-toolbar {
+    gap: 4px;
+  }
+
+  .proposal-list article {
+    grid-template-columns: 50px 1fr;
+  }
+
+  .validation-mark {
+    display: none;
+  }
+
+  .field-grid,
+  .field-grid.triple {
+    grid-template-columns: 1fr;
+  }
+
+  .overview-grid {
+    padding: 10px;
+  }
+}

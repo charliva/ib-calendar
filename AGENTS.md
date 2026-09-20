@@ -14,6 +14,10 @@ Triage uses the five default canonical label strings. See `docs/agents/triage-la
 
 The repository uses a single-context domain-docs layout. See `docs/agents/domain.md`.
 
+### UI implementation
+
+Implement UI changes directly in the application and validate them on localhost.
+
 ## Git and deployment workflow
 
 - **Never push to `main` (production)** unless the user explicitly asks for it.

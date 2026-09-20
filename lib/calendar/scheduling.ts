@@ -30,7 +30,8 @@ export function relevantCommandItems(
           : Number.POSITIVE_INFINITY;
       const nearScore =
         time >= now - 24 * 60 * 60_000 && time <= horizon ? 8 : 0;
-      return { item, score: matchScore + nearScore, time };
+      const selectedScore = command.includes(item.id) ? 10000 : 0;
+      return { item, score: selectedScore + matchScore + nearScore, time };
     })
     .filter(({ score }) => score > 0)
     .sort((a, b) => b.score - a.score || a.time - b.time)
