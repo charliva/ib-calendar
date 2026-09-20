@@ -27,7 +27,6 @@ type DragAndResizeParams = {
   setDraggingItemId: (id: string | null) => void;
   setDragSnap: (snap: DragSnap | null) => void;
   setResizing: React.Dispatch<React.SetStateAction<ResizingState>>;
-  setIsCalendarItemRepositioning: (repositioning: boolean) => void;
   setNotice: (notice: string) => void;
   scheduleAt: (
     itemId: string,
@@ -57,7 +56,6 @@ export function useDragAndResize({
   setDraggingItemId,
   setDragSnap,
   setResizing,
-  setIsCalendarItemRepositioning,
   setNotice,
   scheduleAt,
   unscheduleItem,

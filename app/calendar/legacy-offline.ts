@@ -67,7 +67,10 @@ function promoteLegacyOfflineHomework(
         workItemType: inferredType,
       }),
     );
-    if (hasLegacyHomeworkLink || inferredType === "review") {
+    if (
+      hasLegacyHomeworkLink ||
+      (inferredType !== undefined && inferredType !== item.workItemType)
+    ) {
       changed.set(promoted.id, promoted);
     }
     return promoted;

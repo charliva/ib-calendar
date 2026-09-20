@@ -1105,7 +1105,6 @@ export default function Home() {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setZoom((current) => (current === target ? current : target));
     }
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (onboardingStep.requiresDock) setInboxOpen(true);
   }, [onboardingStep]);
 
@@ -1374,7 +1373,6 @@ export default function Home() {
     setDraggingItemId,
     setDragSnap,
     setResizing,
-    setIsCalendarItemRepositioning,
     setNotice,
     scheduleAt,
     unscheduleItem,
