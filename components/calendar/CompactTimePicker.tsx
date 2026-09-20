@@ -19,10 +19,20 @@ export function CompactTimePicker({
   onChange: (value: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [selectedHour, selectedMinute] = value.split(":").map(Number);
-  const selectTime = (hour: number, minute: number) => {
+  // An unscheduled item arrives here as "", and a half-written value as
+  // "14:". Reading those straight out of split(":").map(Number) yields
+  // NaN/undefined, which was then interpolated back into the emitted string
+  // as the literal text "undefined" — producing "14:undefined" and crashing
+  // the caller that parsed it.
+  const [hourPart, minutePart] = value.split(":");
+  const selectedHour = clockPart(hourPart, 23);
+  const selectedMinute = clockPart(minutePart, 59);
+  // Null means "nothing chosen yet", so no button is highlighted; the other
+  // column still has to emit something, and midnight is the honest reading of
+  // a clock with one half unset.
+  const selectTime = (hour: number | null, minute: number | null) => {
     onChange(
-      `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+      `${String(hour ?? 0).padStart(2, "0")}:${String(minute ?? 0).padStart(2, "0")}`,
     );
     setOpen(false);
   };
@@ -81,4 +91,13 @@ export function CompactTimePicker({
       )}
     </div>
   );
+}
+
+/** A clock component as a number, or null when it is missing or out of range. */
+function clockPart(part: string | undefined, max: number) {
+  const parsed = Number(part);
+  if (!part || !Number.isInteger(parsed) || parsed < 0 || parsed > max) {
+    return null;
+  }
+  return parsed;
 }

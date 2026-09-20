@@ -222,8 +222,13 @@ export function CompactEventEditor({
   const linked = occurrences.filter(
     (entry) => entry.subjectId === draft.subjectId,
   );
+  const today = new Date().toISOString();
   const updateStart = (date: string, time: string) => {
-    const startsAt = fromLocalInput(`${date}T${time}`);
+    // An unscheduled item has no date yet, so `date` arrives empty and
+    // `${date}T${time}` is an unparseable "T14:30". Picking a time is the
+    // gesture that schedules such an item, and the day it lands on is the one
+    // the editor is already showing.
+    const startsAt = fromLocalInput(`${date || localDatePart(today)}T${time}`);
     if (!startsAt) return;
     change({
       startsAt,
@@ -475,7 +480,7 @@ export function CompactEventEditor({
               value={localTimePart(draft.endsAt)}
               onChange={(time) => {
                 const endsAt = fromLocalInput(
-                  `${localDatePart(draft.endsAt)}T${time}`,
+                  `${localDatePart(draft.endsAt) || localDatePart(draft.startsAt) || localDatePart(today)}T${time}`,
                 );
                 if (endsAt) change({ endsAt });
               }}

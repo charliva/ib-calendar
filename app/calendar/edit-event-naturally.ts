@@ -74,16 +74,21 @@ export async function editEventNaturally(
       text,
     )
   ) {
-    const start = fromLocalInput(temporal)!;
-    next = {
-      ...next,
-      startsAt: start,
-      endsAt: new Date(
-        new Date(start).getTime() +
-          Math.max(5, durationMinutes(item)) * 60000,
-      ).toISOString(),
-    };
-    understood = true;
+    // parseTemporalText hands back its own local-input string; if it is not
+    // something the platform can read, leave the item alone rather than
+    // asserting past the null and scheduling the event at the epoch.
+    const start = fromLocalInput(temporal);
+    if (start) {
+      next = {
+        ...next,
+        startsAt: start,
+        endsAt: new Date(
+          new Date(start).getTime() +
+            Math.max(5, durationMinutes(item)) * 60000,
+        ).toISOString(),
+      };
+      understood = true;
+    }
   }
   const duration = text.match(/\b(\d+)\s*(minutes?|mins?|hours?|hrs?)\b/i);
   if (duration && next.startsAt) {
