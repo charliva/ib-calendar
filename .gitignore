@@ -52,4 +52,5 @@ next-env.d.ts
 
 # OneDrive/iCloud sync conflict copies ("index 2.ts") are not ignored here on
 # purpose: a pattern broad enough to catch them would also swallow legitimate
-# names like "Phase 2.md". `npm run doctor` finds and removes them instead.
+# names like "Phase 2.md". `npm run doctor` deletes them instead, but only
+# the ones git can prove are redundant; the rest it reports.

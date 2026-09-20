@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Clears the local tool state that stops `vinext dev` from starting.
 //
-// Two failure modes bite this project repeatedly, both because the working
+// Three failure modes bite this project repeatedly, all because the working
 // copy lives inside a synced folder:
 //
 //  1. `.vinext/dev/lock.json` survives a hard kill, so the next `vinext dev`
@@ -10,18 +10,23 @@
 //  2. A `node_modules/.vite/deps_temp_*` directory survives a hard kill during
 //     dependency optimization. Vite then parks on "[optimizer] bundling
 //     dependencies..." forever: the port opens but no request is ever served.
-//
-// Sync conflict copies ("index 2.ts") cause the same two symptoms by feeding
-// duplicate entries to the optimizer and to TypeScript's project scan, so this
-// reports them too.
+//  3. A sync conflict copy ("index 2.ts") feeds a duplicate entry to the
+//     optimizer and to TypeScript's project scan, producing both symptoms
+//     above plus duplicate-symbol noise. These are deleted when git can
+//     prove the original is intact, and reported otherwise.
 //
 // `npm run dev` runs this first, so the normal path self-heals. Run
 // `npm run doctor` on its own to see what it found.
 
 import { readdir, readFile, rm, stat } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import process from "node:process";
+
+import {
+  findConflictCopies,
+  removeRedundantConflictCopies,
+} from "./lib/conflict-copies.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const removed = [];
@@ -85,32 +90,20 @@ async function clearOptimizerTempDirs() {
   }
 }
 
-const SKIP_DIRS = new Set([".git", "node_modules", "dist", ".next", ".vercel"]);
-// "index 2.ts" and "BUILD_ID 3" — a name ending in space plus a digit.
-const CONFLICT_COPY = /\s\d+(\.[^.]+)?$/;
-
-async function findConflictCopies(dir, found = []) {
-  for (const entry of await readdir(dir, { withFileTypes: true })) {
-    if (SKIP_DIRS.has(entry.name)) continue;
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      await findConflictCopies(path, found);
-    } else if (CONFLICT_COPY.test(entry.name)) {
-      found.push(relative(root, path));
-    }
-  }
-  return found;
-}
-
 await clearStaleDevLock();
 await clearOptimizerTempDirs();
 
 const conflicts = await findConflictCopies(root);
-if (conflicts.length > 0) {
+const { removed: deletedCopies, kept } = await removeRedundantConflictCopies(
+  root,
+  conflicts,
+);
+for (const path of deletedCopies) removed.push(path);
+if (kept.length > 0) {
   warnings.push(
-    `${conflicts.length} sync conflict ${conflicts.length === 1 ? "copy" : "copies"} found. ` +
-      `Delete them if the originals are intact:\n` +
-      conflicts.map((path) => `    ${path}`).join("\n"),
+    `${kept.length} sync conflict ${kept.length === 1 ? "copy" : "copies"} left in place. ` +
+      `Check each original before deleting by hand:\n` +
+      kept.map(({ path, reason }) => `    ${path} — ${reason}`).join("\n"),
   );
 }
 

@@ -20,7 +20,8 @@
 @import "./styles/overlays/account-card.css";
 @import "./styles/shell/responsive.css";
 @import "./styles/learning/exploration.css";
-@import "./styles/capture/work-capture.css";
+@import "./styles/capture/parsed-intent.css";
+@import "./styles/calendar/rail-responsive.css";
 @import "./styles/capture/temporal-field.css";
 @import "./styles/editors/calm-editors.css";
 @import "./styles/editors/inline-editing.css";

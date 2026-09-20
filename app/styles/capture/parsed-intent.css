@@ -1,0 +1,13 @@
+/* The parsed-intent chip in the command palette, when the parse came out as
+   homework. The base .parsed-intent rules live in surface/palette.css; these
+   win on specificity, not on order, so this file's position in the manifest
+   is not load-bearing. */
+
+.parsed-intent.homework-intent {
+  background: #ecefea;
+  border-color: #d9ded6;
+}
+
+.parsed-intent.homework-intent > span {
+  color: #4f806b;
+}

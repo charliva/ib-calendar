@@ -1,0 +1,23 @@
+/* Narrow-viewport tightening for the calendar's icon rail (CalendarRail.tsx).
+   Kept at the manifest position these rules have always occupied, since later
+   files also touch .icon-rail and the cascade decides between them. */
+
+@media (max-width: 780px) {
+  .icon-rail nav {
+    gap: 3px;
+  }
+
+  .icon-rail nav button {
+    width: 34px;
+  }
+}
+
+@media (max-width: 380px) {
+  .icon-rail nav {
+    gap: 0;
+  }
+
+  .icon-rail nav button {
+    width: 31px;
+  }
+}

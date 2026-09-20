@@ -17,7 +17,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@floating-ui/react": "^0.27.20",
+    "@floating-ui/react": "0.27.20",
     "@radix-ui/react-popover": "1.1.23",
     "@supabase/ssr": "0.12.4",
     "@supabase/supabase-js": "2.111.0",
@@ -42,14 +42,14 @@
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.5",
-    "@vitejs/plugin-rsc": "^0.5.35",
+    "@vitejs/plugin-rsc": "0.5.35",
     "eslint": "9.39.5",
     "eslint-config-next": "16.2.12",
     "react-server-dom-webpack": "19.2.8",
     "supabase": "2.110.0",
     "tailwindcss": "4.3.3",
     "typescript": "6.0.3",
-    "vinext": "^1.0.0-beta.10",
+    "vinext": "1.0.0-beta.10",
     "vite": "8.2.0",
     "wrangler": "4.116.0"
   },
