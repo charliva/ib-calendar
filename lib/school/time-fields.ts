@@ -28,8 +28,6 @@ export const SCHOOL_DAY_TIME_FIELDS = [
   "lowEnergyEnd",
 ] as const;
 
-export type SchoolDayTimeField = (typeof SCHOOL_DAY_TIME_FIELDS)[number];
-
 /** Matches "HH:MM" and "HH:MM:SS", the two shapes a time input can produce. */
 const CLOCK_TIME = /^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/;
 
