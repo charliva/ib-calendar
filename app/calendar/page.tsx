@@ -143,6 +143,7 @@ import {
 import { OnboardingFlow } from "@/components/onboarding/OnboardingFlow";
 import { WelcomeBack } from "@/components/onboarding/WelcomeBack";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
+import { useCloudAccount } from "@/app/calendar/use-cloud-account";
 import { useOnboarding } from "@/app/calendar/use-onboarding";
 import {
   getLastViewState,
@@ -237,19 +238,19 @@ export default function Home() {
   const [isOnline, setIsOnline] = useState(true);
   const [hydrated, setHydrated] = useState(false);
   /**
-   * Whether we know what this account holds — either because its snapshot has
-   * arrived, or because there is no account to ask. Local state hydrates from
-   * IndexedDB long before auth resolves, so without this a returning student on
-   * a new device looks exactly like a brand-new one and gets the setup wizard.
+   * What the signed-in account holds, and whether it has arrived yet. Local
+   * state hydrates from IndexedDB long before auth resolves, so without this a
+   * returning student on a new device looks exactly like a brand-new one and
+   * gets the setup wizard. Owner-keyed, so the previous account's answers are
+   * never read as this one's — see app/calendar/use-cloud-account.ts.
    */
-  const [cloudSnapshotLoaded, setCloudSnapshotLoaded] = useState(false);
-  // A session with no account has nothing to wait for, so the gate opens as
-  // soon as local state is in memory. Derived rather than stored so there is no
-  // effect to keep in step with it.
-  const cloudLoaded = cloudSnapshotLoaded || (hydrated && !user);
-  const [cloudOnboardingState, setCloudOnboardingState] =
-    useState<unknown>(null);
-  const [cloudLastSeenAt, setCloudLastSeenAt] = useState<string | null>(null);
+  const {
+    cloudLoaded,
+    cloudOnboardingState,
+    cloudLastSeenAt,
+    adoptSnapshot,
+    currentOwnerRef,
+  } = useCloudAccount(user, hydrated);
   const [accountPreferences, setAccountPreferences] = useState<AccountPreferences>(
     DEFAULT_ACCOUNT_PREFERENCES,
   );
@@ -601,6 +602,11 @@ export default function Home() {
       // A local edit made while this snapshot was loading is newer than the
       // snapshot. Realtime (or the focus retry) will request a fresh one.
       if (writeRevisionAtStart !== writeRevisionRef.current) return;
+      // The account changed while this was in flight — signing out and back in
+      // as somebody else never remounts the page. None of what follows is
+      // tagged with whose it is, so applying it here would write the previous
+      // student's calendar into the new one's session.
+      if (currentOwnerRef.current !== activeUser.id) return;
       setItems(snapshot.items);
       setHistory(snapshot.history);
       setSubjects(snapshot.subjects);
@@ -614,11 +620,13 @@ export default function Home() {
       setBlockChoices(snapshot.blockChoices);
       setSchoolDaySettings(snapshot.schoolDaySettings);
       setAccountPreferences(snapshot.accountPreferences);
-      setCloudOnboardingState(snapshot.onboardingState);
-      setCloudLastSeenAt(snapshot.lastSeenAt);
-      setCloudSnapshotLoaded(true);
+      adoptSnapshot(
+        activeUser.id,
+        snapshot.onboardingState,
+        snapshot.lastSeenAt,
+      );
     },
-    [supabase],
+    [supabase, adoptSnapshot, currentOwnerRef],
   );
 
   useEffect(() => {
