@@ -73,6 +73,13 @@ export type HistoryEntry = {
   label: string;
   items: CalendarItem[];
   createdAt: string;
+  /**
+   * True for an entry read from the cloud, whose snapshot has not been
+   * fetched yet: `items` is empty because nobody has asked for it, not
+   * because the calendar was empty. Entries recorded on this device carry
+   * their items from the start and leave this unset.
+   */
+  itemsPending?: boolean;
 };
 
 export type ProposalChange = {

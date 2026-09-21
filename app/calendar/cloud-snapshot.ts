@@ -27,6 +27,14 @@ import {
   rowToAccountPreferences,
   type AccountPreferences,
 } from "@/lib/settings/account-preferences";
+import {
+  ASSIGNMENT_COLUMNS,
+  BLOCK_CHOICE_COLUMNS,
+  BLOCK_CHOICE_LIMIT,
+  BLOCK_CHOICE_WINDOW_DAYS,
+  CALENDAR_ITEM_COLUMNS,
+  HISTORY_LIST_COLUMNS,
+} from "@/lib/calendar/snapshot-columns";
 
 /** Everything one account holds, as the calendar keeps it in memory. */
 export type CloudSnapshot = {
@@ -52,6 +60,20 @@ export type CloudSnapshot = {
 type Row = Record<string, unknown>;
 
 /**
+ * The rows of one result, as the `rowTo…` mappers want them.
+ *
+ * PostgREST's types only resolve a column list it can read as a string
+ * literal; the lists below are assembled from arrays, which widens them to
+ * `string`, and the client then types the result as its "could not parse
+ * this" placeholder rather than as rows. They are ordinary rows — every
+ * mapper validates each field it reads — so this says so once instead of
+ * spreading a double cast across a dozen call sites.
+ */
+function rows(data: unknown): Row[] {
+  return Array.isArray(data) ? (data as Row[]) : [];
+}
+
+/**
  * Reads one account's whole calendar in a single round of parallel queries.
  *
  * It is all-or-nothing on purpose: if any table errors, this throws rather
@@ -60,6 +82,13 @@ type Row = Record<string, unknown>;
  *
  * The bounded queries (history, signals, explorations, block choices) are
  * trimmed to what the UI actually shows; older rows stay in the database.
+ *
+ * History is the one table read in two steps. Each `calendar_history` row
+ * carries a complete copy of the calendar as it stood at that moment, and the
+ * history list only ever shows a label and a timestamp — so the fifty labels
+ * come down here and the snapshot itself is fetched by `fetchHistoryItems`
+ * if and when the student opens one. Fetching them eagerly made this single
+ * call megabytes wide, repeated on every sync.
  */
 export async function fetchCloudSnapshot(
   supabase: SupabaseClient,
@@ -81,13 +110,13 @@ export async function fetchCloudSnapshot(
   ] = await Promise.all([
     supabase
       .from("calendar_items")
-      .select("*")
+      .select(CALENDAR_ITEM_COLUMNS.join(","))
       .eq("user_id", userId)
       .neq("status", "archived")
       .order("created_at"),
     supabase
       .from("calendar_history")
-      .select("id,label,snapshot,created_at")
+      .select(HISTORY_LIST_COLUMNS.join(","))
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(50),
@@ -105,7 +134,7 @@ export async function fetchCloudSnapshot(
       .order("occurrence_date"),
     supabase
       .from("assignments")
-      .select("*")
+      .select(ASSIGNMENT_COLUMNS.join(","))
       .eq("user_id", userId)
       .neq("status", "archived")
       .order("due_at"),
@@ -135,11 +164,16 @@ export async function fetchCloudSnapshot(
       .limit(100),
     supabase
       .from("time_block_choices")
-      .select("*")
+      .select(BLOCK_CHOICE_COLUMNS.join(","))
       .eq("user_id", userId)
-      .gte("starts_at", new Date(Date.now() - 30 * 86_400_000).toISOString())
+      .gte(
+        "starts_at",
+        new Date(
+          Date.now() - BLOCK_CHOICE_WINDOW_DAYS * 86_400_000,
+        ).toISOString(),
+      )
       .order("starts_at", { ascending: false })
-      .limit(150),
+      .limit(BLOCK_CHOICE_LIMIT),
     supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
   ]);
 
@@ -159,38 +193,25 @@ export async function fetchCloudSnapshot(
   if (error) throw error;
 
   return {
-    items: (itemResult.data ?? []).map((row) => rowToItem(row as Row)),
-    history: (historyResult.data ?? []).map((entry) => ({
+    items: rows(itemResult.data).map(rowToItem),
+    history: rows(historyResult.data).map((entry) => ({
       id: String(entry.id),
-      label: entry.label,
-      items: Array.isArray(entry.snapshot)
-        ? (entry.snapshot as CalendarItem[])
-        : [],
-      createdAt: entry.created_at,
+      label: String(entry.label),
+      // Deliberately empty: the snapshot arrives only if the student opens
+      // this entry. See `itemsPending` and `fetchHistoryItems` below.
+      items: [],
+      itemsPending: true,
+      createdAt: String(entry.created_at),
     })),
-    subjects: (subjectResult.data ?? []).map((row) => rowToSubject(row as Row)),
-    classes: (classResult.data ?? []).map((row) => rowToClass(row as Row)),
-    classExceptions: (exceptionResult.data ?? []).map((row) =>
-      rowToClassException(row as Row),
-    ),
-    assignments: (assignmentResult.data ?? []).map((row) =>
-      rowToAssignment(row as Row),
-    ),
-    assessments: (assessmentResult.data ?? []).map((row) =>
-      rowToAssessment(row as Row),
-    ),
-    intentions: (intentionResult.data ?? []).map((row) =>
-      rowToIntention(row as Row),
-    ),
-    learningSignals: (signalResult.data ?? []).map((row) =>
-      rowToLearningSignal(row as Row),
-    ),
-    explorations: (explorationResult.data ?? []).map((row) =>
-      rowToExploration(row as Row),
-    ),
-    blockChoices: (blockChoiceResult.data ?? []).map((row) =>
-      rowToBlockChoice(row as Row),
-    ),
+    subjects: rows(subjectResult.data).map(rowToSubject),
+    classes: rows(classResult.data).map(rowToClass),
+    classExceptions: rows(exceptionResult.data).map(rowToClassException),
+    assignments: rows(assignmentResult.data).map(rowToAssignment),
+    assessments: rows(assessmentResult.data).map(rowToAssessment),
+    intentions: rows(intentionResult.data).map(rowToIntention),
+    learningSignals: rows(signalResult.data).map(rowToLearningSignal),
+    explorations: rows(explorationResult.data).map(rowToExploration),
+    blockChoices: rows(blockChoiceResult.data).map(rowToBlockChoice),
     schoolDaySettings: rowToSchoolDaySettings(
       profileResult.data as Row | null,
     ),
@@ -204,4 +225,28 @@ export async function fetchCloudSnapshot(
         ? ((profileResult.data as Row).last_seen_at as string)
         : null,
   };
+}
+
+/**
+ * The calendar as it stood at one history entry.
+ *
+ * Read on demand, because it is large and almost never wanted: a student
+ * looks at the history list far more often than they restore from it.
+ * Returns an empty list for an entry that no longer exists, which restores
+ * to "everything was deleted" — the same thing the row itself would say.
+ */
+export async function fetchHistoryItems(
+  supabase: SupabaseClient,
+  userId: string,
+  entryId: string,
+): Promise<CalendarItem[]> {
+  const { data, error } = await supabase
+    .from("calendar_history")
+    .select("snapshot")
+    .eq("user_id", userId)
+    .eq("id", entryId)
+    .maybeSingle();
+  if (error) throw error;
+  const snapshot = (data as Row | null)?.snapshot;
+  return Array.isArray(snapshot) ? (snapshot as CalendarItem[]) : [];
 }

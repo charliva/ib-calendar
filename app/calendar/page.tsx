@@ -196,7 +196,10 @@ import {
   promoteLegacyOfflineHomework,
   type LegacyOfflineState,
 } from "@/lib/calendar/legacy-offline";
-import { fetchCloudSnapshot } from "@/app/calendar/cloud-snapshot";
+import {
+  fetchCloudSnapshot,
+  fetchHistoryItems,
+} from "@/app/calendar/cloud-snapshot";
 import { useAccountSession } from "@/app/calendar/use-account-session";
 import { useSchoolRecords } from "@/app/calendar/use-school-records";
 import { useWorkCapture } from "@/app/calendar/use-work-capture";
@@ -212,6 +215,24 @@ const GATE_EMAILS = (process.env.NEXT_PUBLIC_ACCESS_GATE_EMAILS ?? "")
   .split(",")
   .map((entry) => entry.trim().toLowerCase())
   .filter(Boolean);
+
+/**
+ * How often an idle, visible tab re-reads the account as a safety net.
+ *
+ * Realtime is what actually keeps two devices in step, and returning to the
+ * tab syncs on its own; this timer only covers a realtime message that never
+ * arrived. It used to fire every fifteen seconds and pull the whole account
+ * each time — in every open tab, changed or not — which is where nearly all
+ * of the app's Supabase egress went.
+ */
+const FALLBACK_SYNC_MS = 300_000;
+
+/**
+ * The faster beat used only while changes are still waiting to reach the
+ * account. A stuck outbox is worth retrying promptly; an empty one is not
+ * worth asking about at all.
+ */
+const OUTBOX_RETRY_MS = 30_000;
 
 export default function Home() {
   const supabase = useMemo(() => createClient(), []);
@@ -949,7 +970,16 @@ export default function Home() {
     const onVisibility = () => {
       if (document.visibilityState === "visible") requestSync();
     };
-    const timer = window.setInterval(requestSync, 15_000);
+    // A tab nobody is looking at asks for nothing. It cannot show what it
+    // learns, and it syncs the moment it comes back to the foreground.
+    const onTick = () => {
+      if (document.visibilityState !== "visible") return;
+      requestSync();
+    };
+    const timer = window.setInterval(
+      onTick,
+      pendingCount > 0 ? OUTBOX_RETRY_MS : FALLBACK_SYNC_MS,
+    );
     window.addEventListener("focus", requestSync);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
@@ -957,7 +987,7 @@ export default function Home() {
       window.removeEventListener("focus", requestSync);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [hydrated, user]);
+  }, [hydrated, pendingCount, user]);
 
   useEffect(() => {
     if (!hydrated || !isOnline || !user) return;
@@ -1179,6 +1209,31 @@ export default function Home() {
     setNotice(
       `${stale.length} item${stale.length === 1 ? " is" : "s are"} back on your list.`,
     );
+  }
+
+  /**
+   * Opens a history entry as a restore preview.
+   *
+   * The entry's items are fetched here rather than with the history list: a
+   * snapshot is a full copy of the calendar, and the list shows fifty of them
+   * while the student opens approximately none. Entries recorded on this
+   * device already hold their items and skip the round trip.
+   */
+  async function openHistoryEntry(entry: HistoryEntry) {
+    if (!entry.itemsPending) {
+      setProposal(restoreProposal(entry, items));
+      return;
+    }
+    if (!user) {
+      setNotice("Sign in to open an earlier state.");
+      return;
+    }
+    try {
+      const restored = await fetchHistoryItems(supabase, user.id, entry.id);
+      setProposal(restoreProposal({ ...entry, items: restored }, items));
+    } catch (error) {
+      setNotice(`Could not open that state: ${syncErrorMessage(error)}`);
+    }
   }
 
   function undoLast() {
@@ -2673,7 +2728,7 @@ export default function Home() {
           setHistoryOpen(false);
           setHudOpen(false);
         }}
-        onRestore={(entry) => setProposal(restoreProposal(entry, items))}
+        onRestore={(entry) => void openHistoryEntry(entry)}
         onOpenItem={openItem}
       />
 
