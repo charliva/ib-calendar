@@ -1,4 +1,4 @@
-import type { DragEvent, PointerEvent as ReactPointerEvent, RefObject } from "react";
+import type { DragEvent, PointerEvent as ReactPointerEvent } from "react";
 import {
   dateKey,
   durationMinutes,
@@ -23,7 +23,6 @@ type DragAndResizeParams = {
    * Set while a resize is in flight. A resize starts on the same element that
    * owns the drag handle, so drags have to stand down for the duration.
    */
-  resizeGestureActive: RefObject<boolean>;
   setDraggingItemId: (id: string | null) => void;
   setDragSnap: (snap: DragSnap | null) => void;
   setResizing: React.Dispatch<React.SetStateAction<ResizingState>>;
@@ -52,7 +51,6 @@ type DragAndResizeParams = {
  * recurring lesson, not as an edit to the lesson itself.
  */
 export function useDragAndResize({
-  resizeGestureActive,
   setDraggingItemId,
   setDragSnap,
   setResizing,
@@ -63,7 +61,7 @@ export function useDragAndResize({
   persistClassOccurrence,
 }: DragAndResizeParams) {
   function onDragStart(event: DragEvent, item: CalendarItem) {
-    if (resizeGestureActive.current || item.flexibility === "fixed") {
+    if (item.flexibility === "fixed") {
       event.preventDefault();
       return;
     }

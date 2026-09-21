@@ -30,8 +30,6 @@ type Props = {
   onClose: () => void;
   hasAccount: boolean;
   showDeveloperOverride: boolean;
-  /** Opened directly on a section when something deep-links into settings. */
-  initialSection?: SettingsSectionId | null;
   schoolDaySettings: SchoolDaySettings;
   onSaveSchoolDaySettings: (settings: SchoolDaySettings) => void;
   accountPreferences: AccountPreferences;
@@ -60,7 +58,7 @@ type Props = {
  */
 export function SettingsPanel(props: Props) {
   const [expanded, setExpanded] = useState<SettingsSectionId | null>(
-    props.initialSection ?? "school-day",
+    "school-day",
   );
 
   const sections = SETTINGS_SECTIONS.filter(

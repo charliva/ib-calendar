@@ -16,6 +16,7 @@ import {
   SubjectSelect,
 } from "@/components/school/fields";
 import { TemporalField } from "@/app/ui/temporal-field";
+import { DayIntervalsField } from "@/components/school/fields/DayIntervalsField";
 
 type Props = {
   draft: Assessment;
@@ -225,21 +226,10 @@ export function AssessmentEditor({
       </label>
       {draft.spacedRepetitionEnabled && (
         <FormField label="Review after (days)">
-          <input
-            value={draft.reviewIntervalsDays.join(", ")}
-            onChange={(event) =>
-              setDraft({
-                ...draft,
-                reviewIntervalsDays: event.target.value
-                  .split(",")
-                  .map((value) => Number(value.trim()))
-                  .filter(
-                    (value) =>
-                      Number.isInteger(value) &&
-                      value > 0 &&
-                      value <= 90,
-                  ),
-              })
+          <DayIntervalsField
+            value={draft.reviewIntervalsDays}
+            onChange={(reviewIntervalsDays) =>
+              setDraft({ ...draft, reviewIntervalsDays })
             }
             placeholder="1, 3, 7, 14"
           />

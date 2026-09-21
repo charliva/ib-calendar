@@ -208,10 +208,18 @@ export function TemporalField({
               value={value.split("T")[1]?.slice(0, 5) || "09:00"}
               step={minuteStep * 60}
               onChange={(event) => {
-                const base = selected ?? new Date();
+                // Clearing the field reads back "", which split/Number turns
+                // into NaN — setHours(NaN) makes the date Invalid and
+                // date-fns format() then throws RangeError straight out of
+                // this handler, so neither onChange nor setText below ever
+                // ran and the popover was wedged. A half-typed value is not
+                // an edit; wait for a whole one.
                 const [hour, minute] = event.target.value.split(":").map(Number);
+                if (!Number.isFinite(hour) || !Number.isFinite(minute)) return;
+                const base = selected ?? new Date();
                 const nextDate = new Date(base);
                 nextDate.setHours(hour, minute, 0, 0);
+                if (Number.isNaN(nextDate.getTime())) return;
                 const next = valueFromDate(nextDate, "datetime");
                 onChange(next);
                 setText(displayValue(next, mode));

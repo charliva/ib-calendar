@@ -23,7 +23,10 @@ import {
   SCHOOL_PERIODS,
   type EditorOptions,
 } from "../../lib/calendar/interactions.ts";
-import { fromLocalInput } from "../../lib/calendar/time-inputs.ts";
+import {
+  fromLocalInput,
+  nextQuarterHour,
+} from "../../lib/calendar/time-inputs.ts";
 import type { SchoolClass, Subject } from "../../lib/school.ts";
 
 import {
@@ -224,11 +227,14 @@ export function CompactEventEditor({
   );
   const today = new Date().toISOString();
   const updateStart = (date: string, time: string) => {
-    // An unscheduled item has no date yet, so `date` arrives empty and
-    // `${date}T${time}` is an unparseable "T14:30". Picking a time is the
-    // gesture that schedules such an item, and the day it lands on is the one
-    // the editor is already showing.
-    const startsAt = fromLocalInput(`${date || localDatePart(today)}T${time}`);
+    // An unscheduled item has neither part yet, so either can arrive empty and
+    // `${date}T${time}` is then an unparseable "T14:30" or "2026-09-25T".
+    // Scheduling such an item is exactly what picking one of them means, so
+    // the other is defaulted rather than refused: the day the editor is
+    // already showing, and the next quarter hour from now.
+    const startsAt = fromLocalInput(
+      `${date || localDatePart(today)}T${time || nextQuarterHour(new Date())}`,
+    );
     if (!startsAt) return;
     change({
       startsAt,

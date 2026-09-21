@@ -90,3 +90,38 @@ test("picking a time on an unscheduled item schedules it rather than throwing", 
   assert.equal(new Date(startsAt).getHours(), 14);
   assert.equal(new Date(startsAt).toDateString(), new Date().toDateString());
 });
+
+// Picking a date for an unscheduled task used to do nothing at all. The task
+// carries no time, so localTimePart returned "" and `${date}T` was
+// unparseable — fromLocalInput returned null and updateStart bailed before
+// writing anything. The date button meanwhile showed today, from a fallback
+// that was only ever for display, so the control looked already set. Both
+// halves are now defaulted, not just the date.
+
+import { nextQuarterHour } from "../lib/calendar/time-inputs.ts";
+
+test("an unscheduled task gets a usable time when a date is picked", () => {
+  assert.equal(nextQuarterHour(new Date("2026-09-21T14:03:27")), "14:15");
+  assert.equal(nextQuarterHour(new Date("2026-09-21T14:15:00")), "14:15");
+  assert.equal(nextQuarterHour(new Date("2026-09-21T14:16:00")), "14:30");
+  assert.equal(nextQuarterHour(new Date("2026-09-21T09:47:00")), "10:00");
+  assert.equal(nextQuarterHour(new Date("2026-09-21T00:01:00")), "00:15");
+});
+
+test("rounding past midnight still produces a valid clock time", () => {
+  assert.equal(nextQuarterHour(new Date("2026-09-21T23:52:00")), "00:00");
+  assert.match(nextQuarterHour(new Date("2026-09-21T23:59:59")), /^\d{2}:\d{2}$/);
+});
+
+test("an unusable reference still yields a time rather than throwing", () => {
+  assert.equal(nextQuarterHour(new Date("nonsense")), "09:00");
+});
+
+test("a date picked for an unscheduled task now produces an instant", () => {
+  // The exact failure: "2026-09-25T" is unparseable, so nothing was written.
+  assert.equal(fromLocalInput("2026-09-25T"), null);
+  assert.notEqual(
+    fromLocalInput(`2026-09-25T${nextQuarterHour(new Date("2026-09-21T14:03:00"))}`),
+    null,
+  );
+});

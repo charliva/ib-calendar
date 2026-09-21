@@ -508,7 +508,6 @@ export default function Home() {
     };
     requestAnimationFrame(attempt);
   }, []);
-  const resizeGestureActive = useRef(false);
   const polishedBlocksRef = useRef(new Set<string>());
   const calendarSwipeStartRef = useRef<SwipePoint | null>(null);
   const calendarSwipeLastRef = useRef<SwipePoint | null>(null);
@@ -1394,7 +1393,6 @@ export default function Home() {
     endDrag,
     beginResize,
   } = useDragAndResize({
-    resizeGestureActive,
     setDraggingItemId,
     setDragSnap,
     setResizing,

@@ -7,6 +7,10 @@ import type {
 
 import { DEFAULT_WEEK_PATTERN_ANCHOR } from "./school/week-pattern.ts";
 import { clampSchoolDayMinutes } from "./school/minute-bounds.ts";
+import {
+  SCHOOL_DAY_TIME_FIELDS,
+  clampSchoolDayTime,
+} from "./school/time-fields.ts";
 
 export type { TaskContext } from "@/lib/calendar-engine";
 export type WeekPattern = "every" | "a" | "b";
@@ -349,6 +353,15 @@ export function normalizeSchoolDaySettings(
     minimumFreePeriodMinutes: clampSchoolDayMinutes(
       "minimumFreePeriodMinutes",
       settings.minimumFreePeriodMinutes,
+    ),
+    // Every one of these lands in a `time not null` column. An emptied input
+    // reads back as "", which Postgres rejects outright — and a rejected
+    // upsert retries in the outbox forever rather than failing visibly.
+    ...Object.fromEntries(
+      SCHOOL_DAY_TIME_FIELDS.map((field) => [
+        field,
+        clampSchoolDayTime(settings[field], DEFAULT_SCHOOL_DAY_SETTINGS[field]),
+      ]),
     ),
     weekPatternAnchor:
       settings.weekPatternAnchor?.trim() || DEFAULT_WEEK_PATTERN_ANCHOR,

@@ -3,6 +3,11 @@
 import { useState, type FormEvent } from "react";
 import { WORK_TYPE_LABELS, type SchoolDaySettings } from "@/lib/school";
 import { SCHOOL_DAY_MINUTE_BOUNDS } from "@/lib/school/minute-bounds";
+import { sameSchoolDaySettings } from "@/lib/school/settings-equality";
+import {
+  SCHOOL_DAY_TIME_FIELDS,
+  isSchoolDayTime,
+} from "@/lib/school/time-fields";
 import { workTypes } from "@/components/school/constants";
 import { FormField } from "@/components/school/fields";
 import { TemporalField } from "@/app/ui/temporal-field";
@@ -23,20 +28,32 @@ type Props = {
  */
 export function SchoolDaySection({ settings, onSave }: Props) {
   const [draft, setDraft] = useState(settings);
+  // Compared by value, not identity. rowToSchoolDaySettings builds a fresh
+  // object on every read and the account's snapshot is re-read every fifteen
+  // seconds, so an identity check fired on every poll and reset the draft out
+  // from under whoever was typing into it.
   const [savedSettings, setSavedSettings] = useState(settings);
-  if (savedSettings !== settings) {
+  if (!sameSchoolDaySettings(savedSettings, settings)) {
     setSavedSettings(settings);
     setDraft(settings);
   }
 
-  const dirty = draft !== settings;
+  const dirty = !sameSchoolDaySettings(draft, settings);
 
   function update(patch: Partial<SchoolDaySettings>) {
     setDraft({ ...draft, ...patch });
   }
 
+  // An emptied time input reads back as "", and the ordering guards below only
+  // catch it at the end of a pair — "15:00" <= "" is false, so an emptied
+  // *start* used to reach a `time not null` column and be rejected forever.
+  const incompleteTime = SCHOOL_DAY_TIME_FIELDS.some(
+    (field) => !isSchoolDayTime(draft[field]),
+  );
+
   function submit(event: FormEvent) {
     event.preventDefault();
+    if (incompleteTime) return;
     if (draft.schoolDayEnd <= draft.schoolDayStart) return;
     if (draft.preferredStudyEnd <= draft.preferredStudyStart) return;
     if (draft.lowEnergyEnd <= draft.lowEnergyStart) return;
@@ -226,7 +243,12 @@ export function SchoolDaySection({ settings, onSave }: Props) {
       </details>
 
       <div className="settings-form-footer">
-        <button type="submit" disabled={!dirty}>
+        {incompleteTime ? (
+          <p className="settings-help" role="status">
+            One of the times is empty. Fill it in to save.
+          </p>
+        ) : null}
+        <button type="submit" disabled={!dirty || incompleteTime}>
           {dirty ? "Save" : "Saved"}
         </button>
       </div>
