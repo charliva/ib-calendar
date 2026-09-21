@@ -1,10 +1,10 @@
-import { openDB, type IDBPDatabase } from "idb";
 import type { CalendarItem, HistoryEntry } from "@/lib/calendar-engine";
 import type { Intention } from "@/lib/intentions";
 import type { Exploration, LearningSignal } from "@/lib/study-intelligence";
 import type { BlockChoice } from "@/lib/block-choices";
 import type { SchoolState } from "@/lib/school";
 import { mergePendingMutations, mutationIdentity } from "@/lib/sync";
+import { createOfflineConnection } from "@/lib/offline/connection";
 
 export type OfflineState = SchoolState & {
   items: CalendarItem[];
@@ -63,46 +63,45 @@ export type LastViewState = {
 
 const DEAD_LETTER_STORE = "calendar-mutations-dead-letter";
 
-const dbPromise: Promise<IDBPDatabase> | null =
-  typeof window === "undefined"
-    ? null
-    : openDB("syllabi-offline", 8, {
-        upgrade(database) {
-          if (!database.objectStoreNames.contains("calendar-state")) {
-            database.createObjectStore("calendar-state");
-          }
-          if (!database.objectStoreNames.contains("calendar-mutations")) {
-            database.createObjectStore("calendar-mutations", {
-              keyPath: "id",
-              autoIncrement: true,
-            });
-          }
-          if (!database.objectStoreNames.contains(DEAD_LETTER_STORE)) {
-            database.createObjectStore(DEAD_LETTER_STORE, {
-              keyPath: "id",
-              autoIncrement: true,
-            });
-          }
-        },
-        blocking() {
-          void dbPromise?.then((database) => database.close());
-        },
-      });
+const connection = createOfflineConnection("syllabi-offline", 8, (database) => {
+  if (!database.objectStoreNames.contains("calendar-state")) {
+    database.createObjectStore("calendar-state");
+  }
+  if (!database.objectStoreNames.contains("calendar-mutations")) {
+    database.createObjectStore("calendar-mutations", {
+      keyPath: "id",
+      autoIncrement: true,
+    });
+  }
+  if (!database.objectStoreNames.contains(DEAD_LETTER_STORE)) {
+    database.createObjectStore(DEAD_LETTER_STORE, {
+      keyPath: "id",
+      autoIncrement: true,
+    });
+  }
+});
+
+/**
+ * Runs when another tab upgrades the schema past this one, after which every
+ * write here fails. The calendar subscribes so it can ask for a reload rather
+ * than letting the student keep working into a void.
+ */
+export const onOfflineSchemaMoved = connection.onSchemaMoved;
 
 export async function saveOfflineState(state: OfflineState) {
-  const database = await dbPromise;
+  const database = await connection.get();
   if (!database) return;
   await database.put("calendar-state", state, "current");
 }
 
 export async function getOfflineState(): Promise<OfflineState | null> {
-  const database = await dbPromise;
+  const database = await connection.get();
   if (!database) return null;
   return (await database.get("calendar-state", "current")) ?? null;
 }
 
 export async function saveLastViewState(key: string, state: LastViewState) {
-  const database = await dbPromise;
+  const database = await connection.get();
   if (!database) return;
   await database.put("calendar-state", state, key);
 }
@@ -110,7 +109,7 @@ export async function saveLastViewState(key: string, state: LastViewState) {
 export async function getLastViewState(
   key: string,
 ): Promise<LastViewState | null> {
-  const database = await dbPromise;
+  const database = await connection.get();
   if (!database) return null;
   return ((await database.get("calendar-state", key)) as LastViewState) ?? null;
 }
@@ -139,7 +138,7 @@ function onboardingKey(ownerKey: string) {
 export async function getDeviceOnboarding(
   ownerKey: string,
 ): Promise<DeviceOnboardingRecord> {
-  const database = await dbPromise;
+  const database = await connection.get();
   if (!database) return EMPTY_DEVICE_ONBOARDING;
   const stored = (await database.get(
     "calendar-state",
@@ -152,13 +151,13 @@ export async function saveDeviceOnboarding(
   ownerKey: string,
   record: DeviceOnboardingRecord,
 ) {
-  const database = await dbPromise;
+  const database = await connection.get();
   if (!database) return;
   await database.put("calendar-state", record, onboardingKey(ownerKey));
 }
 
 export async function queueMutation(mutation: PendingMutation) {
-  const database = await dbPromise;
+  const database = await connection.get();
   if (!database) return;
   const transaction = database.transaction("calendar-mutations", "readwrite");
   const store = transaction.objectStore("calendar-mutations");
@@ -185,7 +184,7 @@ export async function queueMutation(mutation: PendingMutation) {
 export async function getPendingMutations(
   ownerKey?: string,
 ): Promise<PendingMutation[]> {
-  const database = await dbPromise;
+  const database = await connection.get();
   if (!database) return [];
   const mutations = await database.getAll("calendar-mutations");
   if (!ownerKey) return mutations;
@@ -198,13 +197,13 @@ export async function getPendingMutations(
 }
 
 export async function removePendingMutation(id: number) {
-  const database = await dbPromise;
+  const database = await connection.get();
   if (!database) return;
   await database.delete("calendar-mutations", id);
 }
 
 export async function updatePendingMutation(mutation: PendingMutation) {
-  const database = await dbPromise;
+  const database = await connection.get();
   if (!database || mutation.id === undefined) return;
   await database.put("calendar-mutations", mutation);
 }
@@ -217,8 +216,6 @@ export type DeadLetterMutation = PendingMutation & {
   lastError: string;
 };
 
-const dbWithDeadLetterPromise = dbPromise;
-
 export function shouldDeadLetter(mutation: PendingMutation): boolean {
   return (mutation.failureCount ?? 0) >= MAX_PENDING_FAILURES;
 }
@@ -227,7 +224,7 @@ export async function moveToDeadLetter(
   mutation: PendingMutation,
   lastError: string,
 ) {
-  const database = await dbWithDeadLetterPromise;
+  const database = await connection.get();
   if (!database || mutation.id === undefined) return;
   const transaction = database.transaction(
     [DEAD_LETTER_STORE, "calendar-mutations"],
@@ -249,13 +246,13 @@ export async function moveToDeadLetter(
 }
 
 export async function getDeadLetterMutations(): Promise<DeadLetterMutation[]> {
-  const database = await dbWithDeadLetterPromise;
+  const database = await connection.get();
   if (!database) return [];
   return database.getAll(DEAD_LETTER_STORE);
 }
 
 export async function removeDeadLetterMutation(id: number) {
-  const database = await dbWithDeadLetterPromise;
+  const database = await connection.get();
   if (!database) return;
   await database.delete(DEAD_LETTER_STORE, id);
 }

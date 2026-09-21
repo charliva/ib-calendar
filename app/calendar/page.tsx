@@ -150,6 +150,7 @@ import {
   getOfflineState,
   getPendingMutations,
   moveToDeadLetter,
+  onOfflineSchemaMoved,
   queueMutation,
   removePendingMutation,
   getDeadLetterMutations,
@@ -642,6 +643,21 @@ export default function Home() {
     const timer = window.setInterval(updateClock, 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  // A deploy that bumps the offline schema reaches anybody who left the
+  // calendar open in another tab: that tab closes its database so the new one
+  // can upgrade, and from then on nothing it writes is kept. Saying so is the
+  // only honest option — this tab cannot re-open at a version that no longer
+  // exists.
+  useEffect(
+    () =>
+      onOfflineSchemaMoved(() => {
+        setNotice(
+          "Syllabi updated in another tab. Reload this one to keep saving changes.",
+        );
+      }),
+    [],
+  );
 
   useEffect(() => {
     const updateNetwork = () => setIsOnline(navigator.onLine);
