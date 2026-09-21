@@ -264,23 +264,6 @@
   .icon-rail nav button {
     width: 34px;
   }
-
-  .homework-dock {
-    z-index: 85;
-    top: auto;
-    right: 8px;
-    bottom: 65px;
-    left: 8px;
-    width: auto;
-    height: min(660px, 76vh);
-    max-height: 76vh;
-    border-radius: 14px;
-    transform: translateY(calc(100% + 80px));
-  }
-
-  .homework-dock.is-open {
-    transform: translateY(0);
-  }
 }
 
 @media (max-width: 380px) {
@@ -322,14 +305,5 @@
 
   .proposal-subject-list {
     grid-template-columns: 1fr;
-  }
-
-  .school-period-subject {
-    grid-template-columns: 1fr;
-  }
-
-  .school-period-subject small {
-    max-width: none;
-    padding: 0;
   }
 }

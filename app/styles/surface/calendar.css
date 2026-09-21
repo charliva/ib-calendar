@@ -139,22 +139,6 @@
   background: #8071dc;
 }
 
-.inactive-band {
-  height: 18px;
-  padding: 0 10px;
-  color: #a4a69f;
-  background:
-    repeating-linear-gradient(
-      -45deg,
-      #f0f1ed,
-      #f0f1ed 5px,
-      #eceee9 5px,
-      #eceee9 6px
-    );
-  border-color: #e0e3dc;
-  font-size: 6px;
-}
-
 .time-axis {
   background: var(--paper);
 }
@@ -175,41 +159,6 @@
 
 .time-slot:hover {
   background: rgb(121 105 218 / 2.5%);
-}
-
-.time-slot.snap-active {
-  overflow: visible;
-  background: rgb(126 111 225 / 4%);
-}
-
-.snap-guide {
-  position: absolute;
-  z-index: 14;
-  right: 0;
-  left: 0;
-  height: 1px;
-  color: #6151c5;
-  background: #7766da;
-  box-shadow: 0 0 0 1px rgb(119 102 218 / 7%);
-  font-family: var(--font-mono), monospace;
-  font-size: 6px;
-  pointer-events: none;
-}
-
-.snap-guide::before {
-  position: absolute;
-  top: -3px;
-  left: -3px;
-  width: 7px;
-  height: 7px;
-  background: #7766da;
-  border-radius: 50%;
-  content: "";
-}
-
-.snap-guide {
-  text-indent: 5px;
-  line-height: 13px;
 }
 
 .calendar-block,
@@ -234,36 +183,6 @@
     transform 120ms ease,
     box-shadow 120ms ease,
     opacity 120ms ease;
-}
-
-.calendar-block.flex-fixed,
-.calendar-block.kind-event {
-  background: color-mix(in srgb, var(--energy) 35%, #eef0eb);
-  border: 1px solid color-mix(in srgb, var(--energy) 82%, #cfd2cb);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 20%),
-    0 1px 2px rgb(49 47 56 / 8%);
-}
-
-.calendar-block.flex-flexible {
-  background: color-mix(in srgb, var(--energy) 6%, #f8f8f5);
-  border: 1px solid color-mix(in srgb, var(--energy) 72%, #dfe1dc);
-}
-
-.calendar-block.flex-elastic {
-  background:
-    linear-gradient(
-      to bottom,
-      color-mix(in srgb, var(--energy) 8%, #f8f8f5),
-      color-mix(in srgb, var(--energy) 3%, #f8f8f5)
-    );
-  border-bottom-style: dashed;
-}
-
-.calendar-block.kind-intention {
-  background: color-mix(in srgb, var(--energy) 7%, rgb(248 248 245 / 68%));
-  border-style: dashed;
-  backdrop-filter: blur(6px);
 }
 
 .calendar-block:hover {
@@ -318,18 +237,6 @@
   box-shadow: 0 0 0 1px rgb(200 77 98 / 8%);
 }
 
-.calendar-block.priority-high::after,
-.inbox-item.priority-high::after {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 4px;
-  height: 4px;
-  background: #5b5661;
-  border-radius: 50%;
-  content: "";
-}
-
 .proposal-origin {
   opacity: .26;
   filter: grayscale(.6);
@@ -375,10 +282,6 @@
     top 220ms cubic-bezier(.22, .75, .2, 1),
     height 220ms cubic-bezier(.22, .75, .2, 1),
     opacity 120ms ease;
-}
-
-.possibility-band.kind-intention {
-  background: color-mix(in srgb, var(--energy) 7%, transparent);
 }
 
 .possibility-band span {

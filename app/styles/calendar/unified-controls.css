@@ -20,10 +20,6 @@
   font-size: 8px;
 }
 
-.toolbar-date-jump .temporal-popover {
-  left: -104px;
-}
-
 .temporal-trigger {
   display: grid;
   width: 100%;
@@ -78,168 +74,7 @@
   background: #e2e4de;
 }
 
-.temporal-popover {
-  position: absolute;
-  z-index: 240;
-  top: calc(100% + 6px);
-  left: 0;
-  width: min(318px, calc(100vw - 32px));
-  max-height: min(560px, 72dvh);
-  overflow: auto;
-  color: #37383d;
-  background: rgb(252 252 249 / 98%);
-  border: 1px solid #ccd0c8;
-  border-radius: 11px;
-  box-shadow:
-    0 22px 58px rgb(35 35 42 / 19%),
-    0 3px 10px rgb(35 35 42 / 8%);
-  backdrop-filter: blur(18px);
-}
-
-.temporal-calendar {
-  padding: 11px;
-}
-
-.temporal-calendar > header {
-  display: grid;
-  grid-template-columns: 28px 1fr 28px;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.temporal-calendar > header strong {
-  font-size: 10px;
-  font-weight: 670;
-  text-align: center;
-}
-
-.temporal-calendar > header button,
-.temporal-days button,
-.temporal-hour-grid button,
-.temporal-minute-grid button {
-  display: grid;
-  min-width: 0;
-  padding: 0;
-  place-items: center;
-  color: #62645f;
-  background: transparent;
-  border: 0;
-  border-radius: 6px;
-}
-
-.temporal-calendar > header button {
-  width: 28px;
-  height: 28px;
-}
-
-.temporal-calendar > header button:hover,
-.temporal-days button:hover,
-.temporal-hour-grid button:hover,
-.temporal-minute-grid button:hover {
-  color: #5145a4;
-  background: #ebe8f8;
-}
-
-.temporal-weekdays,
-.temporal-days {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-}
-
-.temporal-weekdays span {
-  padding: 4px 0 6px;
-  color: #9a9c96;
-  font-family: var(--font-mono), monospace;
-  font-size: 7px;
-  font-weight: 650;
-  text-align: center;
-}
-
-.temporal-days button {
-  position: relative;
-  height: 31px;
-  font-size: 8px;
-  font-weight: 560;
-}
-
-.temporal-days button.outside {
-  color: #b8bab5;
-}
-
-.temporal-days button.today::after {
-  position: absolute;
-  bottom: 3px;
-  width: 3px;
-  height: 3px;
-  background: #7667d7;
-  border-radius: 50%;
-  content: "";
-}
-
-.temporal-days button.selected,
-.temporal-hour-grid button.selected,
-.temporal-minute-grid button.selected {
-  color: #f7f5ff;
-  background: #6859c8;
-}
-
-.temporal-time {
-  padding: 10px 11px 11px;
-  border-top: 1px solid #e1e3de;
-}
-
-.temporal-time > span {
-  display: block;
-  margin: 2px 0 6px;
-  color: #8b8d87;
-  font-size: 7px;
-  font-weight: 650;
-  letter-spacing: .05em;
-  text-transform: uppercase;
-}
-
-.temporal-hour-grid {
-  display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  margin-bottom: 10px;
-  gap: 3px;
-}
-
-.temporal-minute-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 3px;
-}
-
-.temporal-hour-grid button,
-.temporal-minute-grid button {
-  height: 27px;
-  font-family: var(--font-mono), monospace;
-  font-size: 7px;
-}
-
-.temporal-popover > footer {
-  display: flex;
-  justify-content: flex-end;
-  padding: 8px 11px;
-  background: #f2f3ef;
-  border-top: 1px solid #e0e2dc;
-}
-
-.temporal-popover > footer button {
-  min-height: 30px;
-  padding: 0 13px;
-  color: #f6f4ff;
-  background: #6758c5;
-  border: 1px solid #6758c5;
-  border-radius: 7px;
-  font-size: 8px;
-  font-weight: 650;
-}
-
-.school-field select,
-.item-inspector select,
-.homework-detail-fields select {
+.school-field select {
   appearance: none;
   padding-right: 28px !important;
   background-image:
@@ -474,31 +309,6 @@
   text-overflow: ellipsis;
 }
 
-.school-period-details {
-  display: grid;
-  gap: 12px;
-}
-
-.school-period-room {
-  display: grid;
-  gap: 6px;
-}
-
-.school-period-room > input {
-  min-height: 42px;
-  padding: 0 12px;
-  color: var(--ink);
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  font: inherit;
-}
-
-.school-period-room > small {
-  color: var(--muted);
-  font-size: 11px;
-}
-
 .month-event.has-deadline {
   box-shadow: inset -2px 0 #ce6979;
 }
@@ -564,106 +374,6 @@
   border-radius: 50%;
 }
 
-.homework-capture-form {
-  position: relative;
-}
-
-.homework-details-toggle {
-  display: inline-flex;
-  min-height: 28px;
-  align-items: center;
-  margin: 7px 12px 0 auto;
-  padding: 0 8px;
-  gap: 5px;
-  color: #73756f;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  font-size: 8px;
-  font-weight: 610;
-}
-
-.homework-details-toggle:hover,
-.homework-details-toggle.active {
-  color: #584ba9;
-  background: #e9e6f5;
-  border-color: #dad5ef;
-}
-
-.homework-detail-fields {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  margin: 8px 12px 12px;
-  padding: 11px;
-  gap: 9px;
-  background: #f3f4f0;
-  border: 1px solid #daddd6;
-  border-radius: 9px;
-}
-
-.homework-detail-fields label > span {
-  display: block;
-  margin: 0 0 4px 1px;
-  color: #858780;
-  font-size: 7px;
-  font-weight: 650;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-}
-
-.homework-detail-fields select {
-  width: 100%;
-  min-height: 36px;
-  padding: 0 8px;
-  color: #3f4045;
-  background-color: #eef0eb;
-  border: 1px solid #d7dad3;
-  border-radius: 7px;
-  font-size: 9px;
-}
-
-.homework-estimate-control {
-  display: grid;
-  min-height: 36px;
-  grid-template-columns: 30px 1fr 30px;
-  align-items: center;
-  background: #eef0eb;
-  border: 1px solid #d7dad3;
-  border-radius: 7px;
-}
-
-.homework-estimate-control button {
-  height: 28px;
-  padding: 0;
-  color: #685bc0;
-  background: transparent;
-  border: 0;
-  font-size: 14px;
-}
-
-.homework-estimate-control strong {
-  color: #55575a;
-  font-family: var(--font-mono), monospace;
-  font-size: 8px;
-  text-align: center;
-}
-
-.homework-add-button {
-  display: inline-flex;
-  min-height: 36px;
-  align-items: center;
-  justify-content: center;
-  align-self: end;
-  padding: 0 11px;
-  gap: 5px;
-  color: #f6f4ff;
-  background: #6758c5;
-  border: 1px solid #6758c5;
-  border-radius: 7px;
-  font-size: 8px;
-  font-weight: 650;
-}
-
 @media (max-width: 1180px) {
   .overview-grid.months-6 {
     grid-template-columns: repeat(2, minmax(260px, 1fr));
@@ -703,19 +413,5 @@
 
   .month-event-list .month-event:nth-child(n + 3) {
     display: none;
-  }
-
-  .homework-detail-fields {
-    grid-template-columns: 1fr;
-  }
-
-  .temporal-popover {
-    position: fixed;
-    top: auto;
-    right: 10px;
-    bottom: 72px;
-    left: 10px;
-    width: auto;
-    max-height: calc(100dvh - 92px);
   }
 }

@@ -328,20 +328,6 @@
     border-radius: 13px;
   }
 
-  .attention-primary {
-    padding-top: 27px;
-  }
-
-  .attention-now {
-    min-height: 0;
-    padding: 24px;
-    border-radius: 24px;
-  }
-
-  .attention-now h1 {
-    font-size: clamp(29px, 9vw, 40px);
-  }
-
   .block-choice {
     margin: 18px 0 34px;
     padding: 18px 0 14px;
@@ -742,7 +728,6 @@
   }
 
   .task-dock,
-  .homework-dock,
   .quick-hud {
     right: 10px;
     bottom: calc(86px + env(safe-area-inset-bottom));
@@ -760,13 +745,11 @@
   }
 
   .task-dock,
-  .homework-dock,
   .quick-hud {
     z-index: 130;
   }
 
   .overlay,
-  .item-overlay,
   .now-overlay,
   .proposal-overlay {
     padding: calc(10px + env(safe-area-inset-top)) 8px calc(88px + env(safe-area-inset-bottom));
@@ -774,60 +757,11 @@
   }
 
   .command-palette,
-  .item-inspector,
   .now-panel,
   .proposal-sheet {
     width: 100%;
     max-height: calc(100dvh - 112px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     border-radius: 25px 25px 18px 18px;
-  }
-
-  .item-inspector {
-    padding: 0 16px;
-  }
-
-  .item-inspector > header {
-    position: sticky;
-    top: 0;
-    z-index: 5;
-    margin: 0 -16px;
-    padding: 12px 14px 10px 16px;
-    border-radius: 25px 25px 0 0;
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
-  }
-
-  .item-title-input {
-    min-height: 58px;
-    font-size: 21px;
-  }
-
-  .quick-kind-switch {
-    gap: 4px;
-  }
-
-  .quick-kind-switch button {
-    min-height: 32px;
-    padding: 0 11px;
-    border-radius: 10px;
-    font-size: 10px;
-  }
-
-  .item-inspector footer {
-    position: sticky;
-    bottom: 0;
-    z-index: 5;
-    min-height: 62px;
-    margin: 12px -16px 0;
-    padding: 9px 14px calc(9px + env(safe-area-inset-bottom));
-    border-radius: 0 0 18px 18px;
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
-  }
-
-  .item-inspector footer button {
-    min-height: 42px;
-    border-radius: 12px;
   }
 
   .account-card {

@@ -66,13 +66,6 @@ export type Exploration = {
   createdAt: string;
 };
 
-export const challengeLabels: Record<ChallengeLevel, string> = {
-  too_easy: "Too easy",
-  good_challenge: "Good challenge",
-  difficult: "Difficult",
-  not_understood: "Not understood yet",
-};
-
 export function makeLearningSignal(
   source: LearningSource,
   challengeLevel: ChallengeLevel,

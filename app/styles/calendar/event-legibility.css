@@ -5,149 +5,8 @@
   isolation: isolate;
 }
 
-.day-head.has-date-popover {
-  z-index: 30;
-}
-
-.japanese-date-popover {
-  position: absolute;
-  z-index: 40;
-  top: calc(100% + 8px);
-  left: 50%;
-  width: min(340px, calc(100vw - 28px));
-  padding: 16px;
-  color: #37332e;
-  background: rgb(255 253 248 / 98%);
-  border: 1px solid #dcd7cc;
-  border-radius: 14px;
-  box-shadow: 0 18px 42px rgb(56 49 38 / 17%);
-  font-family: var(--calendar-sans);
-  transform: translateX(-50%);
-  backdrop-filter: blur(18px);
-}
-
 .mobile-agenda-header {
   position: relative;
-}
-
-button.mobile-cultural-date {
-  width: fit-content;
-  padding: 0;
-  text-align: left;
-  background: transparent;
-  border: 0;
-}
-
-.cultural-date-hint {
-  color: #9a9388;
-  font-size: 8px;
-  text-decoration: underline;
-  text-decoration-color: #d6d0c5;
-  text-underline-offset: 2px;
-}
-
-.japanese-date-popover::before {
-  position: absolute;
-  top: -5px;
-  left: 50%;
-  width: 9px;
-  height: 9px;
-  content: "";
-  background: #fffdf8;
-  border-top: 1px solid #dcd7cc;
-  border-left: 1px solid #dcd7cc;
-  transform: translateX(-50%) rotate(45deg);
-}
-
-.japanese-date-popover header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.japanese-date-popover header span,
-.japanese-date-popover dt {
-  color: #918a7e;
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-}
-
-.japanese-date-popover h3 {
-  margin: 3px 0 0;
-  font-family: var(--calendar-serif);
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.japanese-date-popover header button {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 auto;
-  padding: 0;
-  place-items: center;
-  color: #777067;
-  background: #f2eee6;
-  border: 0;
-  border-radius: 50%;
-}
-
-.japanese-date-popover dl {
-  display: grid;
-  margin: 14px 0 12px;
-  gap: 1px;
-  overflow: hidden;
-  background: #e5e0d6;
-  border: 1px solid #e5e0d6;
-  border-radius: 10px;
-}
-
-.japanese-date-popover dl > div {
-  display: grid;
-  grid-template-columns: 52px minmax(0, 1fr);
-  padding: 11px 12px;
-  gap: 10px;
-  background: #fffdf8;
-}
-
-.japanese-date-popover dt {
-  padding-top: 4px;
-}
-
-.japanese-date-popover dd {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: baseline;
-  margin: 0;
-  gap: 2px 8px;
-}
-
-.japanese-date-popover dd strong {
-  font-family: var(--calendar-serif);
-  font-size: 16px;
-}
-
-.japanese-date-popover dd span {
-  color: #625d55;
-  font-size: 10px;
-  font-weight: 650;
-}
-
-.japanese-date-popover dd small {
-  grid-column: 1 / -1;
-  color: #777168;
-  font-size: 10px;
-  line-height: 1.45;
-}
-
-.japanese-date-popover > p {
-  margin: 0;
-  color: #777168;
-  font-size: 9px;
-  line-height: 1.45;
 }
 
 .calendar-block strong {
@@ -162,9 +21,6 @@ button.mobile-cultural-date {
 
 /* Let titles use the vertical space they have before secondary metadata.
    Task titles reserve the completion control instead of running beneath it. */
-.calendar-block.kind-task .event-block-title {
-  padding-right: 26px;
-}
 
 .calendar-block[data-density="tall"] strong {
   -webkit-line-clamp: 5;
@@ -256,13 +112,6 @@ button.mobile-cultural-date {
 
   .mobile-day-calendar .calendar-block[data-density="micro"] time {
     font-size: 8px;
-  }
-
-  .japanese-date-popover {
-    top: calc(100% + 6px);
-    width: min(340px, calc(100vw - 20px));
-    padding: 14px;
-    border-radius: 12px;
   }
 }
 .calendar-fallback {

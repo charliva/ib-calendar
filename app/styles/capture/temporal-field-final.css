@@ -2,7 +2,6 @@
 
 /* Final temporal-field layer: overrides legacy form styling kept for other inputs. */
 .temporal-trigger,
-.item-schedule-row .temporal-trigger,
 .class-schedule-card .temporal-trigger {
   grid-template-columns: 18px minmax(0, 1fr) !important;
   min-height: 42px;
@@ -21,7 +20,6 @@
 }
 
 .temporal-trigger > input,
-.item-inspector .temporal-trigger > input:not(.item-title-input),
 .school-field .temporal-trigger > input {
   width: 100% !important;
   min-width: 0;
@@ -48,10 +46,6 @@
   color: #a44759 !important;
 }
 
-.temporal-picker-button {
-  display: none !important;
-}
-
 .temporal-clear {
   top: 9px;
   right: 7px;
@@ -63,13 +57,11 @@
 
 @media (max-width: 780px) {
   .temporal-trigger,
-  .item-schedule-row .temporal-trigger,
   .class-schedule-card .temporal-trigger {
     min-height: 46px;
   }
 
   .temporal-trigger > input,
-  .item-inspector .temporal-trigger > input:not(.item-title-input),
   .school-field .temporal-trigger > input {
     height: 44px !important;
     font-size: 16px !important;

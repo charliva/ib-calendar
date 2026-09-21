@@ -1,20 +1,5 @@
 import type { PendingMutation } from "./offline.ts";
 
-export const SYNC_TABLES: PendingMutation["table"][] = [
-  "calendar_items",
-  "calendar_history",
-  "subjects",
-  "classes",
-  "class_exceptions",
-  "assignments",
-  "assessments",
-  "intentions",
-  "learning_signals",
-  "explorations",
-  "time_block_choices",
-  "profiles",
-];
-
 export function mutationIdentity(mutation: PendingMutation) {
   const blockKey = mutation.payload?.block_key;
   if (

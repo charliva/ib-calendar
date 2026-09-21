@@ -152,8 +152,7 @@
   background: #db667a;
 }
 
-.proposal-sheet footer,
-.item-inspector footer {
+.proposal-sheet footer {
   position: sticky;
   bottom: 0;
   display: flex;
@@ -165,14 +164,12 @@
   backdrop-filter: blur(12px);
 }
 
-.proposal-sheet footer .approve,
-.item-inspector footer .save {
+.proposal-sheet footer .approve {
   color: #fff;
   background: #211f24;
   border-color: #211f24;
 }
 
-.proposal-sheet footer button:disabled,
-.item-inspector footer button:disabled {
+.proposal-sheet footer button:disabled {
   opacity: .42;
 }

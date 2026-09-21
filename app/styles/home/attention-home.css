@@ -8,21 +8,6 @@
 .attention-command button[type="submit"] { background: #213b30; color: white; }
 .attention-command kbd { color: color-mix(in srgb, currentColor 55%, transparent); }
 .attention-eyebrow { display: block; margin-bottom: 12px; text-transform: uppercase; letter-spacing: .16em; font-size: 11px; font-weight: 750; color: color-mix(in srgb, currentColor 48%, transparent); }
-.attention-primary { max-width: 880px; margin: 0 auto 50px; }
-.attention-now { display: grid; grid-template-columns: 1fr auto; gap: 18px 30px; align-items: start; padding: clamp(26px, 4vw, 46px); border-radius: 24px; background: linear-gradient(145deg, #e7f0e9, #f4f1e8); box-shadow: inset 0 0 0 1px rgb(25 56 43 / 7%); }
-.attention-now h1 { margin: 7px 0 10px; font-size: clamp(30px, 4.8vw, 58px); line-height: .98; letter-spacing: -.045em; max-width: 720px; text-wrap: balance; }
-.attention-now p { margin: 0; color: color-mix(in srgb, currentColor 62%, transparent); max-width: 620px; line-height: 1.55; }
-.attention-now > strong { font-size: 13px; color: #496258; }
-.attention-now > button { grid-column: 1 / -1; justify-self: start; display: inline-flex; gap: 8px; align-items: center; border: 0; border-radius: 10px; padding: 10px 14px; background: #213b30; color: white; }
-.attention-clear { background: #f4f2ec; }
-.attention-secondary { max-width: 880px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 48px; }
-.attention-item { width: 100%; display: grid; grid-template-columns: 1fr auto auto; gap: 14px; text-align: left; align-items: center; padding: 15px 0; border: 0; border-bottom: 1px solid rgb(20 34 27 / 9%); background: transparent; color: inherit; }
-.attention-item span { min-width: 0; }
-.attention-item small { display: block; margin-bottom: 4px; color: color-mix(in srgb, currentColor 50%, transparent); }
-.attention-item strong { display: block; font-size: 15px; }
-.attention-item p { margin: 4px 0 0; font-size: 12px; color: color-mix(in srgb, currentColor 56%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.attention-item time { font-size: 12px; color: color-mix(in srgb, currentColor 60%, transparent); white-space: nowrap; }
-.attention-empty { padding: 18px 0; color: color-mix(in srgb, currentColor 48%, transparent); font-size: 14px; }
 .attention-footer { max-width: 880px; margin: 44px auto 0; padding-top: 18px; border-top: 1px solid rgb(20 34 27 / 8%); display: flex; align-items: center; gap: 10px; }
 .attention-footer button { display: inline-flex; align-items: center; gap: 7px; border: 0; background: transparent; color: inherit; padding: 7px 9px; border-radius: 8px; }
 .attention-footer button:hover { background: rgb(25 56 43 / 6%); }

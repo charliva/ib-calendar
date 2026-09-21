@@ -27,23 +27,6 @@
   cursor: not-allowed;
 }
 
-.temporal-picker-button {
-  display: grid;
-  width: 25px;
-  height: 25px;
-  padding: 0;
-  place-items: center;
-  color: #817a9f;
-  background: transparent;
-  border: 0;
-  border-radius: 6px;
-}
-
-.temporal-picker-button:hover {
-  color: #5548a7;
-  background: #e2e1e9;
-}
-
 .temporal-clear {
   right: 31px;
 }
@@ -95,11 +78,6 @@
 
   .temporal-trigger > input {
     font-size: 16px;
-  }
-
-  .temporal-picker-button {
-    width: 30px;
-    height: 30px;
   }
 }
 

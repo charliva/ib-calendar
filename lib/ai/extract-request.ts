@@ -54,5 +54,3 @@ export const extractRequestSchema = z
       });
     }
   });
-
-export type ExtractRequest = z.infer<typeof extractRequestSchema>;

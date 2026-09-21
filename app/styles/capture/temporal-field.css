@@ -2,7 +2,6 @@
 
 /* One calm temporal control: natural-language input plus the existing picker. */
 .temporal-trigger,
-.item-schedule-row .temporal-trigger,
 .class-schedule-card .temporal-trigger {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
@@ -22,7 +21,6 @@
 }
 
 .temporal-trigger > input,
-.item-inspector .temporal-trigger > input,
 .school-field .temporal-trigger > input {
   width: 100% !important;
   min-width: 0;
@@ -48,10 +46,6 @@
   color: #a44759 !important;
 }
 
-.temporal-picker-button {
-  display: none;
-}
-
 .temporal-clear {
   top: 9px;
   right: 7px;
@@ -65,60 +59,15 @@
   padding-right: 0 !important;
 }
 
-.temporal-language-preview {
-  display: flex;
-  min-height: 48px;
-  align-items: center;
-  padding: 9px 12px;
-  gap: 7px;
-  background: #f1f0f6;
-  border-bottom: 1px solid #dedde6;
-}
-
-.temporal-language-preview span {
-  color: #8a8792;
-  font-size: 7px;
-  font-weight: 650;
-  letter-spacing: .05em;
-  text-transform: uppercase;
-}
-
-.temporal-language-preview strong {
-  margin-left: auto;
-  color: #51499a;
-  font-size: 9px;
-  font-weight: 650;
-  text-align: right;
-}
-
-.temporal-language-preview.is-invalid {
-  background: #f7eeee;
-  border-bottom-color: #ead6da;
-}
-
-.temporal-language-preview.is-invalid strong {
-  color: #a44759;
-}
-
-.temporal-popover {
-  overflow: hidden auto;
-}
-
 @media (max-width: 780px) {
   .temporal-trigger,
-  .item-schedule-row .temporal-trigger,
   .class-schedule-card .temporal-trigger {
     min-height: 46px;
   }
 
   .temporal-trigger > input,
-  .item-inspector .temporal-trigger > input,
   .school-field .temporal-trigger > input {
     height: 44px !important;
     font-size: 16px !important;
-  }
-
-  .temporal-language-preview {
-    min-height: 54px;
   }
 }

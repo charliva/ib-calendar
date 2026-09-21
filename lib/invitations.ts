@@ -1,8 +1,6 @@
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const INVITATION_LIMIT_PER_DAY = 10;
-export const INVITATION_LIFETIME_DAYS = 7;
-
 export function normalizeInvitationEmail(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const email = value.trim().toLowerCase();

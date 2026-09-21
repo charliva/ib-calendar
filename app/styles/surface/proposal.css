@@ -273,39 +273,6 @@
   border-color: #6758c5;
 }
 
-.item-overlay {
-  padding: 10px;
-  background: rgb(50 51 56 / 12%);
-  backdrop-filter: blur(2px);
-}
-
-.item-inspector {
-  width: min(450px, 100%);
-  max-height: calc(100dvh - 20px);
-  margin-right: 0;
-  background: #f6f7f3;
-  border-color: #ced2ca;
-  border-radius: 12px;
-}
-
-.item-inspector > header,
-.item-inspector footer {
-  background: rgb(246 247 243 / 95%);
-}
-
-.item-title-input {
-  color: #33343a;
-  font-size: 19px;
-}
-
-.item-inspector > textarea,
-.item-inspector input:not(.item-title-input),
-.item-inspector select {
-  background: #eef0eb;
-  border-color: #d9dcd5;
-}
-
-.item-inspector footer .save,
 .account-card form button,
 .account-card > button:not(.account-close) {
   color: #f3f1fb;

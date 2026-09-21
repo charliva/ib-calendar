@@ -16,7 +16,6 @@
 @import "./styles/hud/quick-hud.css";
 @import "./styles/overlays/command-palette.css";
 @import "./styles/overlays/proposal-sheet.css";
-@import "./styles/overlays/item-inspector.css";
 @import "./styles/overlays/account-card.css";
 @import "./styles/shell/responsive.css";
 @import "./styles/learning/exploration.css";
@@ -34,8 +33,6 @@
 @import "./styles/surface/overview.css";
 @import "./styles/surface/motion.css";
 @import "./styles/calendar/interaction-repair.css";
-@import "./styles/capture/compact.css";
-@import "./styles/now/launcher.css";
 @import "./styles/now/decision-shell.css";
 @import "./styles/now/time-window.css";
 @import "./styles/now/recommendations.css";

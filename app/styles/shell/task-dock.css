@@ -29,8 +29,7 @@
 }
 
 .task-dock > header button,
-.hud-header button,
-.item-inspector header button {
+.hud-header button {
   display: grid;
   width: 30px;
   height: 30px;
@@ -42,8 +41,7 @@
 }
 
 .task-dock > header button:hover,
-.hud-header button:hover,
-.item-inspector header button:hover {
+.hud-header button:hover {
   background: #fff;
   border-color: #cfcac0;
 }

@@ -231,15 +231,6 @@ export function estimateMinutesFromHistory(
   );
 }
 
-export const EMPTY_SCHOOL_STATE: SchoolState = {
-  subjects: [],
-  classes: [],
-  classExceptions: [],
-  assignments: [],
-  assessments: [],
-  schoolDaySettings: DEFAULT_SCHOOL_DAY_SETTINGS,
-};
-
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 const nullableText = (value: unknown) =>
   typeof value === "string" && value.length > 0 ? value : null;

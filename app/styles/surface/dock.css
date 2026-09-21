@@ -88,15 +88,6 @@
   box-shadow: none;
 }
 
-.inbox-item.flex-flexible {
-  border-left: 1px dashed color-mix(in srgb, var(--energy) 65%, #d7dad3);
-}
-
-.inbox-item.kind-intention {
-  background: color-mix(in srgb, var(--energy) 5%, transparent);
-  border: 1px dashed color-mix(in srgb, var(--energy) 38%, transparent);
-}
-
 .inbox-item.is-dragging {
   z-index: 3;
   transform: translateY(-3px) rotate(-.5deg) scale(1.015);

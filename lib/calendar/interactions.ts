@@ -1,6 +1,5 @@
 import {
   dateKey,
-  durationMinutes,
   makeItem,
   type CalendarItem,
 } from "../calendar-engine.ts";
@@ -122,21 +121,6 @@ export function classCalendarItems(
 export function localTime(date: Date) {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
-export function editedTiming(
-  item: CalendarItem,
-  startsAt: string,
-  endsAt: string,
-): CalendarItem {
-  const minutes = durationMinutes({ ...item, startsAt, endsAt });
-  return {
-    ...item,
-    startsAt,
-    endsAt,
-    durationMin: minutes,
-    durationMax: minutes,
-  };
-}
-
 /**
  * The lesson occurrences left after removing any that an imported timetable
  * already covers.

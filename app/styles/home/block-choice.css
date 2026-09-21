@@ -59,9 +59,6 @@
   .attention-home { padding: 22px 16px 80px; }
   .attention-command { grid-template-columns: auto 1fr auto; margin-bottom: 30px; }
   .attention-command button[type="button"] { display: none; }
-  .attention-now { grid-template-columns: 1fr; }
-  .attention-now h1 { font-size: 34px; }
-  .attention-secondary { grid-template-columns: 1fr; gap: 28px; }
   .block-choice { margin: -8px 0 36px; padding: 17px; }
   .block-paths { grid-template-columns: 1fr; }
   .block-path { min-height: 0; }

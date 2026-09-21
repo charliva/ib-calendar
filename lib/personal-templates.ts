@@ -1,6 +1,5 @@
 import type { CurrentStudyLocation } from "./now-recommender.ts";
 import type { TimeBlockType } from "./block-choices/types.ts";
-import type { EnergyRequirement } from "./calendar-engine.ts";
 
 /**
  * Personal templates (PR1).
@@ -142,13 +141,3 @@ export const PERSONAL_TEMPLATES: readonly PersonalTemplate[] = [
     high: "Practice one thing you already know. Get it smooth, then stop.",
   },
 ] as const;
-
-export function pickPersonalTemplate(
-  candidates: readonly PersonalTemplate[],
-  currentEnergy: EnergyRequirement,
-): { template: PersonalTemplate; title: string; minutes: number } | null {
-  if (candidates.length === 0) return null;
-  const template = candidates[0];
-  const title = currentEnergy === "low" ? template.low : template.high;
-  return { template, title, minutes: template.minutes };
-}

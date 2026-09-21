@@ -231,11 +231,6 @@
   padding: 5px 8px;
   font-family: var(--font-sans), system-ui, sans-serif;
 }
-.calendar-redesign .calendar-block.flex-flexible,
-.calendar-redesign .calendar-block.flex-elastic {
-  background: #f4f1f8;
-  border-left-style: dashed;
-}
 .calendar-redesign .calendar-block:hover,
 .calendar-redesign .calendar-block:focus-visible {
   background: #e8e1f4;
@@ -262,10 +257,6 @@
 .calendar-redesign .calendar-block[data-density="micro"] .inline-item-title { font-size: 11px; }
 .calendar-redesign .toast { display: flex; align-items: center; gap: 12px; max-width: min(560px, calc(100vw - 32px)); padding: 12px 16px; font-size: 12px; line-height: 1.4; }
 .calendar-redesign .toast button { flex-shrink: 0; min-width: 32px; min-height: 32px; padding: 6px; }
-.calendar-redesign .calendar-block .block-energy,
-.calendar-redesign .calendar-block .block-constraints {
-  display: none;
-}
 .calendar-redesign .calendar-block[data-density="micro"] strong {
   font-size: 11px;
 }
@@ -282,8 +273,7 @@
   font-size: 13px;
 }
 .calendar-redesign .month-card h2,
-.calendar-redesign .month-event em,
-.calendar-redesign .upcoming-copy strong {
+.calendar-redesign .month-event em {
   font-family: var(--font-sans), sans-serif;
 }
 .calendar-redesign button:focus-visible,
@@ -590,42 +580,6 @@
   background: #f8ebef;
   border-radius: 8px;
 }
-.natural-edit {
-  margin: 16px 24px;
-  padding: 16px;
-  border: 1px solid #e3dcef;
-  border-radius: 10px;
-  background: #f5f1fa;
-}
-.natural-edit > label {
-  display: block;
-  font-size: 12px;
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-.natural-edit > div {
-  display: flex;
-  gap: 8px;
-}
-.natural-edit > div > input {
-  min-width: 0;
-  flex: 1;
-  font-size: 13px !important;
-}
-.natural-edit button {
-  border: 0;
-  border-radius: 6px;
-  background: var(--lilac-dark);
-  color: white;
-  font-size: 12px;
-  padding: 8px 12px;
-}
-.natural-edit > small {
-  display: block;
-  margin-top: 8px;
-  font-size: 11px;
-  color: var(--muted);
-}
 @media (min-width: 781px) and (max-width: 1100px) {
   .calendar-redesign .toolbar-date-jump {
     display: none;
@@ -781,18 +735,6 @@
   }
   .calendar-redesign .mobile-day-calendar .calendar-block {
     background: #eee9f7;
-  }
-  .natural-edit {
-    margin: 12px 16px;
-    padding: 12px;
-  }
-  .natural-edit > div {
-    flex-wrap: wrap;
-  }
-  .natural-edit > div > input {
-    font-size: 16px !important;
-    width: 100%;
-    flex-basis: 100%;
   }
 }
 @media (prefers-reduced-motion: reduce) {

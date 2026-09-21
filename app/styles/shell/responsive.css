@@ -160,15 +160,6 @@
     padding: 4vh 10px 68px;
   }
 
-  .item-overlay {
-    justify-items: center;
-  }
-
-  .item-inspector {
-    max-height: calc(96vh - 58px);
-    margin: 0;
-  }
-
   .account-card {
     right: 10px;
     bottom: 66px;

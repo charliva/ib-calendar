@@ -373,16 +373,6 @@
     border-radius: 1px;
   }
 
-  .agenda-item.flex-flexible .agenda-shape {
-    background: transparent;
-    border: 1px solid var(--energy);
-  }
-
-  .agenda-item.kind-intention .agenda-shape {
-    background: color-mix(in srgb, var(--energy) 16%, transparent);
-    border: 1px dashed var(--energy);
-  }
-
   .agenda-item > div strong,
   .agenda-item > div small {
     display: block;
@@ -538,16 +528,6 @@
 
   .proposal-sheet footer > div {
     display: none;
-  }
-
-  .item-overlay {
-    padding: 8px 8px 65px;
-    align-items: end;
-  }
-
-  .item-inspector {
-    max-height: calc(100dvh - 78px);
-    border-radius: 13px 13px 9px 9px;
   }
 
   .account-card {

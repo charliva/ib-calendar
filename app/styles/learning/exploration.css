@@ -168,11 +168,6 @@
     display: none;
   }
 
-  .field-grid,
-  .field-grid.triple {
-    grid-template-columns: 1fr;
-  }
-
   .overview-grid {
     padding: 10px;
   }

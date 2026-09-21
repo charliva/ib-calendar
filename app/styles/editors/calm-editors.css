@@ -1,58 +1,7 @@
 /* Calm editors: the common path stays short, planning metadata unfolds on demand. */
 
 /* Calm editors: the common path stays short; planning metadata is disclosed on demand. */
-.item-inspector {
-  width: min(520px, 100%);
-  padding: 0 22px;
-  border-radius: 18px;
-}
 
-.item-inspector > header {
-  margin: 0 -22px;
-  padding: 18px 22px 12px;
-}
-
-.item-inspector > header .micro-label {
-  color: #8b8d87;
-  font-size: 8px;
-  letter-spacing: .08em;
-}
-
-.quick-kind-switch {
-  width: fit-content;
-  margin-top: 9px;
-  padding: 3px;
-  background: #e9ebe6;
-  border-radius: 9px;
-}
-
-.quick-kind-switch button {
-  min-height: 29px;
-  padding: 0 12px;
-  border-radius: 7px;
-  font-size: 9px;
-}
-
-.quick-kind-switch button.active {
-  background: #fbfbf8;
-  box-shadow: 0 1px 4px rgb(42 43 47 / 9%);
-}
-
-.item-title-input {
-  min-height: 72px;
-  padding: 15px 2px 13px;
-  border-bottom-color: #dfe1dc;
-  font-size: 25px;
-  font-weight: 630;
-  letter-spacing: -.04em;
-}
-
-.item-schedule-card {
-  padding: 17px 0 15px;
-  border-bottom: 1px solid #dfe1dc;
-}
-
-.item-section-heading,
 .class-schedule-card > header {
   display: flex;
   align-items: center;
@@ -60,160 +9,28 @@
   gap: 10px;
 }
 
-.item-section-heading > svg,
 .class-schedule-card > header > svg {
   color: #695cc0;
 }
 
-.item-section-heading > div,
 .class-schedule-card > header > div {
   display: grid;
   min-width: 0;
   gap: 2px;
 }
 
-.item-section-heading strong,
 .class-schedule-card > header strong {
   color: #3f4045;
   font-size: 11px;
   font-weight: 650;
 }
 
-.item-section-heading small,
 .class-schedule-card > header small {
   overflow: hidden;
   color: #8c8e88;
   font-size: 8px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.item-schedule-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 132px;
-  gap: 10px;
-}
-
-.item-schedule-row label > span {
-  display: block;
-  margin: 0 0 5px 1px;
-  color: #898b85;
-  font-size: 7px;
-  font-weight: 650;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-}
-
-.item-schedule-row .temporal-trigger,
-.item-schedule-row select {
-  min-height: 44px !important;
-  background: #eef0eb !important;
-  border-color: transparent !important;
-  border-radius: 10px !important;
-  font-size: 10px !important;
-}
-
-.item-schedule-row .temporal-trigger:hover,
-.item-schedule-row select:hover {
-  background: #e9ebe6 !important;
-}
-
-.item-all-day-toggle {
-  display: inline-flex;
-  min-height: 30px;
-  align-items: center;
-  margin-top: 9px;
-  padding: 0 8px;
-  gap: 7px;
-  color: #757771;
-  background: transparent;
-  border: 0;
-  border-radius: 7px;
-  font-size: 8px;
-  font-weight: 600;
-}
-
-.item-all-day-toggle > span {
-  position: relative;
-  width: 28px;
-  height: 16px;
-  background: #d7dad3;
-  border-radius: 99px;
-  transition: background 140ms ease;
-}
-
-.item-all-day-toggle > span::after {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 12px;
-  height: 12px;
-  background: #fff;
-  border-radius: 50%;
-  box-shadow: 0 1px 3px rgb(39 40 44 / 18%);
-  content: "";
-  transition: transform 140ms ease;
-}
-
-.item-all-day-toggle.active {
-  color: #5549a5;
-}
-
-.item-all-day-toggle.active > span {
-  background: #7164ca;
-}
-
-.item-all-day-toggle.active > span::after {
-  transform: translateX(12px);
-}
-
-.item-more {
-  margin-top: 0;
-  border-top: 0;
-}
-
-.item-more summary {
-  min-height: 54px;
-  font-size: 10px;
-}
-
-.item-more summary small {
-  font-size: 8px;
-}
-
-.item-more[open] summary {
-  border-bottom: 1px solid #e1e3de;
-}
-
-.item-more .item-detail-notes {
-  min-height: 72px;
-  margin-top: 13px;
-  padding: 11px 12px;
-  background: #eef0eb;
-  border: 0;
-  border-radius: 10px;
-  font-size: 10px;
-}
-
-.compact-options-grid {
-  padding-top: 13px;
-  gap: 10px;
-}
-
-.item-inspector footer {
-  min-height: 66px;
-  margin: 14px -22px 0;
-  padding: 11px 22px;
-}
-
-.item-inspector footer button {
-  min-height: 38px;
-  padding: 0 14px;
-  border-radius: 9px;
-}
-
-.item-inspector footer .save {
-  min-width: 124px;
 }
 
 .school-body.has-editor {
@@ -332,45 +149,6 @@
 }
 
 @media (max-width: 780px) {
-  .item-overlay {
-    padding-right: 0;
-    padding-bottom: calc(72px + env(safe-area-inset-bottom));
-    padding-left: 0;
-  }
-
-  .item-inspector {
-    max-height: calc(88dvh - env(safe-area-inset-top));
-    padding: 0 18px;
-    border-right: 0;
-    border-bottom: 0;
-    border-left: 0;
-    border-radius: 26px 26px 0 0;
-  }
-
-  .item-inspector > header {
-    margin: 0 -18px;
-    padding: 15px 18px 11px;
-  }
-
-  .item-title-input {
-    min-height: 66px;
-    font-size: 24px;
-  }
-
-  .item-schedule-row {
-    grid-template-columns: minmax(0, 1fr) 116px;
-  }
-
-  .item-inspector footer {
-    margin-right: -18px;
-    margin-left: -18px;
-    padding: 10px 18px calc(10px + env(safe-area-inset-bottom));
-    border-radius: 0;
-  }
-
-  .item-inspector footer .save {
-    flex: 1;
-  }
 
   .school-editor {
     right: 0;
@@ -397,18 +175,9 @@
 }
 
 @media (max-width: 430px) {
-  .item-schedule-row {
-    grid-template-columns: minmax(0, 1fr) 104px;
-    gap: 7px;
-  }
 
-  .item-more summary small,
   .school-editor-details summary small {
     display: none;
-  }
-
-  .compact-options-grid {
-    grid-template-columns: 1fr;
   }
 
   .class-time-pair,
