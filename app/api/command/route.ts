@@ -5,6 +5,28 @@ import {
   clarificationFor,
   missingAssessmentDetails,
 } from "@/lib/command-clarification";
+import { askJev } from "@/lib/ai/jev";
+import {
+  COMMAND_GATE_QUESTIONS,
+  commandGateState,
+  missingDetailsFromEvaluation,
+} from "@/lib/ai/command-gate";
+import {
+  PROPOSAL_CHECK_QUESTIONS,
+  proposalCheckState,
+  verdictFromEvaluation,
+} from "@/lib/ai/proposal-check";
+
+/**
+ * How long each evaluation may take before the route stops waiting for it.
+ *
+ * The gate runs alongside generation rather than in front of it, so its budget
+ * is hidden inside a call that already takes seconds. The check runs after,
+ * with the student waiting on a reply that already exists, so its budget is
+ * the tighter of the two.
+ */
+const GATE_TIMEOUT_MS = 2_500;
+const CHECK_TIMEOUT_MS = 1_800;
 
 export const runtime = "edge";
 
@@ -137,15 +159,20 @@ export async function POST(request: Request) {
       .map((turn) => turn.text),
     command,
   ].join(" ");
-  const missingDetails = missingAssessmentDetails(
-    accumulatedUserContext,
-    subjects,
-  );
-  if (missingDetails.length > 0) {
-    return Response.json(clarificationFor(missingDetails));
-  }
+  // Jev decides whether this is a vague assessment; the regular expressions in
+  // lib/command-clarification.ts answer when it cannot be reached. Both are
+  // started before the proposal is generated and the gate is only awaited
+  // afterwards, so asking costs no latency on the ordinary path — the two
+  // calls overlap, and the generation is simply thrown away when the gate
+  // turns out to want a question instead.
+  const gate = askJev(
+    commandGateState(accumulatedUserContext, subjects),
+    COMMAND_GATE_QUESTIONS,
+    GATE_TIMEOUT_MS,
+  ).then(missingDetailsFromEvaluation);
+
   const model = process.env.AI_GATEWAY_MODEL ?? "openai/gpt-5.4-nano";
-  const { output } = await generateText({
+  const generation = generateText({
     model: gateway(model),
     maxRetries: 0,
     maxOutputTokens: 1_200,
@@ -201,6 +228,18 @@ For a create, after must include at least title and kind. For an update, omit un
       },
     }),
   });
+  // Nothing awaits the generation when the gate wins, and an unhandled
+  // rejection would take the worker down with it.
+  generation.catch(() => {});
+
+  const missingDetails =
+    (await gate) ??
+    missingAssessmentDetails(accumulatedUserContext, subjects);
+  if (missingDetails.length > 0) {
+    return Response.json(clarificationFor(missingDetails));
+  }
+
+  const { output } = await generation;
 
   const validated = assistantResponseSchema.safeParse(output);
   if (!validated.success) {
@@ -208,6 +247,29 @@ For a create, after must include at least title and kind. For an update, omit un
       { error: "AI returned an invalid proposal" },
       { status: 502 },
     );
+  }
+
+  // A clarification is already a question; only a proposal can invent a detail.
+  if (validated.data.kind === "clarification") {
+    return Response.json(validated.data);
+  }
+
+  const verdict = verdictFromEvaluation(
+    await askJev(
+      proposalCheckState({
+        now: new Date().toISOString(),
+        timezone,
+        studentMessages: accumulatedUserContext,
+        knownSubjects: subjects,
+        timetableClasses: classes,
+        proposal: validated.data,
+      }),
+      PROPOSAL_CHECK_QUESTIONS,
+      CHECK_TIMEOUT_MS,
+    ),
+  );
+  if (verdict.kind === "ask") {
+    return Response.json(clarificationFor([verdict.field]));
   }
   return Response.json(validated.data);
 }

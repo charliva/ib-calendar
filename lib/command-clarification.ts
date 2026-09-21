@@ -1,4 +1,14 @@
-export type ClarificationField = "subject" | "date" | "time" | "location";
+/** The four details an assessment needs before it can go on the calendar. */
+export type ClarificationDetail = "subject" | "date" | "time" | "location";
+
+/**
+ * Anything the assistant can ask for.
+ *
+ * `other` is the catch-all for when the request itself is the problem rather
+ * than one missing detail — the proposal check in lib/ai/proposal-check.ts
+ * uses it when what came back is not a reading of what was asked.
+ */
+export type ClarificationField = ClarificationDetail | "other";
 
 type SubjectHint = { name: string; shortName: string };
 
@@ -9,7 +19,7 @@ export function isSchoolAssessmentCapture(text: string) {
 export function missingAssessmentDetails(
   text: string,
   subjects: SubjectHint[],
-): ClarificationField[] {
+): ClarificationDetail[] {
   if (!isSchoolAssessmentCapture(text)) return [];
   const normalized = text.toLowerCase();
   const subjectKnown = subjects.some((subject) => {
@@ -50,6 +60,7 @@ const FIELD_LABELS: Record<ClarificationField, string> = {
   date: "What day?",
   time: "What time?",
   location: "Where is it?",
+  other: "What would you like me to change?",
 };
 
 export function clarificationFor(fields: ClarificationField[]) {
